@@ -295,7 +295,11 @@ The Phase 1 Final Boss is: no hints, a hard timer, `bar_raiser`, shorter patienc
 
 ### 2.13 One active session per student needs a mechanism
 
-EC-6.13 blocks parallel sessions. It needs a unique constraint over `(candidate_id)` for sessions in a live state, plus version compare-and-swap on the checkpoint so two tabs on **one** session cannot both advance it.
+EC-6.13 blocks parallel sessions. It needs a unique constraint over `(candidate_id)` for sessions in a live state, plus a compare-and-swap so two tabs on **one** session cannot both advance it.
+
+*Built on day 1, two refinements:*
+- **One live session per student.** This is a unique nullable `occupying_key` rather than a partial index, because the partial index is spelled differently on SQLite and Postgres.
+- **The compare-and-swap sits on the event log's `(session_id, seq)`, not on the checkpoint.** Building it exposed a real bug: taking `seq` from `max(seq)` after reading state lets the losing tab commit a second answer to one question. Spec §6.8 now says where the seq must come from.
 
 ---
 
@@ -371,6 +375,8 @@ None of these blocks day 1. Each is small and belongs in its own repo's TODO.
 | Module | Ask | Why | Size |
 |---|---|---|---|
 | M01 | `module.json` repo URL → `Mock_Interview_Engine` | `launch.ps1:323` silently skips M06 otherwise | 1 line |
+| M01 | Forward `X-Role` / `X-Candidate-Id` on the drill hand-off, as M02 does to M01 (`router.py:982`) | M06 enforces identity (FR-6.26). M01's call sends only `Content-Type`, so it is anonymous and gets refused | 2 lines |
+| M13 | Read `M04_SERVICE_SECRET`, not `SERVICE_SECRET` (`emit.py:318`) | M04 checks `M04_SERVICE_SECRET` (`keys.py:33`), so once a secret is set, M13's observation emit is refused | 1 line |
 | M05 | `/questions/select` reads `_SESSIONS[session_id]` when `theta_provisional` is omitted | M06 must not carry, and so checkpoint, the provisional θ | ~5 lines |
 | M05 | `difficulty_offset` on `SelectionRequest` | Modes can't change item difficulty without it | small |
 | M05 | per-round-type counts on `/bank/health` | Plan-time availability without probing `/select` | small |

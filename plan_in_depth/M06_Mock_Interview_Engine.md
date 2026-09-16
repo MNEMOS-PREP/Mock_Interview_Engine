@@ -305,7 +305,9 @@ class Turn(BaseModel):
     started_at: datetime
     ended_at: datetime | None
     question_id: UUID | None            # M05 item; None for drill probes and templates
-    question_source: Literal["m05_bank", "m05_fallback", "m01_probe", "template"]
+    question_source: Literal["m05_bank", "m05_fallback", "m01_probe",
+                             "local_fallback",   # M06's own playlist, M05 unreachable (§10)
+                             "template"]
     rubric_round_type: str | None       # None → recorded, not sent for scoring
     probe_depth: int
     probe_move: str | None
@@ -339,7 +341,16 @@ class SessionFlags(BaseModel):
     #: DELIBERATELY ABSENT: any theta, provisional or otherwise (FR-6.25).
 ```
 
-**Tables** (SQLite in dev, Postgres in prod, as every platform module): `m06_session` (one live row per candidate — a partial unique index enforces EC-6.13), `m06_plan`, `m06_turn`, `m06_event` (unique on `(session_id, turn_index, step)`), `m06_checkpoint` (`session_id`, `version`, `state_json` — compare-and-swap on `version`), `m06_eval_outbox`, `m06_ledger_outbox`, `m06_llm_call` (model id, tier, prompt version, tokens in/out/reasoning, cached tokens if the provider reports them, latency).
+**Tables** (SQLite in dev, Postgres in prod, as every platform module):
+
+| Table | What it holds |
+|---|---|
+| `m06_event` | **The truth.** Append-only. Unique on `(session_id, turn_index, step)` (idempotency) and on `(session_id, seq)` (the compare-and-swap, §6.8). The plan lives here as a `plan.set` payload rather than in a table of its own. |
+| `m06_session` | One row per session. `occupying_key` is the candidate id while live or paused and NULL otherwise; a plain UNIQUE on it enforces EC-6.13 identically on SQLite and Postgres, which both allow many NULLs. |
+| `m06_checkpoint` | The fold, cached: `version`, `last_seq`, `state_json`. Only ever moved forward. |
+| `m06_turn` | A projection of the log for queries a fold is bad at (the 90-day `seen_item_ids`); rebuildable. Carries `text_sha256`. |
+| `m06_eval_outbox`, `m06_ledger_outbox` | What M06 owes M13 and M02, written with the turn. |
+| `m06_llm_call` | Model id, tier, prompt version, tokens in/out/reasoning, cached tokens if the provider reports them, latency, time to first token. |
 
 ---
 
@@ -581,14 +592,23 @@ Personas are data (`personas/*.yaml`), validated at load: a persona file missing
 Session state is a **fold over `m06_event`**. The checkpoint is a cache of that fold, not the truth:
 
 ```
-append event   INSERT … ON CONFLICT (session_id, turn_index, step) DO NOTHING
-               → a retried request re-reads what it already did instead of redoing it
-checkpoint     UPDATE m06_checkpoint SET state_json=?, version=version+1
-               WHERE session_id=? AND version=?        -- CAS: two tabs cannot both advance
-               0 rows → reload, re-fold, retry once, else tell the second tab it is stale
-resume         load checkpoint; if missing or behind the log, re-fold from events
-report         built from events alone, so a failed checkpoint write loses nothing (§10)
+read       state at seq N-1: the checkpoint, plus any events after its last_seq
+validate   apply(state, event) — an impossible transition never reaches disk
+append     INSERT event at seq N (= state.last_seq + 1), in one transaction with
+           the projections (session status, turn row)
+           · unique (session_id, turn_index, step) → a retried request finds its
+             own event and returns it instead of acting twice
+           · unique (session_id, seq) → THE compare-and-swap: two tabs that both
+             read N-1 cannot both write N; the loser re-reads and re-validates
+             ("That question has already been answered." → 409)
+checkpoint after commit, best effort: UPDATE … WHERE last_seq < :new
+resume     checkpoint if usable, re-fold the tail; unreadable → re-fold everything
+report     built from events alone, so a failed checkpoint write loses nothing (§10)
 ```
+
+The sequence number must come from the state that was validated, never from `max(seq)` read afterwards. Read afterwards, a writer that lost the race takes N+1 and commits an event validated against a state missing the winner's — the second answer to an already-answered question. This was found while building day 1, and a test forces the race.
+
+*Revision 2 originally put the compare-and-swap on the checkpoint's `version`. Putting it on the event's `seq` is strictly stronger — it guards the truth rather than the cache — and it lets the checkpoint be written after the commit, which is what makes §10's "checkpoint write fails → nothing lost" true by construction.*
 
 **Never in `state_json`: the provisional θ** (Trap 9, FR-6.25). It lives in process memory keyed by session. After a process restart the session re-seeds M05 from M04's posterior — a provisional estimate that loses a few steps has lost nothing it was entitled to keep. AC-6.13 serialises a checkpoint after a 30-turn scripted session and fails on any key matching `theta`.
 

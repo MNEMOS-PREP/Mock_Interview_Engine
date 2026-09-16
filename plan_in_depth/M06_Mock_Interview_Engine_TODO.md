@@ -1,8 +1,19 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 0%** — 0 of 26 functional requirements met. **Build started 2026-09-16**; the spec was revised to Revision 2 the same day after [M06_REVIEW.md](M06_REVIEW.md), which added FR-6.23–6.26 — each one an obligation a shipped module already places on M06, not new scope. Of the 26, **21 can be met in full in Phase 1**, **4 only in part** (FR-6.10, 6.11 and 6.22 for text; FR-6.21 as record-only), and **FR-6.20 not at all** until M13 ships a `push_back` rubric.
+> **Completion: 8%** — 0 of 26 functional requirements met, **4 partially**:
+> - FR-6.12: pause once, capped at 5 min.
+> - FR-6.13: checkpoint recovery, without the reconnect flow.
+> - FR-6.19: event log and replay check, with no model calls to trace yet.
+> - FR-6.26: identity on every route built so far.
 >
-> _Method: `(met + ½ × partial) ÷ total`, counted from the spec, 2026-09-16. One measure applied the same way to all nineteen modules so they compare; it counts requirements, not screens or gates._
+> **Day 1 of 15 is done.** No turn loop exists yet, so nothing a student would call an interview runs.
+>
+> The spec was revised to Revision 2 on 2026-09-16 after [M06_REVIEW.md](M06_REVIEW.md), which added FR-6.23–6.26. Each is an obligation a shipped module already places on M06, not new scope. Of the 26:
+> - 21 can be met in full in Phase 1;
+> - 4 only in part: FR-6.10, 6.11 and 6.22 for text, and FR-6.21 as record-only;
+> - FR-6.20 not at all, until M13 ships a `push_back` rubric.
+>
+> _Method: `(met + ½ × partial) ÷ total`, audited against shipped code, 2026-09-16. One measure applied the same way to all nineteen modules so they compare; it counts requirements, not screens or gates._
 
 Task list for taking **M6 — Mock Interview Engine** to 100% of [M06_Mock_Interview_Engine.md](M06_Mock_Interview_Engine.md) (Revision 2).
 
@@ -37,7 +48,12 @@ _Nothing scouted for this module yet._
 
 | | |
 |---|---|
-| Status | **Plan revised (Revision 2); day 1 of 15 in progress.** |
+| Status | **Day 1 of 15 done.** Session state, the write path, identity, adapters, the lifecycle API. No turn loop yet. |
+| Backend tests passing | **65**, no socket opened, no API key |
+| Release gates (`-m gate`) | **8** |
+| Route decorators | **11** on `/v1`, plus `/health` and `/status` |
+| Lint | `ruff check` and `ruff format --check` clean |
+| Frontend | not started (day 2) |
 | Spec | [Revision 2](M06_Mock_Interview_Engine.md), after [the review](M06_REVIEW.md) |
 | Scope | 26 functional requirements (21 of them P0), 16 acceptance metrics (7 release-blocking), 17 edge cases |
 | Upstreams | M01, M02, M04, M05, M13 — all shipped, all optional at runtime, each behind an adapter with a fixture |
@@ -57,7 +73,7 @@ _Nothing scouted for this module yet._
 
 | Day | | Task |
 |---|---|---|
-| 1 | 🟡 | Scaffold and state: repo, ports, `module.json`, Platform_Core v0.9.1, `/health`, `/v1/deps`, adapters + fixtures, session/turn/event tables, event fold, checkpoint CAS, one live session, `may_see` |
+| 1 | ✅ | Scaffold and state: repo, ports, `module.json`, Platform_Core v0.9.1, `/health`, `/v1/deps`, adapters + fixtures, session/turn/event tables, event fold, compare-and-swap, one live session, `may_see` |
 | 2 | ⬜ | Drill slice (`POST /v1/drills`) end to end + SSE + minimal stage UI + **latency harness on the live account** |
 | 3 | ⬜ | `ProbeStrategist` structured call, derived rungs, `break_depth`, `ProvisionalOutcome` → M05; decide LangGraph (§15.6) |
 | 4 | ⬜ | `InterviewerView` + outbound-request gates; eval outbox → M13; ledger → M02; consent adapter |
@@ -72,6 +88,23 @@ _Nothing scouted for this module yet._
 | 13 | ⬜ | UI pass, `routes.tsx`, mobile, ARIA |
 | 14 | ⬜ | Scripted student 20 × 4, manual QA |
 | 15 | ⬜ | Cross-module asks raised, TODO reconciled, human eval prep |
+
+### Day 1 — what landed, and what it found
+
+- **The seq bug.** `record()` first took the next seq from `max(seq)` read *after* loading state. A losing tab would then have committed a second answer to one question. Fixed by taking the seq from the validated state, and pinned by a test that forces the race; reverting the line fails it. Spec §6.8 now says so.
+- **The compare-and-swap moved** from the checkpoint's `version` to the event log's `(session_id, seq)`. This guards the truth rather than the cache, and lets the checkpoint be written after commit, so a checkpoint failure loses nothing (§10).
+- **Contracts captured from shipped code.** `Backend/tools/capture_contracts.py` runs under each upstream's own venv and dumps model shapes into `fixtures/contracts/`; `test_contracts.py` holds the adapters to them. M04 and M01 build dicts rather than models, so their shapes are hand-written with the source line.
+  - M05's package is not installed in its own venv. Run the tool there with `PYTHONPATH` set to M05's `Backend/`.
+- **Two new cross-module asks** (§7): M01 must forward identity on the drill hand-off, and M13 reads the wrong service-secret variable.
+- **Mutation-checked.** Three gates were broken on purpose (the seq line, the occupying key, a θ field) and each was caught.
+
+### Next: day 2
+
+1. **`POST /v1/drills`**, using M01's contract as `fixtures/contracts/M01.json` records it.
+2. **The text turn loop**, on fixture strategist and interviewer: present → answer → decide → rung or graceful exit → end.
+3. **SSE events.**
+4. **A minimal stage UI** in `Frontend/`, exporting `routes.tsx` for Platform_Shell.
+5. **The latency harness against the live Groq account**, whose p50/p95 per call gate everything built on day 3.
 
 ---
 
@@ -92,21 +125,21 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.9 | ⬜ Final Boss: pressure via mechanics, never rudeness | P0 | 1 |
 | FR-6.10 | ⬜ Voice / text / coding / canvas in one session | P0 | 1·text · voice ⛔ M11 · coding ⛔ M07 · canvas ⛔ M08 |
 | FR-6.11 | ⬜ Modality switch without state loss | P0 | 1·text |
-| FR-6.12 | ⬜ Pause once ≤ 5 min, resume | P1 | 1 |
-| FR-6.13 | ⬜ Reconnect and resume from checkpoint | P0 | 1 |
+| FR-6.12 | 🟡 Pause once ≤ 5 min, resume — once-only and the 5-min cap on resume are built and tested; the clock does not restart on its own if the student never resumes (day 11) | P1 | 1 |
+| FR-6.13 | 🟡 Reconnect and resume from checkpoint — checkpoint recovery (stale, unreadable, failed write) is built and tested; `resume-state` and the "welcome back" flow are not (day 11) | P0 | 1 |
 | FR-6.14 | ⬜ Evaluation never blocks the hot path | P0 | 1 |
 | FR-6.15 | ⬜ Interviewer cannot read scores, band or θ | P0 | 1 |
 | FR-6.16 | ⬜ Fixed context size | P0 | 1 |
 | FR-6.17 | ⬜ Pacing: 70% checkpoint, reserved closing | P0 | 1 |
 | FR-6.18 | ⬜ A report for every session, partial and failed included | P0 | 1 |
-| FR-6.19 | ⬜ Replayable state + model-call trace from the event log; Langfuse optional | P0 | 1 |
+| FR-6.19 | 🟡 Replayable state + model-call trace from the event log — `/trace` returns the log and a replay check; `m06_llm_call` exists and nothing writes it yet | P0 | 1 |
 | FR-6.20 | ⛔ Steelman probes, dispatched against `push_back` | P1 | blocked — M13 rubric |
 | FR-6.21 | ⬜ Record closing questions · ⛔ score them | P1 | 1 · scoring blocked — rubric |
 | FR-6.22 | ⬜ p95 text ≤ 2.5 s to first token · voice ≤ 1.2 s | P0 | 1·text · voice ⛔ M11 |
 | FR-6.23 | ⬜ Defend drill — M01's `POST /v1/drills` | P0 | 1 |
 | FR-6.24 | ⬜ M02 ledger: `asked`, `answered`, `skipped` | P0 | 1 |
 | FR-6.25 | ⬜ `ProvisionalOutcome` → M05 per verdict; θ never persisted | P0 | 1 |
-| FR-6.26 | ⬜ `may_see` on every candidate-scoped route | P0 | 1 |
+| FR-6.26 | 🟡 `may_see` on every candidate-scoped route — router-level, and session ids resolve to their student; met for every route that exists, and `/drills` (body-scoped) lands on day 2 | P0 | 1 |
 
 ---
 
@@ -120,7 +153,7 @@ Spec §13. A **[GATE]** is release-blocking; the rest are tracked.
 | AC-6.2 **[GATE]** | ⬜ M13 request carries no interviewer text, intent, steelman flag, verdict or other turn | unit test |
 | AC-6.3 **[GATE]** | ⬜ Interviewer never receives scores, band or θ | type-graph walk |
 | AC-6.4 **[GATE]** | ⬜ p95 text 2.5 s to first token (voice 1.2 s, Phase 3) | harness |
-| AC-6.13 **[GATE]** | ⬜ No provisional θ in persisted state | unit test |
+| AC-6.13 **[GATE]** | ✅ No provisional θ in persisted state — schema test + a real 30-turn checkpoint scanned | unit test |
 | AC-6.14 **[GATE]** | ⬜ No steelman while disabled, any mode | 0 / 10,000 per mode |
 | AC-6.15 **[GATE]** | ⬜ `asked` / `answered` ledger rows for every turn | 100% |
 | AC-6.5 | ⬜ Session completion rate | ≥ 80% |
@@ -131,7 +164,7 @@ Spec §13. A **[GATE]** is release-blocking; the rest are tracked.
 | AC-6.10 | ⬜ Context tokens per turn variance | < 15% |
 | AC-6.11 | ⬜ Prompt cache-hit ratio | ≥ 0.7, or "not measured" |
 | AC-6.12 | ⬜ Sessions where a student felt humiliated | 0 |
-| AC-6.16 | ⬜ Retries never double-ask, double-write or double-enqueue | chaos test |
+| AC-6.16 | 🟡 Retries never double-ask, double-write or double-enqueue — the event key is tested; the outboxes arrive on day 4 | chaos test |
 
 ---
 
@@ -149,12 +182,12 @@ difference between a demo and a product.
 | EC-6.5 | ⬜ Student asks for the answer | Hint ladder if the mode allows; else "I'll walk you through it in the report" |
 | EC-6.6 | ⬜ Answer contains prompt injection | Guard + rule filter; scored on the rest by M13 (which neutralises in place); logged |
 | EC-6.7 | ⛔ Mic dies mid-answer | Phase 3 (M11) |
-| EC-6.8 | ⬜ Browser refresh | Resume from checkpoint |
+| EC-6.8 | 🟡 Browser refresh | Resume from checkpoint — state survives; the stage UI that re-attaches does not exist yet |
 | EC-6.9 | ⬜ Session exceeds budget by 25% | Force closing (0% in Final Boss) |
 | EC-6.10 | ⬜ Student ends at minute 3 | Report for what exists, framed as a warm-up |
 | EC-6.11 | ⬜ All modalities fail | Clean end, apology, no score |
 | EC-6.12 | ⬜ LLM provider outage | Item stems and templates verbatim, rule strategist, eval stays queued, session completes |
-| EC-6.13 | ⬜ Two sessions in parallel | Blocked with an explanation (partial unique index) |
+| EC-6.13 | ✅ Two sessions in parallel | Blocked with an explanation and the id to resume; a unique nullable `occupying_key` enforces it at the database |
 | EC-6.14 | ⬜ Pauses and never returns | Auto-close after 30 min; partial report |
 | EC-6.15 | ⛔ Steelman accepted by a correct student | Blocked with FR-6.20 |
 | EC-6.16 | ⬜ Coding round with no editor | Dropped at plan time — which is every coding round until M07 exists |
@@ -168,13 +201,14 @@ Spec §5 (Revision 2).
 
 | Type / table | | |
 |---|---|---|
-| `PlannedSegment`, `Replan`, `InterviewPlan` | ⬜ | |
-| `ProbeLadderState`, `StrategistVerdict` | ⬜ | |
-| `Turn`, `SessionEvent`, `SessionFlags` | ⬜ | |
-| `m06_session` (partial unique: one live per candidate) | ⬜ | |
-| `m06_event` (unique `(session_id, turn_index, step)`) | ⬜ | |
-| `m06_checkpoint` (CAS on `version`, no θ) | ⬜ | |
-| `m06_eval_outbox`, `m06_ledger_outbox`, `m06_llm_call` | ⬜ | |
+| `PlannedSegment`, `Replan`, `InterviewPlan` | ✅ | `contracts.py` — declared; assembled on day 5 |
+| `ProbeLadderState`, `StrategistVerdict`, `Move` | ✅ | `contracts.py` — declared; driven on day 3 |
+| `TurnView`, `SessionFlags`, `SessionState` | ✅ | `contracts.py`, `state.py` — no θ field, gated |
+| `m06_session` (unique nullable `occupying_key`) | ✅ | EC-6.13 at the database |
+| `m06_event` (unique `(session, turn, step)` and `(session, seq)`) | ✅ | the idempotency key and the compare-and-swap |
+| `m06_checkpoint` (monotonic `last_seq`, no θ) | ✅ | a cache; stale or unreadable → re-fold |
+| `m06_turn` (projection, `text_sha256`) | ✅ | feeds `seen_item_ids` |
+| `m06_eval_outbox`, `m06_ledger_outbox`, `m06_llm_call` | 🟡 | tables exist; nothing writes them until days 2–4 |
 
 ---
 
@@ -186,6 +220,7 @@ the other module's TODO once raised; tick it here when it has been.
 | Module | Ask | Raised |
 |---|---|---|
 | M01 | `module.json` repo URL `mock-interview-engine` → `Mock_Interview_Engine` (launcher skips M06 otherwise) | ⬜ |
+| M01 | forward `X-Role` / `X-Candidate-Id` on the drill hand-off (M06 refuses anonymous callers) | ⬜ |
 | M05 | `/questions/select` reads its own `_SESSIONS` θ when the caller omits it | ⬜ |
 | M05 | `difficulty_offset` on `SelectionRequest` | ⬜ |
 | M05 | per-round-type counts on `/bank/health` | ⬜ |
@@ -193,6 +228,7 @@ the other module's TODO once raised; tick it here when it has been.
 | M04 | source `recent_sessions` from M06 | ⬜ |
 | M13 | `push_back` rubric variant (unblocks FR-6.20) | ⬜ |
 | M13 | `cs_core` and `communication` rubrics | ⬜ |
+| M13 | read `M04_SERVICE_SECRET`, as M04 and M15 do, not `SERVICE_SECRET` | ⬜ |
 | M02 | docstring: M06 writes `asked`/`answered` | ⬜ |
 | Platform | `modules_meta` M06 → built; `Platform_Shell` journey card | ⬜ (on ship) |
 
