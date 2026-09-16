@@ -1,8 +1,10 @@
 # M06 — plan and TODO
 
-This branch carries two files and nothing else:
+This branch carries the plan and nothing else:
 
-- `M06_Mock_Interview_Engine.md` — the specification.
+- `M06_Mock_Interview_Engine.md` — the specification (Revision 2).
+- `M06_REVIEW.md` — why Revision 2 says what it says: the review against the
+  shipped code of M01, M02, M04, M05 and M13.
 - `M06_Mock_Interview_Engine_TODO.md` — the running state: what is done, what is next, and
   what is deliberately deferred.
 
