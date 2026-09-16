@@ -1,0 +1,19 @@
+{
+  "_source": "Memory/Backend/backend_M04_Skill_Graph_Memory/service.py — _snapshot_out() and build_profile_summary(); theta_by_label(). Dicts, not models, so written by hand on 2026-09-16.",
+  "ProfileSummaryResponse": {
+    "properties": ["built_at", "candidate_id", "ontology_version", "payload", "pinned", "session_id", "summary_text", "summary_version"],
+    "required": ["candidate_id", "payload", "pinned", "session_id", "summary_text"]
+  },
+  "ProfileSummaryPayload": {
+    "properties": ["bottlenecks", "candidate_id", "facts", "measured_concepts", "ontology_version", "recent_sessions", "retests", "strongest", "weakest"],
+    "required": ["recent_sessions", "retests", "strongest", "weakest"]
+  },
+  "ThetaResponse": {
+    "properties": ["ontology_version", "per_topic", "unresolved"],
+    "required": ["per_topic", "unresolved"]
+  },
+  "ThetaTopic": {
+    "properties": ["label", "last_evidence_at", "mastery_p", "n_direct", "se", "state", "theta"],
+    "required": ["n_direct", "theta"]
+  }
+}

@@ -1,0 +1,78 @@
+===============================================================================
+  M06 - MOCK INTERVIEW ENGINE   ·   REQUIRED KEYS
+===============================================================================
+
+  Everything here is OPTIONAL. The module boots, the whole test suite passes,
+  and a session runs to a report with none of it set. What a key buys is the
+  quality of one stage, and GET /v1/deps and the session's own flags say what
+  is missing rather than guessing.
+
+  Copy this file to keys.txt (gitignored) and fill in what you have. Values
+  already in the environment win over the file.
+
+-------------------------------------------------------------------------------
+  THE INTERVIEWER AND THE STRATEGIST (spec §6.2, §6.5)
+-------------------------------------------------------------------------------
+
+  NOT READ YET. The turn loop lands on day 2-3 of the build order; this entry
+  describes what the key will buy so it is in keys.txt before then.
+
+  GROQ_API_KEYS     One or more Groq keys, comma-separated.
+
+                    With it: questions and probes are phrased for the moment,
+                    and ProbeStrategist reads each answer (one structured call
+                    per turn, `classification` tier).
+
+                    Without it: questions and probes are the items' own stems
+                    and follow-up templates, verbatim, and the strategist falls
+                    back to spec §10's rule — deepen once, then move on. The
+                    interview still runs; it is less adaptive, and the report
+                    says so.
+
+                    A POOL, not a key. Groq rate-limits per key, and several
+                    concurrent sessions each make two calls per turn.
+
+                    Get one at https://console.groq.com/keys
+
+  Which MODEL each tier calls is not configured here — `ai_core.models` is the
+  platform roster. Override without editing it:
+
+  AI_MODEL_GENERATION       the interviewer's phrasing, platform-wide
+  AI_MODEL_CLASSIFICATION   the strategist, platform-wide
+
+-------------------------------------------------------------------------------
+  M04 SERVICE ROUTES (spec §6.1)
+-------------------------------------------------------------------------------
+
+  M04_SERVICE_SECRET
+                    What M04's `require_service` checks, and what M06 sends as
+                    X-Service-Secret for the pinned profile summary and the
+                    posterior. Must match M04's keys.txt.
+
+                    Without it M04's service routes are OPEN on a dev machine
+                    (M04 warns once at startup), so nothing breaks locally.
+
+                    M13 reads a bare SERVICE_SECRET instead; M06 accepts that
+                    name as a fallback so one line can serve both.
+
+# M04_SERVICE_SECRET="shared-with-M04"
+
+-------------------------------------------------------------------------------
+  IDENTITY (FR-6.26)
+-------------------------------------------------------------------------------
+
+  AI_AUTH_MODE      `dev` (the default) trusts X-Role / X-Candidate-Id headers.
+                    Anything else requires a registered resolver, and with none
+                    every request is anonymous — which fails closed. See
+                    Platform_Core/PLATFORM_TODO.md §1 for the login screen that
+                    replaces this.
+
+-------------------------------------------------------------------------------
+  EVERYTHING ELSE
+-------------------------------------------------------------------------------
+
+  DATABASE_URL      default: sqlite:///./dev.db — Postgres for anything real.
+
+  M01_BASE_URL  M02_BASE_URL  M04_BASE_URL  M05_BASE_URL  M13_BASE_URL
+                    Point at a running upstream without editing module.json.
+                    Defaults are the reserved ports in PORTS.txt.

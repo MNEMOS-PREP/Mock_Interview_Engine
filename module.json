@@ -1,0 +1,92 @@
+{
+  "module": "M06",
+  "name": "Mock Interview Engine",
+  "spec": "plan_in_depth/M06_Mock_Interview_Engine.md",
+  "repo": "https://github.com/MNEMOS-PREP/Mock_Interview_Engine",
+  "owner": "E2",
+  "phase": "1-2",
+  "ports": {
+    "backend": 8106,
+    "frontend": 5206
+  },
+  "core": {
+    "repo": "https://github.com/MNEMOS-PREP/Platform_Core",
+    "version": "v0.9.1"
+  },
+
+  "_comment_depends_on": [
+    "Nothing here is required to START, and nothing is marked required: true.",
+    "M06 is the front door: a student who opened a session must be able to finish",
+    "it whichever of these is down. Each one narrows what the session can do and",
+    "the report says which; none of them ends the interview.",
+    "`on_missing` is shown to a student: write a sentence they can act on.",
+    "Override any base_url without editing this file: M05_BASE_URL=http://..."
+  ],
+  "depends_on": [
+    {
+      "module": "M02",
+      "name": "JD Parser & Coverage Planner",
+      "repo": "https://github.com/MNEMOS-PREP/jd-parser-coverage",
+      "reason": "the coverage plan a session is built on, and the coverage ledger M06 writes asked / answered / skipped to",
+      "on_missing": "This session isn't tailored to a job description - the planner is offline, so the rounds are an even split of what the question bank can cover.",
+      "base_url": "http://127.0.0.1:8102",
+      "health_path": "/health",
+      "required": false
+    },
+    {
+      "module": "M04",
+      "name": "Skill Graph & MNEMOS Memory",
+      "repo": "https://github.com/MNEMOS-PREP/Memory",
+      "reason": "the session-pinned profile summary, the posterior that seeds question selection, and consent",
+      "on_missing": "I don't have your history this time, so the interview starts from the beginning and won't update your skill graph.",
+      "base_url": "http://127.0.0.1:8104",
+      "health_path": "/health",
+      "required": false
+    },
+    {
+      "module": "M05",
+      "name": "Question Intelligence",
+      "repo": "https://github.com/MNEMOS-PREP/Question_Intelligence",
+      "reason": "the next question, its hints and follow-ups, and the in-session ability estimate it owns",
+      "on_missing": "Questions come from a short fixed set today, and this session won't be scored.",
+      "base_url": "http://127.0.0.1:8105",
+      "health_path": "/health",
+      "required": false
+    },
+    {
+      "module": "M13",
+      "name": "Evaluation Engine",
+      "repo": "https://github.com/MNEMOS-PREP/Evaluation_Engine",
+      "reason": "scores each answered turn against the rubric M05's selection names - asynchronously, never on the conversation's path",
+      "on_missing": "Your answers are saved and will be scored when the evaluator is back. The interview itself is unaffected.",
+      "base_url": "http://127.0.0.1:8113",
+      "health_path": "/health",
+      "required": false
+    },
+    {
+      "module": "M01",
+      "name": "Resume Ingestion",
+      "repo": "https://github.com/MNEMOS-PREP/resume-ingestion",
+      "reason": "your project claims for the project round; M01 is also the door defend drills come through",
+      "on_missing": "There's no project round this time - I can't read your resume right now.",
+      "base_url": "http://127.0.0.1:8101",
+      "health_path": "/health",
+      "required": false
+    }
+  ],
+
+  "_comment_feeds": [
+    "These consume M06. They are NOT dependencies - M06 never blocks on them.",
+    "The drill response and the ledger rows are contracts other modules already",
+    "read; additive changes are safe, renaming or removing a field breaks them."
+  ],
+  "feeds": [
+    { "module": "M13", "takes": "one evaluation request per answered turn, from an outbox" },
+    { "module": "M02", "takes": "coverage ledger rows: asked, answered, skipped" },
+    { "module": "M05", "takes": "a ProvisionalOutcome per strategist verdict; the session's seen items" },
+    { "module": "M04", "takes": "recent sessions for the profile summary" },
+    { "module": "M01", "takes": "the session id and URL for a defend drill" },
+    { "module": "M16", "takes": "break depths per concept, per session" },
+    { "module": "M19", "takes": "the session event log: transcript, plan, re-plans, pacing" }
+  ]
+}

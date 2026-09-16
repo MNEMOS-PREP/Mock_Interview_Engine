@@ -1,0 +1,86 @@
+{
+  "CoverageAllocation": {
+    "enums": {},
+    "properties": [
+      "already_asked",
+      "grounded",
+      "minutes",
+      "priority",
+      "question_budget",
+      "rationale",
+      "requirement_id",
+      "requirement_text",
+      "round_type"
+    ],
+    "required": [
+      "minutes",
+      "priority",
+      "question_budget",
+      "rationale",
+      "requirement_id",
+      "requirement_text",
+      "round_type"
+    ]
+  },
+  "CoveragePlan": {
+    "enums": {},
+    "properties": [
+      "allocated_minutes",
+      "allocations",
+      "candidate_id",
+      "difficulty",
+      "difficulty_note",
+      "jd_id",
+      "plan_version",
+      "rounds",
+      "saturated",
+      "suggestion",
+      "total_minutes",
+      "uncovered",
+      "unmeasurable"
+    ],
+    "required": [
+      "allocated_minutes",
+      "candidate_id",
+      "jd_id",
+      "total_minutes"
+    ]
+  },
+  "LedgerEventIn": {
+    "enums": {},
+    "properties": [
+      "jd_id",
+      "requirement_id",
+      "score",
+      "state",
+      "turn_id"
+    ],
+    "required": [
+      "jd_id",
+      "requirement_id",
+      "state"
+    ]
+  },
+  "PlanIn": {
+    "enums": {},
+    "properties": [
+      "minutes"
+    ],
+    "required": []
+  },
+  "PlannedRound": {
+    "enums": {},
+    "properties": [
+      "difficulty",
+      "minutes",
+      "question_count",
+      "requirement_ids",
+      "round_type"
+    ],
+    "required": [
+      "minutes",
+      "question_count",
+      "round_type"
+    ]
+  }
+}

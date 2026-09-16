@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-interviewer-backend"
+version = "0.1.0"
+description = "AI Interviewer / placement preparation platform — M06 Mock Interview Engine"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "sqlmodel>=0.0.22",
+    "uvicorn[standard]>=0.30",
+    "pyyaml>=6.0",
+    # Shared platform foundation. PINNED BY TAG on purpose: tracking main is
+    # how you get a surprise breakage on a Tuesday. v0.9.x is where
+    # `ai_core.identity` landed, and M06 is written against it from day one
+    # rather than retrofitted (PLATFORM_TODO §1).
+    "ai-core @ git+https://github.com/MNEMOS-PREP/Platform_Core@v0.9.1#subdirectory=python",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+    "ruff>=0.6",
+]
+
+[tool.setuptools.packages.find]
+# This repo holds ONE module. Shared wiring comes from the `ai-core` package.
+include = ["backend_*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+# Personas and the fixture playlist are data, not code, and both are
+# load-bearing: the fixtures are what let this module run with no upstream.
+"backend_M06_Mock_Interview_Engine" = ["personas/*.yaml", "fixtures/*.json", "fixtures/contracts/*.json"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+# `N` (pep8-naming) is deliberately NOT selected: packages are named
+# backend_M06_Mock_Interview_Engine to match plan_in_depth/ and Frontend/,
+# which would trip N999 invalid-module-name.
+
+[tool.ruff.lint.per-file-ignores]
+# `Depends(...)` / `Query(...)` in argument defaults is the canonical FastAPI
+# idiom, not the mutable-default bug B008 exists to catch.
+"**/router.py" = ["B008"]
+"**/access.py" = ["B008"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["backend_M06_Mock_Interview_Engine"]
+markers = [
+    "gate: release-blocking acceptance gate (spec §13)",
+]

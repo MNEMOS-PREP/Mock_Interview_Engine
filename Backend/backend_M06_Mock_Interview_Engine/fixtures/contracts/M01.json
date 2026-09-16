@@ -1,0 +1,15 @@
+{
+  "_source": "resume-ingestion/Backend/backend_M01_Resume_Ingestion/router.py — start_drill() at :1372 builds this body inline and reads session_id|id and url|session_url back. Written by hand on 2026-09-16.",
+  "DrillRequest": {
+    "properties": ["candidate_id", "claim_id", "claim_text", "probes", "source_module"],
+    "required": ["candidate_id", "claim_id", "claim_text", "probes", "source_module"]
+  },
+  "DrillProbe": {
+    "properties": ["depth", "expects", "question"],
+    "required": ["depth", "question"]
+  },
+  "DrillResponseKeysRead": {
+    "properties": ["id", "session_id", "session_url", "url"],
+    "required": []
+  }
+}

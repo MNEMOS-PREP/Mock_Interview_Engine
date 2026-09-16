@@ -1,0 +1,45 @@
+# ── Python ───────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# ── Node ─────────────────────────────────────────────────────────────────
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# ── Local data & secrets ─────────────────────────────────────────────────
+*.db
+*.sqlite3
+.env
+.env.*
+!.env.example
+
+# Real credentials. The committed template with dummy values, and the list of
+# what each key buys you, is required_keys.txt - keep the two in step.
+keys.txt
+
+# Launcher bookkeeping: one PID file per running service. Machine-local by
+# definition.
+.run/
+
+# ── Interview data ───────────────────────────────────────────────────────
+# Transcripts, session exports and any audio from a session are a real
+# student's words. Local dev databases are already covered by *.db above; this
+# covers the exports and recordings that are not. They do not go in git, ever.
+session_exports/
+recordings/
+*.wav
+*.mp3
+*.m4a
+*.webm
+
+# ── Editors / OS ─────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

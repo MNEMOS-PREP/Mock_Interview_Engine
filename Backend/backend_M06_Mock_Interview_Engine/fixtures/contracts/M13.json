@@ -1,0 +1,23 @@
+{
+  "EvaluateRequest": {
+    "enums": {},
+    "properties": [
+      "answer_text",
+      "candidate_id",
+      "canvas",
+      "code",
+      "consent_id",
+      "ensemble",
+      "hint_level_used",
+      "question_id",
+      "question_label",
+      "round_type",
+      "session_id",
+      "supersedes",
+      "turn_id"
+    ],
+    "required": [
+      "answer_text"
+    ]
+  }
+}

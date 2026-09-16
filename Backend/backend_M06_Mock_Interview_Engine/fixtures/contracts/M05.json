@@ -1,0 +1,178 @@
+{
+  "CloseRequest": {
+    "enums": {},
+    "properties": [
+      "posterior"
+    ],
+    "required": []
+  },
+  "FlagRequest": {
+    "enums": {},
+    "properties": [
+      "candidate_id",
+      "note",
+      "reason"
+    ],
+    "required": [
+      "reason"
+    ]
+  },
+  "FollowUpTemplate": {
+    "enums": {
+      "depth": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    "properties": [
+      "depth",
+      "template",
+      "triggers_when"
+    ],
+    "required": [
+      "depth",
+      "template"
+    ]
+  },
+  "KeyPoint": {
+    "enums": {},
+    "properties": [
+      "id",
+      "required",
+      "statement",
+      "weight"
+    ],
+    "required": [
+      "id",
+      "statement"
+    ]
+  },
+  "ObserveRequest": {
+    "enums": {},
+    "properties": [
+      "concept_id",
+      "outcome"
+    ],
+    "required": [
+      "concept_id",
+      "outcome"
+    ]
+  },
+  "ProvisionalOutcome": {
+    "enums": {},
+    "properties": [
+      "band",
+      "confidence",
+      "latency_ms",
+      "turn_id"
+    ],
+    "required": [
+      "band",
+      "turn_id"
+    ]
+  },
+  "Question": {
+    "enums": {},
+    "properties": [
+      "company_tags",
+      "concepts",
+      "consent_id",
+      "difficulty_band",
+      "elo",
+      "follow_ups",
+      "grounded_for_candidate",
+      "grounded_on",
+      "hint_ladder",
+      "id",
+      "irt",
+      "key_points",
+      "min_rubric_version",
+      "modality",
+      "ontology_version",
+      "provenance",
+      "quality",
+      "reference_answer",
+      "role_archetypes",
+      "round_types",
+      "rubric_round_type",
+      "scored_use_approved",
+      "status",
+      "stem",
+      "stem_simhash",
+      "theta_eligible",
+      "time_budget_s"
+    ],
+    "required": [
+      "concepts",
+      "id",
+      "modality",
+      "provenance",
+      "round_types",
+      "rubric_round_type",
+      "stem"
+    ]
+  },
+  "SeedRequest": {
+    "enums": {},
+    "properties": [
+      "candidate_id",
+      "posterior",
+      "snapshot_id"
+    ],
+    "required": [
+      "candidate_id"
+    ]
+  },
+  "SelectionRequest": {
+    "enums": {},
+    "properties": [
+      "bypass_freshness",
+      "candidate_id",
+      "coverage_debt",
+      "forced_item_ids",
+      "is_first_of_round",
+      "modality_allowed",
+      "provisional_updates",
+      "recent_item_ids",
+      "required_requirement_ids",
+      "round_progress",
+      "round_type",
+      "se",
+      "seen_item_ids",
+      "session_id",
+      "stretch_used",
+      "theta_provisional",
+      "theta_seeded_from",
+      "time_remaining_s"
+    ],
+    "required": [
+      "candidate_id",
+      "round_type",
+      "session_id"
+    ]
+  },
+  "SelectionResult": {
+    "enums": {},
+    "properties": [
+      "alternatives",
+      "disclosure",
+      "expected_information",
+      "n_categories",
+      "params_source",
+      "predicted_score",
+      "question_id",
+      "reason",
+      "round_type",
+      "theta_eligible"
+    ],
+    "required": [
+      "question_id",
+      "reason",
+      "round_type"
+    ]
+  }
+}

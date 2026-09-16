@@ -1,0 +1,111 @@
+{
+  "_about": [
+    "M06's own last-resort questions, used ONLY when M05 cannot be reached (spec §10).",
+    "Stems, concepts and key points are copied from M05's authored playlist",
+    "(Question_Intelligence/.../bank/dsa_verbal.playlist.yaml) so the degraded path asks",
+    "the same thing M05 would; follow-ups and hints are added because the ladder needs them.",
+    "These turns are NOT sent to M13: M13 resolves a question package from M05, and these",
+    "ids do not exist there. The report says so. Keep this list short on purpose - if it is",
+    "being used often, the fix is M05's uptime, not more items here."
+  ],
+  "version": "m06-fallback-1",
+  "items": [
+    {
+      "id": "6e0c5d58-6b6b-5c1f-9d2a-0f4c1d7c0a01",
+      "label": "fb_complexity_of_a_loop",
+      "stem": "You have a single loop over an array of n elements doing constant work each pass. What is the time complexity, and why?",
+      "modality": "verbal",
+      "round_types": ["dsa_verbal"],
+      "rubric_round_type": "dsa_verbal",
+      "difficulty_band": "intro",
+      "time_budget_s": 120,
+      "concepts": [{"concept_id": "concept:time_complexity", "weight": 1.0, "role": "primary"}],
+      "key_points": [
+        {"id": "kp1", "statement": "States the complexity is linear in n.", "weight": 1.0, "required": true},
+        {"id": "kp2", "statement": "Justifies it by constant work repeated n times.", "weight": 1.0, "required": false}
+      ],
+      "follow_ups": [
+        {"depth": 1, "template": "What would change if the loop body called a function that itself looped over the array?"},
+        {"depth": 2, "template": "Why do we drop constants when we write that down?"},
+        {"depth": 3, "template": "Can you think of a case where the constant actually matters in practice?"}
+      ],
+      "hint_ladder": [
+        "Think about how many times the body runs.",
+        "If each pass costs the same, what does the total grow with?"
+      ]
+    },
+    {
+      "id": "6e0c5d58-6b6b-5c1f-9d2a-0f4c1d7c0a02",
+      "label": "fb_stack_vs_queue",
+      "stem": "Give me a problem that needs a stack and one that needs a queue.",
+      "modality": "verbal",
+      "round_types": ["dsa_verbal"],
+      "rubric_round_type": "dsa_verbal",
+      "difficulty_band": "intro",
+      "time_budget_s": 120,
+      "concepts": [{"concept_id": "concept:stacks", "weight": 0.5, "role": "primary"}, {"concept_id": "concept:queues", "weight": 0.5, "role": "secondary"}],
+      "key_points": [
+        {"id": "kp1", "statement": "Gives a last-in-first-out use for the stack.", "weight": 1.0, "required": true},
+        {"id": "kp2", "statement": "Gives a first-in-first-out use for the queue.", "weight": 1.0, "required": false}
+      ],
+      "follow_ups": [
+        {"depth": 1, "template": "Why does your stack example need last-in-first-out specifically?"},
+        {"depth": 2, "template": "How would you build a queue if all you had were two stacks?"},
+        {"depth": 3, "template": "What does each operation cost in that two-stack queue, on average?"}
+      ],
+      "hint_ladder": [
+        "Think about something that has to be undone in reverse order.",
+        "Think about something that has to be served in the order it arrived."
+      ]
+    },
+    {
+      "id": "6e0c5d58-6b6b-5c1f-9d2a-0f4c1d7c0a03",
+      "label": "fb_dictionary_use_case",
+      "stem": "You need to count how many times each word appears in a document. What structure do you use and why?",
+      "modality": "verbal",
+      "round_types": ["dsa_verbal"],
+      "rubric_round_type": "dsa_verbal",
+      "difficulty_band": "intro",
+      "time_budget_s": 150,
+      "concepts": [{"concept_id": "concept:hashing", "weight": 0.7, "role": "primary"}, {"concept_id": "concept:arrays", "weight": 0.3, "role": "secondary"}],
+      "key_points": [
+        {"id": "kp1", "statement": "Chooses a hash map or dictionary.", "weight": 1.0, "required": true},
+        {"id": "kp2", "statement": "Justifies it by constant-time lookup on arbitrary keys.", "weight": 1.0, "required": false}
+      ],
+      "follow_ups": [
+        {"depth": 1, "template": "Why is lookup in that structure fast?"},
+        {"depth": 2, "template": "What makes it constant time, rather than something slower?"},
+        {"depth": 3, "template": "And if two different words hash to the same slot?"},
+        {"depth": 4, "template": "When would you pick a sorted structure over it instead?"}
+      ],
+      "hint_ladder": [
+        "You want to go from a word straight to its count.",
+        "Which structure maps an arbitrary key to a value in one step?"
+      ]
+    },
+    {
+      "id": "6e0c5d58-6b6b-5c1f-9d2a-0f4c1d7c0a04",
+      "label": "fb_recursion_in_your_own_words",
+      "stem": "Explain recursion to someone who has just learned loops.",
+      "modality": "verbal",
+      "round_types": ["dsa_verbal"],
+      "rubric_round_type": "dsa_verbal",
+      "difficulty_band": "intro",
+      "time_budget_s": 150,
+      "concepts": [{"concept_id": "concept:recursion", "weight": 1.0, "role": "primary"}],
+      "key_points": [
+        {"id": "kp1", "statement": "Describes a function calling itself on a smaller input.", "weight": 1.0, "required": true},
+        {"id": "kp2", "statement": "Mentions a stopping condition or base case.", "weight": 1.0, "required": false}
+      ],
+      "follow_ups": [
+        {"depth": 1, "template": "What happens if the base case is missing?"},
+        {"depth": 2, "template": "Where does the computer keep track of the calls that haven't finished yet?"},
+        {"depth": 3, "template": "When would you rewrite a recursive solution as a loop, and why?"}
+      ],
+      "hint_ladder": [
+        "Think about solving a smaller version of the same problem.",
+        "What stops it from going on forever?"
+      ]
+    }
+  ]
+}
