@@ -16,9 +16,19 @@ from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
-from backend_M06_Mock_Interview_Engine import adapters
+from backend_M06_Mock_Interview_Engine import adapters, llm
 from backend_M06_Mock_Interview_Engine import models as _models  # noqa: F401 - registers tables
+from backend_M06_Mock_Interview_Engine import router as router_module
 from backend_M06_Mock_Interview_Engine.app import app
+
+
+@pytest.fixture(autouse=True)
+def no_network_model():
+    """`get_llm()` would read the real keys.txt beside the repos and go live.
+    Every test starts with the model off; a test that wants one installs a stub."""
+    llm.set_llm(llm.NullLLM(reason="tests run without a model"))
+    yield
+    llm.set_llm(None)
 
 
 @pytest.fixture
@@ -54,6 +64,7 @@ def client(engine, upstreams) -> Iterator[TestClient]:
             yield session
 
     app.dependency_overrides[get_session] = override
+    app.dependency_overrides[router_module.session_factory] = lambda: lambda: Session(engine)
     # Not a context manager: the lifespan would create tables in dev.db.
     yield TestClient(app)
     app.dependency_overrides.clear()

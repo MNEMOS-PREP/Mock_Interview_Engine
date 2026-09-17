@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 
 Mode = Literal["practice", "mock", "real_drive", "final_boss"]
 SegmentKind = Literal["warmup", "technical", "project", "behavioural", "closing"]
-QuestionSource = Literal["m05_bank", "m05_fallback", "m01_probe", "template"]
+QuestionSource = Literal["m05_bank", "m05_fallback", "m01_probe", "local_fallback", "template"]
 CompletionReason = Literal["submit", "timeout", "interrupted", "endpoint", "barge_in"]
 
 
@@ -193,6 +193,9 @@ class StrategistVerdict(BaseModel):
     asks_for_answer: bool = False
     key_points_missing: list[str] = Field(default_factory=list)
     latency_ms: int = 0
+    #: `rule` is spec §10's fallback when the model is off or failed. It is not
+    #: a judgement of the answer, so it is never sent to M05 as one.
+    source: Literal["model", "rule"] = "model"
 
 
 # ─────────────────────────────────────────────────────────────────────────

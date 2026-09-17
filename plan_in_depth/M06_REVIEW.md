@@ -382,9 +382,12 @@ None of these blocks day 1. Each is small and belongs in its own repo's TODO.
 | M05 | per-round-type counts on `/bank/health` | Plan-time availability without probing `/select` | small |
 | M04 | `GET /v1/candidates/{cid}/consent?purpose=` | M13 requires `consent_id` and nothing can look one up | small |
 | M04 | read M06's recent sessions into `recent_sessions` | The slot is promised and has no source | small |
+| M13 | **A live M05 question source.** `adapters.get_questions()` is always `FixtureQuestions`, so `POST /v1/evaluations` 404s on any real bank id — no M05 item can be scored today, which blocks the Phase-1 exit gate. M05 already serves `GET /v1/questions/{id}/package?round_type=` for exactly this | Without it M06's evaluation outbox has nowhere to deliver (day 4) | ~30 lines |
 | M13 | `push_back` rubric variant, dispatched by caller | Unblocks FR-6.20 | rubric authoring |
 | M13 | `cs_core`, `communication` rubrics (the Phase 1 set) | Only `dsa_verbal` is scoreable today | rubric authoring |
 | M02 | docstring: M06 writes `asked` and `answered`, not M05 | The docstring names a writer that has no client | 1 line |
+| M05 | `Bank.get()` searches `questions` only, so an item its own selector returned from the fallback playlist 404s on `GET /questions/{id}` | M06 cannot fetch the item M05 just chose; it falls back and says the bank is unavailable | 1 line |
+| Platform_Shell | add `interviews`, `drills`, `agents` → `m06` to the proxy's OWNER table, and mount `m06Routes` | Until then the shell has no M06; M06's nouns are already disjoint from every other module's | ~6 lines |
 | Platform | `modules_meta` M06 → built; `Platform_Shell/journey.ts` "Not built — Q2" | When M06 ships | 2 lines |
 
 ---

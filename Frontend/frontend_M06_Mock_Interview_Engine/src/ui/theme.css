@@ -1,0 +1,98 @@
+/*
+  CRITICAL — do not split this import out.
+
+  Tailwind v4 generates utilities from `@theme` only for files inside the entry
+  that imports Tailwind. Importing core's stylesheet and this one SEPARATELY
+  from standalone.tsx looks equivalent and is not: the custom properties get
+  emitted, so the page renders and nothing errors, but the utilities built from
+  them are never generated and the layout collapses in a way that looks like a
+  CSS bug rather than a build one.
+*/
+@import "@ai/core/styles.css";
+
+/*
+  M06 — Mock Interview Engine · design layer.
+
+  ── The idea ────────────────────────────────────────────────────────────────
+  This is the only screen in the platform where the product is *waiting for a
+  person*. Every other module renders a thing it knows; this one renders a
+  conversation in progress, and the student's attention has to be on the
+  question and on their own answer — not on chrome, and never on a score.
+
+  So: one column, a reading measure, the question set large enough to be the
+  page, and the answer box directly under it. The status strip is one line and
+  is the only other thing on screen. Spec §2.2's list of what is deliberately
+  absent is the whole design constraint — no live score, no correct/incorrect
+  indicator, no progress-toward-a-grade — so there is no space reserved for
+  any of them.
+
+  ── Why the session palette is inherited, not invented ──────────────────────
+  `@ai/core` already defines `--color-session-*` (idle, listening, thinking,
+  speaking, degraded) for exactly this module, deliberately low-chroma: "a live
+  interview surface with a saturated status light reads as an alarm". Using
+  them keeps M11's voice surface and M14's GD arena looking like the same
+  product when they arrive.
+*/
+
+@theme {
+  /* The conversation's measure. Wider than prose because answers contain code
+     fragments, narrower than a dashboard because it is read, not scanned. */
+  --container-conversation: 44rem;
+
+  /* The question, set as the page's largest element. */
+  --text-question: 1.375rem;
+  --text-question--line-height: 1.9rem;
+  --text-question--letter-spacing: -0.01em;
+}
+
+@layer components {
+  /* A turn in the transcript. The interviewer speaks in the page's voice; the
+     student's own words are inset and quieter, because they are already theirs
+     — the emphasis belongs on what was asked. */
+  .turn-interviewer {
+    @apply text-question text-ink;
+  }
+
+  .turn-candidate {
+    @apply border-l-2 border-line-strong pl-4 text-[0.95rem] leading-relaxed text-ink-soft;
+  }
+
+  /* The interviewer is writing. Three dots, no text: spec §8 — text implies a
+     stall, and under 800 ms nothing on screen may change at all. */
+  .thinking-dot {
+    @apply inline-block h-1.5 w-1.5 rounded-full bg-session-thinking;
+    animation: thinking 1.4s ease-in-out infinite;
+  }
+
+  .thinking-dot:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .thinking-dot:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  @keyframes thinking {
+    0%,
+    100% {
+      opacity: 0.25;
+      transform: translateY(0);
+    }
+    50% {
+      opacity: 1;
+      transform: translateY(-2px);
+    }
+  }
+
+  /* Reduced motion: the dots stay, the movement goes (spec §8). */
+  @media (prefers-reduced-motion: reduce) {
+    .thinking-dot {
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+
+  .status-dot {
+    @apply inline-block h-2 w-2 shrink-0 rounded-full;
+  }
+}

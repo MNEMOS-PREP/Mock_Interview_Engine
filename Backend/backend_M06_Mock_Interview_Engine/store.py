@@ -33,6 +33,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -54,6 +55,23 @@ FRESHNESS_DAYS = 90
 
 #: Re-read and re-validate this many times when another writer took our seq.
 MAX_APPEND_RETRIES = 3
+
+
+#: Called with every event this process writes, immediately after it commits.
+#: The app points it at the token broker so the live stream is push-driven:
+#: polling the log for them instead means a reader blocked behind the writer's
+#: SQLite lock, and a "live" preview that arrives after the answer it previews.
+#: None in tests and in any process with no stream attached.
+NOTIFY: Callable[[SessionEvent], None] | None = None
+
+
+def notify(event: SessionEvent) -> None:
+    if NOTIFY is None:
+        return
+    try:
+        NOTIFY(event)
+    except Exception:  # noqa: BLE001 - a subscriber must never fail a write
+        log.warning("event notify failed for %s", event.session_id)
 
 
 class LiveSessionExists(Exception):
@@ -300,6 +318,7 @@ def record(
             # the loop decide which.
             continue
         db.refresh(event)
+        notify(event)
         try:
             write_checkpoint(db, state)
         except Exception:  # noqa: BLE001 - the event is committed; the cache can lag
@@ -319,6 +338,7 @@ def create_session(
     jd_id: uuid.UUID | None = None,
     source_module: str | None = None,
     source_ref: str | None = None,
+    drill: dict | None = None,
 ) -> tuple[InterviewSession, SessionState]:
     """A new session in `planned`. Refused while one is live or paused (EC-6.13).
 
@@ -363,6 +383,7 @@ def create_session(
             "jd_id": str(jd_id) if jd_id else None,
             "source_module": source_module,
             "source_ref": source_ref,
+            "drill": drill,
         },
     )
     return row, created.state

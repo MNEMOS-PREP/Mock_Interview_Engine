@@ -1,38 +1,44 @@
 """M06 routes — spec §7, Revision 2.
 
-Day 1 of the build order: the session lifecycle, the event trace and the
-student's own history. Planning (day 5), the turn loop and drills (day 2) land
-on this same router.
+Every route except `/v1/deps` and `/v1/agents` names a student, and
+`enforce_access` sits on the router so none can be written without it
+(FR-6.26). `POST /drills` and `POST /sessions` name the student in the BODY,
+and check it in the handler.
 
-Every route except `/v1/deps` names a student, and `enforce_access` sits on
-the router so none can be written without it (FR-6.26).
+Routes do not write sessions; `engine.Engine` does, through `store.record()`.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+import queue
 import uuid
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 
+from ai_core.db import engine as db_engine
 from ai_core.db import get_session
 from ai_core.dependencies import DependencyStatus
-from ai_core.identity import Principal
+from ai_core.identity import Principal, Role
 from ai_core.timeutil import utcnow
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from . import report as report_module
 from . import store
 from .access import enforce_access, require_candidate
-from .contracts import (
-    InterviewPlan,
-    Mode,
-    SessionFlags,
-    SessionKind,
-    SessionStatus,
-    TurnView,
-)
+from .adapters import Upstreams, get_upstreams
+from .broker import broker
+from .contracts import InterviewPlan, Mode, SessionFlags, SessionKind, SessionStatus, TurnView
 from .dependencies import deps
+from .engine import MAX_ANSWER_CHARS, AnswerRejected, Engine, SessionNotFound, compiled_step
+from .llm import get_llm
 from .models import LLMCall
+from .orchestration import mermaid, snapshot
+from .public import public_event
 from .state import InvalidTransition, SessionState
 
 router = APIRouter(
@@ -44,6 +50,31 @@ PAUSE_LIMIT_S = 5 * 60
 #: A session shorter than this is not an interview; longer is not a session
 #: anyone finishes. The UI offers 15–60.
 MIN_MINUTES, MAX_MINUTES = 2, 90
+#: The stream is push-driven (`store.NOTIFY`); it waits this long on the broker
+#: for the next frame before doing anything else.
+SSE_WAIT_S = 0.2
+#: The safety net: how often it reads the log anyway, for events written by
+#: another process — and the first read, which replays what a reconnecting
+#: client missed. Deliberately slow, because a reader competing with the writer
+#: for SQLite's lock is what made the "live" preview arrive late.
+SSE_SWEEP_S = 2.0
+SSE_HEARTBEAT_S = 15.0
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Dependencies
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def get_engine(
+    db: Session = Depends(get_session), upstreams: Upstreams = Depends(get_upstreams)
+) -> Engine:
+    return Engine(db=db, upstreams=upstreams, llm=get_llm())
+
+
+def session_factory() -> Callable[[], Session]:
+    """For the SSE stream, which outlives the request's own session."""
+    return lambda: Session(db_engine)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -60,6 +91,34 @@ class SessionCreate(BaseModel):
     minutes: int = Field(default=45, ge=MIN_MINUTES, le=MAX_MINUTES)
 
 
+class DrillProbe(BaseModel):
+    depth: int = Field(ge=0, le=5)
+    question: str = Field(min_length=1, max_length=500)
+    expects: str | None = Field(default=None, max_length=500)
+
+
+class DrillCreate(BaseModel):
+    """M01's hand-off, exactly as `resume-ingestion` sends it (router.py:1416)."""
+
+    candidate_id: uuid.UUID
+    source_module: str = "M01"
+    claim_id: str = Field(min_length=1, max_length=200)
+    claim_text: str = Field(min_length=1, max_length=2000)
+    probes: list[DrillProbe] = Field(min_length=1, max_length=6)
+
+
+class DrillCreated(BaseModel):
+    session_id: uuid.UUID
+    #: M06 owns the URL shape (M01's DrillHandoff docstring). Relative to the
+    #: web app, which mounts this module under /mock in Platform_Shell.
+    url: str
+
+
+class AnswerIn(BaseModel):
+    question_turn_id: uuid.UUID
+    text: str = Field(max_length=MAX_ANSWER_CHARS)
+
+
 class SessionOut(BaseModel):
     id: uuid.UUID
     candidate_id: uuid.UUID
@@ -72,8 +131,12 @@ class SessionOut(BaseModel):
     jd_id: uuid.UUID | None
     plan: InterviewPlan | None
     current_segment: int
-    turns: int
+    questions_asked: int
+    #: The interviewer turn waiting for an answer — what the answer box posts to.
+    open_turn_id: uuid.UUID | None
+    transcript: list[TurnView]
     flags: SessionFlags
+    drill_claim: str | None
     created_at: datetime | None
     started_at: datetime | None
     ended_at: datetime | None
@@ -81,7 +144,7 @@ class SessionOut(BaseModel):
 
 
 class EndRequest(BaseModel):
-    reason: str = "ended_by_student"
+    reason: str = Field(default="ended_by_student", max_length=100)
 
 
 class TraceOut(BaseModel):
@@ -118,8 +181,11 @@ def session_out(state: SessionState, now: datetime | None = None) -> SessionOut:
         jd_id=state.jd_id,
         plan=state.plan,
         current_segment=state.current_segment,
-        turns=len(state.transcript),
+        questions_asked=state.questions_asked,
+        open_turn_id=state.open_turn_id,
+        transcript=state.transcript,
         flags=state.flags,
+        drill_claim=(state.drill or {}).get("claim_text"),
         created_at=state.created_at,
         started_at=state.started_at,
         ended_at=state.ended_at,
@@ -138,6 +204,19 @@ def _conflict(exc: Exception) -> HTTPException:
     return HTTPException(status_code=409, detail=str(exc))
 
 
+def _live_conflict(exc: store.LiveSessionExists) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "message": (
+                "You already have an interview in progress. Finish or end it "
+                "before starting another — two at once would overwrite each other."
+            ),
+            "session_id": str(exc.session_id),
+        },
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────
 #  Meta
 # ─────────────────────────────────────────────────────────────────────────
@@ -149,12 +228,22 @@ def dependencies(force: bool = False) -> list[DependencyStatus]:
     return deps().statuses(force=force)
 
 
+@router.get("/agents", tags=["meta"])
+def agents() -> dict:
+    """Master plan §26.2: which agents run, which are ablated, and the step graph."""
+    return {
+        "agents": snapshot(),
+        "model_on": get_llm().available,
+        "step_graph": mermaid(compiled_step(get_llm())),
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────
-#  Session lifecycle
+#  Creating sessions
 # ─────────────────────────────────────────────────────────────────────────
 
 
-@router.post("/sessions", response_model=SessionOut, status_code=201)
+@router.post("/interviews", response_model=SessionOut, status_code=201)
 def create_session(
     body: SessionCreate,
     principal: Principal | None = Depends(enforce_access),
@@ -176,44 +265,81 @@ def create_session(
             jd_id=body.jd_id,
         )
     except store.LiveSessionExists as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": (
-                    "You already have an interview in progress. Finish or end it "
-                    "before starting another — two at once would overwrite each other."
-                ),
-                "session_id": str(exc.session_id),
-            },
-        ) from exc
+        raise _live_conflict(exc) from exc
     return session_out(state)
 
 
-@router.get("/sessions/{session_id}", response_model=SessionOut)
+@router.post("/drills", response_model=DrillCreated, status_code=201)
+def create_drill(
+    body: DrillCreate,
+    principal: Principal | None = Depends(enforce_access),
+    engine: Engine = Depends(get_engine),
+) -> DrillCreated:
+    """FR-6.23 — M01's "Practise defending this" (M06_REVIEW 1.5).
+
+    The caller is M01's backend, acting for the student; it must forward the
+    student's identity headers, as M02 does to M01. The session is created in
+    `planned`: the student lands on the drill page and starts it themselves.
+    """
+    require_candidate(principal, body.candidate_id)
+    try:
+        row, _state = engine.create_drill(
+            candidate_id=body.candidate_id,
+            claim_id=body.claim_id,
+            claim_text=body.claim_text,
+            probes=[p.model_dump() for p in body.probes],
+            source_module=body.source_module,
+        )
+    except store.LiveSessionExists as exc:
+        raise _live_conflict(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return DrillCreated(session_id=row.id, url=f"/mock/{row.id}")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  The session
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@router.get("/interviews/{session_id}", response_model=SessionOut)
 def read_session(session_id: uuid.UUID, db: Session = Depends(get_session)) -> SessionOut:
     _row_or_404(db, session_id)
     return session_out(store.load_state(db, session_id))
 
 
-@router.post("/sessions/{session_id}/start", response_model=SessionOut)
-def start_session(session_id: uuid.UUID, db: Session = Depends(get_session)) -> SessionOut:
-    row = _row_or_404(db, session_id)
+@router.post("/interviews/{session_id}/start", response_model=SessionOut)
+def start_session(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> SessionOut:
+    """Starts a planned session — and, on a live one, carries on (idempotent).
+
+    A client that reconnects calls this: whatever the session is owed (the
+    opening question, the next step for an answer already recorded) happens
+    once, however many times it is asked.
+    """
     try:
-        recorded = store.record(db, row, "session.started", step="start")
+        return session_out(engine.start(session_id))
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
     except store.LiveSessionExists as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "You already have an interview in progress.",
-                "session_id": str(exc.session_id),
-            },
-        ) from exc
+        raise _live_conflict(exc) from exc
     except (InvalidTransition, store.ConcurrentWrite) as exc:
         raise _conflict(exc) from exc
-    return session_out(recorded.state)
 
 
-@router.post("/sessions/{session_id}/pause", response_model=SessionOut)
+@router.post("/interviews/{session_id}/answer", response_model=SessionOut)
+def answer(
+    session_id: uuid.UUID, body: AnswerIn, engine: Engine = Depends(get_engine)
+) -> SessionOut:
+    """A typed answer. Returns the session with the interviewer's next line."""
+    try:
+        return session_out(engine.answer(session_id, body.question_turn_id, body.text))
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
+    except (AnswerRejected, store.ConcurrentWrite) as exc:
+        raise _conflict(exc) from exc
+
+
+@router.post("/interviews/{session_id}/pause", response_model=SessionOut)
 def pause_session(session_id: uuid.UUID, db: Session = Depends(get_session)) -> SessionOut:
     row = _row_or_404(db, session_id)
     state = store.load_state(db, session_id)
@@ -229,10 +355,10 @@ def pause_session(session_id: uuid.UUID, db: Session = Depends(get_session)) -> 
     return session_out(recorded.state)
 
 
-@router.post("/sessions/{session_id}/resume", response_model=SessionOut)
-def resume_session(session_id: uuid.UUID, db: Session = Depends(get_session)) -> SessionOut:
-    row = _row_or_404(db, session_id)
-    state = store.load_state(db, session_id)
+@router.post("/interviews/{session_id}/resume", response_model=SessionOut)
+def resume_session(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> SessionOut:
+    row = _row_or_404(engine.db, session_id)
+    state = store.load_state(engine.db, session_id)
     now = utcnow()
     at = now
     if state.status is SessionStatus.paused and state.flags.paused_at is not None:
@@ -243,51 +369,162 @@ def resume_session(session_id: uuid.UUID, db: Session = Depends(get_session)) ->
         if now.timestamp() > limit:
             at = datetime.fromtimestamp(limit, tz=now.tzinfo)
     try:
-        recorded = store.record(db, row, "session.resumed", step="resume", at=at)
+        store.record(engine.db, row, "session.resumed", step="resume", at=at)
     except (InvalidTransition, store.ConcurrentWrite) as exc:
         raise _conflict(exc) from exc
-    return session_out(recorded.state)
+    return session_out(engine.continue_session(session_id))
 
 
-@router.post("/sessions/{session_id}/end", response_model=SessionOut)
+@router.post("/interviews/{session_id}/end", response_model=SessionOut)
 def end_session(
     session_id: uuid.UUID,
     body: EndRequest | None = None,
-    db: Session = Depends(get_session),
+    engine: Engine = Depends(get_engine),
 ) -> SessionOut:
     """EC-6.10: ending early still produces a report — framed as a warm-up."""
-    row = _row_or_404(db, session_id)
-    reason = (body or EndRequest()).reason
-    state = store.load_state(db, session_id)
-    kind = "session.aborted" if state.status is SessionStatus.planned else "session.ended"
     try:
-        recorded = store.record(db, row, kind, step="end", payload={"reason": reason})
+        return session_out(engine.end(session_id, (body or EndRequest()).reason))
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
     except (InvalidTransition, store.ConcurrentWrite) as exc:
         raise _conflict(exc) from exc
-    return session_out(recorded.state)
 
 
-@router.get("/sessions/{session_id}/transcript", response_model=list[TurnView])
+@router.get("/interviews/{session_id}/transcript", response_model=list[TurnView])
 def transcript(session_id: uuid.UUID, db: Session = Depends(get_session)) -> list[TurnView]:
     _row_or_404(db, session_id)
     return store.load_state(db, session_id).transcript
 
 
-@router.get("/sessions/{session_id}/trace", response_model=TraceOut)
-def trace(session_id: uuid.UUID, db: Session = Depends(get_session)) -> TraceOut:
-    """FR-6.19 — the event log and every model call, and whether replay agrees."""
+@router.get("/interviews/{session_id}/report", response_model=report_module.SessionReport)
+def session_report(
+    session_id: uuid.UUID, db: Session = Depends(get_session)
+) -> report_module.SessionReport:
+    """FR-6.18 — for every session, finished or not (AC-6.1)."""
     _row_or_404(db, session_id)
+    state = store.load_state(db, session_id)
+    return report_module.build(state, store.events_for(db, session_id), utcnow())
+
+
+@router.get("/interviews/{session_id}/trace", response_model=TraceOut)
+def trace(
+    session_id: uuid.UUID,
+    principal: Principal | None = Depends(enforce_access),
+    db: Session = Depends(get_session),
+) -> TraceOut:
+    """FR-6.19 — the event log and every model call, and whether replay agrees.
+
+    The raw log holds the verdict bands and the open question's key points, so
+    a student sees it only once their session is over (see `public.py`).
+    """
+    _row_or_404(db, session_id)
+    current = store.load_state(db, session_id)
+    is_admin = principal is not None and principal.role is Role.admin
+    if not current.is_final and not is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="The full trace is available once the interview is over.",
+        )
     events = store.events_for(db, session_id)
     calls = db.exec(
         select(LLMCall).where(LLMCall.session_id == session_id).order_by(LLMCall.at)
     ).all()
     replayed = store.replay(db, session_id)
-    current = store.load_state(db, session_id)
     return TraceOut(
         session_id=session_id,
         events=[e.model_dump(mode="json") for e in events],
         llm_calls=[c.model_dump(mode="json") for c in calls],
         replay_matches=replayed.model_dump(mode="json") == current.model_dump(mode="json"),
+    )
+
+
+@router.get("/interviews/{session_id}/events")
+async def session_events(
+    session_id: uuid.UUID,
+    request: Request,
+    after: int | None = Query(default=None, ge=0),
+    sessions: Callable[[], Session] = Depends(session_factory),
+) -> StreamingResponse:
+    """Text-mode live stream (spec §7): the event log, plus interviewer tokens.
+
+    `id:` is the event's seq, so a browser that reconnects with
+    `Last-Event-ID` resumes exactly where it left off. Token frames carry no
+    id — they are a preview, and the `question.asked` that follows is the
+    text of record.
+    """
+    with sessions() as db:
+        _row_or_404(db, session_id)
+    header = request.headers.get("last-event-id")
+    cursor = after if after is not None else int(header) if (header or "").isdigit() else 0
+    tokens = broker.subscribe(session_id)
+
+    def frame(kind: str, data: dict, seq: int | None = None) -> str:
+        head = f"id: {seq}\n" if seq is not None else ""
+        return f"{head}event: {kind}\ndata: {json.dumps(data)}\n\n"
+
+    def sweep(db_cursor: int) -> tuple[list[str], int, bool]:
+        """The log after `db_cursor`, and whether the session is over."""
+        out: list[str] = []
+        with sessions() as db:
+            rows = store.events_for(db, session_id, after_seq=db_cursor)
+            final = store.load_state(db, session_id).is_final
+        for row in rows:
+            db_cursor = row.seq
+            public = public_event(row)
+            if public is not None:
+                out.append(frame(row.kind, public, row.seq))
+        return out, db_cursor, final
+
+    async def stream() -> AsyncIterator[str]:
+        nonlocal cursor
+        idle = 0.0
+        since_sweep = SSE_SWEEP_S  # sweep once at the start
+        final = False
+        try:
+            yield "retry: 2000\n\n"
+            while not await request.is_disconnected():
+                sent = False
+                if since_sweep >= SSE_SWEEP_S:
+                    since_sweep = 0.0
+                    out, cursor, final = await asyncio.to_thread(sweep, cursor)
+                    for text in out:
+                        yield text
+                        sent = True
+                    if final:
+                        yield frame("stream.closed", {})
+                        return
+                # Wait on the broker rather than on the clock: a token or an
+                # event that this process just wrote arrives here at once.
+                try:
+                    message = await asyncio.to_thread(tokens.get, True, SSE_WAIT_S)
+                except queue.Empty:
+                    message = None
+                since_sweep += SSE_WAIT_S
+                if message is None:
+                    pass
+                elif "token" in message:
+                    yield frame("interviewer.token", message)
+                    sent = True
+                elif (event := message.get("event")) is not None:
+                    seq = int(event.get("seq", 0))
+                    if seq > cursor:
+                        cursor = seq
+                        yield frame(str(event.get("kind")), event, seq)
+                        sent = True
+                        if str(event.get("kind")) in ("session.ended", "session.aborted"):
+                            yield frame("stream.closed", {})
+                            return
+                idle = 0.0 if sent else idle + SSE_WAIT_S
+                if idle >= SSE_HEARTBEAT_S:
+                    idle = 0.0
+                    yield ": alive\n\n"
+        finally:
+            broker.unsubscribe(session_id, tokens)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
@@ -313,7 +550,7 @@ def _summaries(rows) -> list[SessionSummary]:
     ]
 
 
-@router.get("/candidates/{candidate_id}/sessions", response_model=list[SessionSummary])
+@router.get("/interviews/by-candidate/{candidate_id}", response_model=list[SessionSummary])
 def candidate_sessions(
     candidate_id: uuid.UUID,
     limit: int = Query(default=50, ge=1, le=200),
@@ -322,7 +559,7 @@ def candidate_sessions(
     return _summaries(store.sessions_for(db, candidate_id, limit=limit))
 
 
-@router.get("/candidates/{candidate_id}/sessions/recent", response_model=list[SessionSummary])
+@router.get("/interviews/by-candidate/{candidate_id}/recent", response_model=list[SessionSummary])
 def recent_sessions(
     candidate_id: uuid.UUID, db: Session = Depends(get_session)
 ) -> list[SessionSummary]:
@@ -335,4 +572,4 @@ def recent_sessions(
     return _summaries(rows[:5])
 
 
-__all__ = ["router", "session_out"]
+__all__ = ["get_engine", "router", "session_factory", "session_out"]

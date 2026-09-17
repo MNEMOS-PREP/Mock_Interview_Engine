@@ -22,17 +22,33 @@ from ai_core.schema_repair import ensure_schema
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import MODULE_ID, PROMPT_VERSION
+from . import MODULE_ID, PROMPT_VERSION, store
 from . import models as _models  # noqa: F401 - registers tables
+from .broker import broker
 from .keys import load_keys
+from .public import public_event
 from .router import router
 
 log = logging.getLogger("uvicorn.error")
 
 
+def _publish(event) -> None:
+    """Every event this process writes, straight to the live streams.
+
+    The stream could poll the log for these, and did: a reader competing with
+    the writer for SQLite's lock meant the interviewer's "live" tokens arrived
+    after the answer they were previewing. Pushing them costs nothing and the
+    periodic sweep still covers another process's writes.
+    """
+    public = public_event(event)
+    if public is not None:
+        broker.publish(event.session_id, {"event": public})
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     load_keys()
+    store.NOTIFY = _publish
     # create_all() makes missing TABLES and ignores existing ones, so a model
     # that gained a field leaves an older dev.db one column short and the next
     # query 500s. ensure_schema() adds those columns, additively.
@@ -41,6 +57,7 @@ async def lifespan(_app: FastAPI):
         log.info("schema: added missing column %s", change)
     log.info("M06 ready — prompt version %s", PROMPT_VERSION)
     yield
+    store.NOTIFY = None
 
 
 app = FastAPI(title="M06 — Mock Interview Engine", version="0.1.0", lifespan=lifespan)

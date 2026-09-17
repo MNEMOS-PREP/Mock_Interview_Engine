@@ -12,6 +12,10 @@ dependencies = [
     "sqlmodel>=0.0.22",
     "uvicorn[standard]>=0.30",
     "pyyaml>=6.0",
+    # The step graph (master plan §26.1). Imported by orchestration/graph.py
+    # and nowhere else, so swapping it is one file. Used without a
+    # checkpointer: the event log is the only persistence (spec §6.8).
+    "langgraph>=1.2,<2",
     # Shared platform foundation. PINNED BY TAG on purpose: tracking main is
     # how you get a surprise breakage on a Tuesday. v0.9.x is where
     # `ai_core.identity` landed, and M06 is written against it from day one
@@ -51,6 +55,10 @@ select = ["E", "F", "I", "B", "UP"]
 # idiom, not the mutable-default bug B008 exists to catch.
 "**/router.py" = ["B008"]
 "**/access.py" = ["B008"]
+# Prompts are prose. Wrapping them changes the text the model reads.
+"**/agents/*.py" = ["E501"]
+# Operator scripts print wide tables; nothing reads them as code.
+"tools/*.py" = ["E501"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

@@ -61,6 +61,10 @@ class SessionState(BaseModel):
     jd_id: UUID | None = None
     source_module: str | None = None
     source_ref: str | None = None
+    #: FR-6.23. M01's claim and probe ladder, exactly as handed over.
+    drill: dict | None = None
+    #: M04's pinned summary text (AC-4.13). The interviewer's cached prefix.
+    profile_prefix: str = ""
 
     plan: InterviewPlan | None = None
     current_segment: int = 0
@@ -72,6 +76,12 @@ class SessionState(BaseModel):
     pending_move: Move | None = None
     #: The interviewer turn waiting for an answer, if any.
     open_turn_id: UUID | None = None
+    #: The item behind the current question (`items.to_dict`). Authored
+    #: content only — stem, follow-ups, key points — so a restart can carry on
+    #: the ladder without asking M05 again.
+    current_item: dict | None = None
+    #: New questions put to the student, not counting rungs and moves.
+    questions_asked: int = 0
     hint_level: int = 0
     #: FR-6.6: the shallowest depth each concept broke at in this session.
     break_depths: dict[str, int] = Field(default_factory=dict)
@@ -131,6 +141,7 @@ def _created(_s: SessionState | None, p: dict, at: datetime) -> SessionState:
         jd_id=UUID(str(p["jd_id"])) if p.get("jd_id") else None,
         source_module=p.get("source_module"),
         source_ref=p.get("source_ref"),
+        drill=p.get("drill"),
         created_at=at,
     )
 
@@ -140,12 +151,13 @@ def _plan_set(s: SessionState, p: dict, _at: datetime) -> None:
     s.plan = InterviewPlan.model_validate(p["plan"])
 
 
-def _started(s: SessionState, _p: dict, at: datetime) -> None:
+def _started(s: SessionState, p: dict, at: datetime) -> None:
     if s.status is not SessionStatus.planned:
         raise InvalidTransition(f"session.started from {s.status.value}")
     s.status = SessionStatus.live
     s.started_at = at
     s.live_since = at
+    s.profile_prefix = p.get("profile_prefix", "")
 
 
 def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
@@ -157,6 +169,9 @@ def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
         # the one already open.
         s.ladder = ProbeLadderState(concept_id=p.get("concept_id") or "")
         s.hint_level = 0
+        s.questions_asked += 1
+    if p.get("item") is not None:
+        s.current_item = p["item"]
     s.transcript.append(
         TurnView(
             turn_id=turn_id,
@@ -265,6 +280,21 @@ def _reconnected(s: SessionState, _p: dict, _at: datetime) -> None:
     s.flags.reconnect_count += 1
 
 
+def _closing_line(s: SessionState, p: dict, at: datetime) -> None:
+    if p.get("closing_text") and p.get("closing_turn_id"):
+        s.transcript.append(
+            TurnView(
+                turn_id=UUID(str(p["closing_turn_id"])),
+                turn_index=int(p.get("closing_turn_index", s.next_turn_index)),
+                segment_index=s.current_segment,
+                role="interviewer",
+                text=p["closing_text"],
+                at=at,
+            )
+        )
+        s.next_turn_index += 1
+
+
 def _ended(s: SessionState, p: dict, at: datetime) -> None:
     if s.is_final:
         raise InvalidTransition(f"session.ended after {s.status.value}")
@@ -273,6 +303,7 @@ def _ended(s: SessionState, p: dict, at: datetime) -> None:
     s.ended_at = at
     s.end_reason = p.get("reason", "completed")
     s.open_turn_id = None
+    _closing_line(s, p, at)
 
 
 def _aborted(s: SessionState, p: dict, at: datetime) -> None:

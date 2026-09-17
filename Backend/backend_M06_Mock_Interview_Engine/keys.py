@@ -30,14 +30,23 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-#: Searched in order, from the Backend directory upwards to the repo root.
+#: Searched in order: Backend/, the repo root, then the directory the sibling
+#: repos live in.
 KEY_FILES = ("keys.txt", ".env")
 
 
 def _candidate_paths() -> list[Path]:
+    """The third root is M02's addition, adopted here: nineteen repositories
+    should not mean nineteen copies of one secret, each a separate thing to
+    rotate and to leak. One `keys.txt` beside the repos serves all of them, and
+    `AI_KEYS_FILE` points elsewhere for a deployment that mounts one."""
     here = Path(__file__).resolve()
-    roots = [here.parents[1], here.parents[2]]  # Backend/, repo root
-    return [root / name for root in roots for name in KEY_FILES]
+    roots = [here.parents[1], here.parents[2], here.parents[3]]
+    paths = [root / name for root in roots for name in KEY_FILES]
+    override = os.getenv("AI_KEYS_FILE")
+    if override:
+        paths.insert(0, Path(override).expanduser().resolve())
+    return paths
 
 
 def load_keys(*, override: bool = False) -> list[str]:

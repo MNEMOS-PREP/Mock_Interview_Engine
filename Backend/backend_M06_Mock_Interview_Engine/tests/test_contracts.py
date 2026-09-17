@@ -162,6 +162,22 @@ def test_fixture_claims_carry_m01s_probe_shape():
         conforms(probe, contract("M01", "DrillProbe"))
 
 
+# ── the shell's one-origin proxy ─────────────────────────────────────────
+
+
+@pytest.mark.gate
+def test_m06s_nouns_are_its_own_in_the_platform_shell():
+    """Revision 2's `/v1/sessions` would have been proxied to M05, and
+    `/v1/candidates/.../sessions` to M04 — silently, the day M06 was mounted."""
+    from backend_M06_Mock_Interview_Engine.router import router
+
+    shell = json.loads((CONTRACTS / "shell_nouns.json").read_text(encoding="utf-8"))
+    nouns = {route.path.split("/")[2] for route in router.routes}
+    clashes = (nouns & set(shell["owned_by_others"])) - set(shell["shared"])
+    assert not clashes, {n: shell["owned_by_others"][n] for n in clashes}
+    assert nouns - set(shell["shared"]) == {"interviews", "drills", "agents"}
+
+
 # ── the manifest ─────────────────────────────────────────────────────────
 
 

@@ -637,35 +637,41 @@ Separate Web Audio bus, never routed into the ASR input. Layers: `room_tone` (-3
 
 ## 7. API surface
 
-Port **8106** (API), **5206** (web). Every route below except `/health` and `/v1/deps` is candidate-scoped and goes through `may_see` (FR-6.26).
+Port **8106** (API), **5206** (web). Every route below except `/health`, `/v1/deps` and `/v1/agents` is candidate-scoped and goes through `may_see` (FR-6.26).
+
+**The noun is `interviews`, not `sessions`.** Platform_Shell serves one origin by proxying `/v1/<noun>` to a single backend, chosen by the first path segment — and `sessions` already belongs to M05 (its provisional-θ routes) while `candidates` belongs to M04. Revision 2 originally specified `/v1/sessions/…`, which would have been proxied to M05 the day M06 was mounted in the shell, silently. A per-module noun is the cheap fix; a test holds M06 to it against the shell's own table (`fixtures/contracts/shell_nouns.json`).
 
 ```
 GET  /health
 GET  /v1/deps                          each upstream, its state, and the on_missing sentence
+GET  /v1/agents                        which agents run, which are ablated, the step graph
 
-POST /v1/sessions                      {jd_id?, mode, minutes, modalities} → plan (status: planned)
-GET  /v1/sessions/{id}/plan
-PATCH /v1/sessions/{id}/plan           student edits before start (drop a segment)
-POST /v1/sessions/{id}/start
-SSE  /v1/sessions/{id}/events          text mode: token stream + state events
-POST /v1/sessions/{id}/answer          text answer submit (code blocks allowed)
-POST /v1/sessions/{id}/hint            next rung of M05's hint ladder, if the mode allows
-POST /v1/sessions/{id}/repeat          "say that again" — re-sends the last question verbatim
-POST /v1/sessions/{id}/flag            ⚑ — forwarded to M05 /questions/{qid}/flag
-POST /v1/sessions/{id}/switch-modality {to}   Phase 1: text only; the contract is fixed now
-POST /v1/sessions/{id}/pause | /resume
-GET  /v1/sessions/{id}/resume-state    after disconnect
-POST /v1/sessions/{id}/end             early end, still produces a report
-GET  /v1/sessions/{id}/transcript
-GET  /v1/sessions/{id}/report          served by M06 until M19 exists (§15.7)
-GET  /v1/sessions/{id}/trace           the event log and model calls — replay input (FR-6.19)
+POST /v1/interviews                    {jd_id?, mode, minutes} → plan (status: planned)
+GET  /v1/interviews/{id}               the session, its transcript and what is open
+GET  /v1/interviews/{id}/plan
+PATCH /v1/interviews/{id}/plan         student edits before start (drop a segment)
+POST /v1/interviews/{id}/start         starts a planned session; on a live one, carries on
+SSE  /v1/interviews/{id}/events        text mode: token stream + state events
+POST /v1/interviews/{id}/answer        text answer submit (code blocks allowed)
+POST /v1/interviews/{id}/hint          next rung of M05's hint ladder, if the mode allows
+POST /v1/interviews/{id}/repeat        "say that again" — re-sends the last question verbatim
+POST /v1/interviews/{id}/flag          ⚑ — forwarded to M05 /questions/{qid}/flag
+POST /v1/interviews/{id}/switch-modality {to}   Phase 1: text only; the contract is fixed now
+POST /v1/interviews/{id}/pause | /resume
+GET  /v1/interviews/{id}/resume-state  after disconnect
+POST /v1/interviews/{id}/end           early end, still produces a report
+GET  /v1/interviews/{id}/transcript
+GET  /v1/interviews/{id}/report        served by M06 until M19 exists (§15.7)
+GET  /v1/interviews/{id}/trace         the event log and model calls — replay input (FR-6.19)
 
 POST /v1/drills                        M01's hand-off (FR-6.23) — contract below
-GET  /v1/candidates/{cid}/sessions/recent   what M04's `recent_sessions` slot is for
-GET  /v1/candidates/{cid}/sessions     the student's own history
+GET  /v1/interviews/by-candidate/{cid}         the student's own history
+GET  /v1/interviews/by-candidate/{cid}/recent  what M04's `recent_sessions` slot is for
 
-WS   /v1/sessions/{id}/live            Phase 3, with M11: audio in, audio + events out
+WS   /v1/interviews/{id}/live          Phase 3, with M11: audio in, audio + events out
 ```
+
+**The stream is push-driven.** Every event this process writes is published to the open streams as it commits (`store.NOTIFY`), with a slow sweep of the log behind it for another process's writes. Built as a poll, the reader competed with the writer for SQLite's lock and the "live" tokens arrived *after* the answer they were previewing — measured at +1384 ms against a POST that returned at 1237 ms. Pushed, the first token lands before the POST returns.
 
 **`POST /v1/drills`** — shaped by the caller that already exists (`resume-ingestion/.../router.py:1372`), not by this spec:
 
@@ -781,6 +787,8 @@ Live event types: `question.asked` · `interviewer.token` · `interviewer.done` 
 > | ProbeStrategist | 1 | classification |
 > | Segment summary | 1 per 4 turns | extraction |
 > | Evaluation | M13's, off-path | M13's |
+>
+> **Measured on 2026-09-16 and 2026-09-17** (`Backend/reports/latency-*.json`, 16 rounds, the real prompts): ProbeStrategist p50 **775 ms** / p95 **1106 ms**; the interviewer's first visible token p50 **745 ms** / p95 **919 ms**; a rung's first visible token therefore **≈ 2.0 s at p95**, inside AC-6.4's 2.5 s. `reasoning_effort: "low"` is accepted by both models. Cached tokens are reported on **2 of 16** structured calls (512-token blocks) and never on a streamed one — so AC-6.11's 0.7 target is far off, and the honest reading is that this provider caches opportunistically rather than on demand.
 >
 > **The text latency gate is time-to-first-visible-token** — the utterance streams, and "the interviewer started talking" is what a student perceives. Full render time is recorded beside it. Two reasoning calls in series will probably not fit 2.5 s to a *full* render *(unmeasured)*, which is why structural moves are templated (§6.2) and why **day 2 builds a latency harness against the live account** before anything is stacked on these numbers. If the harness shows the strategist alone exceeds ~1.2 s p95, the fallback is to stream the templated acknowledgement first ("Okay —") and phrase the probe after it, not to drop the strategist.
 
