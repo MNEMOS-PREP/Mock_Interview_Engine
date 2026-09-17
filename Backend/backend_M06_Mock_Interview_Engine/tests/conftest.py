@@ -8,7 +8,7 @@ from `adapters.fixtures`, and the live clients are exercised against a patched
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 from ai_core.db import get_session
@@ -47,6 +47,13 @@ def engine():
 def db(engine) -> Iterator[Session]:
     with Session(engine) as session:
         yield session
+
+
+@pytest.fixture
+def engine_db(engine) -> Iterator[tuple[Session, Callable[[], Session]]]:
+    """A session to assert with, and the factory a worker opens its own with."""
+    with Session(engine) as session:
+        yield session, lambda: Session(engine)
 
 
 @pytest.fixture

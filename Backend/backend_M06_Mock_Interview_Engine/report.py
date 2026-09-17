@@ -30,6 +30,10 @@ NOT_SCORED = {
 
 WARM_UP_SHARE = 0.25
 
+#: Consent lives in M04, so when M04 is absent its own degradation sentence
+#: already tells the student the session will not count. See `notes` below.
+CONSENT_OWNER = "M04"
+
 
 class Exchange(BaseModel):
     role: str
@@ -43,6 +47,10 @@ class QuestionReport(BaseModel):
     source: str
     scored: bool
     not_scored_reason: str | None = None
+    #: `not_scored` · `queued` (with M13) · `scored` — never a number. M13 owns
+    #: the number and the gate that decides whether anyone may see it, and
+    #: today that gate is closed everywhere because no calibration is fitted.
+    scoring_status: str = "not_scored"
     exchanges: list[Exchange] = Field(default_factory=list)
     depth_reached: int = 0
     #: The rung where the reasoning stopped holding. None means it never did.
@@ -126,6 +134,12 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
             current.depth_reached = max(current.depth_reached, int(p.get("probe_depth") or 0))
         elif event.kind == "answer.received" and current is not None:
             current.exchanges.append(Exchange(role="candidate", text=p.get("text", "")))
+            if current.scored:
+                # Queued the moment the turn was written; `scored` once M13 has
+                # accepted it. Either way, no number appears here.
+                current.scoring_status = state.evaluation_status.get(
+                    str(p.get("turn_id")), "queued"
+                )
         elif event.kind == "probe.decided" and current is not None:
             if p.get("break_depth") is not None:
                 current.break_depth = int(p["break_depth"])
@@ -135,8 +149,18 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
             current.hints_used = int(p.get("level", current.hints_used))
 
     notes = list(dict.fromkeys(state.flags.degraded.values()))
-    if state.kind != "drill" and state.flags.consent_id is None and state.started_at is not None:
+    # A student is told a consequence once. M04 owns consent, so when M04 is
+    # absent its degradation sentence is already the whole story; adding this
+    # one underneath reads like a second, separate problem.
+    if (
+        state.kind != "drill"
+        and state.flags.consent_id is None
+        and state.started_at is not None
+        and CONSENT_OWNER not in state.flags.degraded
+    ):
         notes.append("This session didn't update your skill graph — consent isn't recorded yet.")
+    if any(q.scoring_status == "queued" for q in questions):
+        notes.append("Some answers are still with the evaluator — check back in a minute.")
     if any(q.scored for q in questions):
         notes.append("Scores appear here once they are calibrated against human raters.")
 

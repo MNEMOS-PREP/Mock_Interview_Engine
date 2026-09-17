@@ -346,3 +346,53 @@ def test_a_paused_session_takes_no_answers(db):
     store.record(db, row, "session.paused", step="pause")
     with pytest.raises(AnswerRejected, match="paused"):
         engine.answer(row.id, open_turn, "x")
+
+
+def test_repeating_a_question_does_not_repeat_the_hand_off(db):
+    """The first live run said: "That's a different question. Here's mine
+    again. Okay, let's leave that there. Next question. Two keys hash to the
+    same bucket." A repeat repeats the question, not the turn it arrived in."""
+    engine = make(db, llm=StubLLM([verdict(off_question=True)]), m05=BankQuestions())
+    row = mock(engine)
+    state = engine.start(row.id)
+    asked = interviewer_lines(state)[-1]
+    stem = state.current_item["stem"]
+    assert asked.startswith("Hello. Let's begin. First question.")  # the lead is in the turn
+
+    state = say(engine, row, "Something about a different question entirely.")
+    repeat = interviewer_lines(state)[-1]
+    assert state.transcript[-1].probe_move == "redirect_once"
+    assert repeat == f"That's a different question. Here's mine again. {stem}"
+    assert "First question." not in repeat
+    assert "Hello" not in repeat
+    # And the turn keeps the two apart, so a second repeat is the same repeat.
+    assert state.transcript[-1].question_text == stem
+
+
+def test_ending_early_still_gets_a_closing_line(db):
+    """The first live run ended on a repeated question: the student pressed End
+    and the interviewer said nothing. EC-6.10 — leaving early is allowed, and
+    being left mid-sentence is not what it should feel like."""
+    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    row = mock(engine)
+    engine.start(row.id)
+    say(engine, row, "Buckets, and a load factor.")
+
+    state = engine.end(row.id, "ended_by_student")
+    assert state.status is SessionStatus.ended
+    assert interviewer_lines(state)[-1] == "That's time. Your report is being prepared."
+    assert state.transcript[-1].turn_index == state.next_turn_index - 1
+
+    # A session nobody started has nothing to close, and says so in the report.
+    never = mock(engine)
+    aborted = engine.end(never.id, "ended_by_student")
+    assert aborted.status is SessionStatus.aborted
+    assert aborted.transcript == []
+
+
+def test_a_drill_gets_the_drills_own_closing_line(db):
+    engine = make(db, llm=StubLLM([verdict()] * 4))
+    row = drill(engine)
+    engine.start(row.id)
+    state = engine.end(row.id, "ended_by_student")
+    assert interviewer_lines(state)[-1] == "That's the drill."

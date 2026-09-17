@@ -211,6 +211,9 @@ class TurnView(BaseModel):
     segment_index: int
     role: Literal["interviewer", "candidate", "system"]
     text: str
+    #: Interviewer turns only: `text` without the greeting or transition line.
+    #: What a repeat of this question says. See graph._question_to_repeat.
+    question_text: str | None = None
     modality: Modality = Modality.verbal
     question_id: UUID | None = None
     question_source: QuestionSource | None = None

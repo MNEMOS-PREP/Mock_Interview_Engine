@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -264,6 +265,9 @@ class FixtureEvaluator:
         self.round_types = round_types
         self.requests: list[dict[str, Any]] = []
         self.fail = False
+        #: Called while this request is "in flight", before it is answered.
+        #: A test drains again from in here to stand in for a second sender.
+        self.on_request: Callable[[dict[str, Any]], None] | None = None
 
     def evaluate(self, request: dict[str, Any]) -> dict[str, Any]:
         from .base import UpstreamUnavailable
@@ -271,6 +275,8 @@ class FixtureEvaluator:
         if self.fail:
             raise UpstreamUnavailable("M13", "fixture set to fail")
         self.requests.append(request)
+        if self.on_request is not None:
+            self.on_request(request)
         return {
             "id": str(uuid.uuid4()),
             "turn_id": request["turn_id"],

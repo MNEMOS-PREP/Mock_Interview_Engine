@@ -30,7 +30,7 @@ from ai_core.timeutil import utcnow
 from ai_core.versions import VersionStamp
 from sqlmodel import Session, select
 
-from . import PROMPT_VERSION, store
+from . import PROMPT_VERSION, outbox, store
 from .adapters import Upstreams, UpstreamUnavailable
 from .agents import Interviewer, ProbeStrategist
 from .broker import TokenBroker, broker
@@ -322,12 +322,36 @@ class Engine:
         return self.continue_session(session_id)
 
     def end(self, session_id: uuid.UUID, reason: str) -> SessionState:
+        """A student pressing End gets the same closing line as running out of
+        time. `session.ended` already carries one — the engine's own finish
+        path fills it in — and leaving it empty here ended the first live
+        session on a repeated question, with the interviewer saying nothing."""
         row = self.row(session_id)
         state = self.state(session_id)
-        kind = "session.aborted" if state.status is SessionStatus.planned else "session.ended"
-        store.record(self.db, row, kind, step="end", payload={"reason": reason})
+        aborted = state.status is SessionStatus.planned
+        payload: dict = {"reason": reason}
+        if not aborted:
+            # Nothing was asked, so nothing is said: an aborted session never
+            # got going, and its report says so instead.
+            index = state.next_turn_index
+            payload |= {
+                "closing_text": self._closing_for(state),
+                "closing_turn_id": str(_turn_id(row.id, index)),
+                "closing_turn_index": index,
+            }
+        store.record(
+            self.db,
+            row,
+            "session.aborted" if aborted else "session.ended",
+            step="end",
+            payload=payload,
+        )
         self._close_m05(row, state)
         return self.state(session_id)
+
+    def _closing_for(self, state: SessionState) -> str:
+        said = lines("neutral")
+        return said.drill_close if state.kind == SessionKind.drill.value else said.session_close
 
     def _close_m05(self, row: InterviewSession, state: SessionState) -> None:
         if state.kind != SessionKind.mock.value:
@@ -416,6 +440,7 @@ class Engine:
 
         if answer_turn is not None and recorded is None and result.outcome is not None:
             self._record_decision(row, state, answer_turn, item, result)
+            self._owe(row, answer_turn, item)
 
         if result.hint_level is not None and answer_turn is not None:
             store.record(
@@ -427,6 +452,60 @@ class Engine:
                 payload={"level": result.hint_level},
             )
         self._say(row, result)
+
+    def _owe(self, row: InterviewSession, answer_turn, item: Item | None) -> None:
+        """What this answer owes M13 and M02, written before it is delivered.
+
+        In its own transaction rather than the turn's, because `store.record`
+        owns that one — same guarantee either way: the row is on disk before
+        anything tries to send it, so a crash costs a delay and not a score.
+        """
+        state = self.state(row.id)
+        segment = (
+            state.plan.segments[state.current_segment]
+            if state.plan is not None and state.current_segment < len(state.plan.segments)
+            else None
+        )
+        queued = outbox.enqueue_evaluation(self.db, state, answer_turn, item)
+        if segment is not None:
+            outbox.enqueue_ledger(
+                self.db,
+                state,
+                requirement_ids=segment.requirement_ids,
+                ledger_state="answered",
+                turn_id=answer_turn.turn_id,
+            )
+        self.db.commit()
+        if queued is not None:
+            store.record(
+                self.db,
+                row,
+                "evaluation.queued",
+                step="queue",
+                turn_index=answer_turn.turn_index,
+                payload={"delta": 1, "turn_id": str(answer_turn.turn_id)},
+            )
+
+    def deliver(self, session_id: uuid.UUID) -> outbox.Drained:
+        """Send what is owed, and record what came back (FR-6.14).
+
+        Called off the request that produced the work — a background task, or
+        an explicit drain — so the ensemble is never on the conversation's
+        path. Whatever cannot be sent stays queued and visible.
+        """
+        row = self.row(session_id)
+        drained = outbox.drain(self.db, self.upstreams, session_id=session_id)
+        for turn_id, outcome in drained.outcomes.items():
+            turn = self.state(session_id).turn(turn_id)
+            store.record(
+                self.db,
+                row,
+                "evaluation.completed",
+                step=f"scored:{turn_id}",
+                turn_index=turn.turn_index if turn is not None else 0,
+                payload={"turn_id": str(turn_id), **outcome},
+            )
+        return drained
 
     def _record_decision(
         self, row, state, answer_turn, item: Item | None, result: StepResult
@@ -513,6 +592,19 @@ class Engine:
             else (0 if result.new_question else ladder_depth)
         )
         index = state.next_turn_index
+        segment = (
+            state.plan.segments[state.current_segment]
+            if state.plan is not None and state.current_segment < len(state.plan.segments)
+            else None
+        )
+        if result.new_question and segment is not None:
+            outbox.enqueue_ledger(
+                self.db,
+                state,
+                requirement_ids=segment.requirement_ids,
+                ledger_state="asked",
+                turn_id=_turn_id(row.id, index),
+            )
         store.record(
             self.db,
             row,
@@ -524,6 +616,7 @@ class Engine:
                 "turn_index": index,
                 "segment_index": state.current_segment,
                 "text": utterance.text,
+                "question_text": utterance.question,
                 "question_id": str(item.question_id) if item.question_id else None,
                 "question_source": item.source,
                 "rubric_round_type": item.rubric_round_type,

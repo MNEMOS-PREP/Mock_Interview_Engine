@@ -87,6 +87,10 @@ class SessionState(BaseModel):
     break_depths: dict[str, int] = Field(default_factory=dict)
 
     flags: SessionFlags = Field(default_factory=SessionFlags)
+    #: turn_id -> what M13 said about it. A STATUS, never a score: M13 owns
+    #: the number and the display gate that decides who may see it, and a copy
+    #: here would be the one that went stale (Rule 3).
+    evaluation_status: dict[str, str] = Field(default_factory=dict)
 
     accrued_live_s: float = 0.0
     live_since: datetime | None = None
@@ -179,6 +183,7 @@ def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
             segment_index=int(p.get("segment_index", s.current_segment)),
             role="interviewer",
             text=p["text"],
+            question_text=p.get("question_text") or p["text"],
             modality=p.get("modality", "verbal"),
             question_id=UUID(str(p["question_id"])) if p.get("question_id") else None,
             question_source=p.get("question_source"),
@@ -328,6 +333,11 @@ def _evaluation(s: SessionState, p: dict, _at: datetime) -> None:
     s.flags.evaluation_pending = max(s.flags.evaluation_pending + int(p.get("delta", 0)), 0)
 
 
+def _evaluated(s: SessionState, p: dict, _at: datetime) -> None:
+    s.flags.evaluation_pending = max(s.flags.evaluation_pending - 1, 0)
+    s.evaluation_status[str(p["turn_id"])] = str(p.get("status", "unknown"))
+
+
 _REDUCERS = {
     "plan.set": _plan_set,
     "session.started": _started,
@@ -344,6 +354,7 @@ _REDUCERS = {
     "upstream.degraded": _degraded,
     "consent.resolved": _consent,
     "evaluation.queued": _evaluation,
+    "evaluation.completed": _evaluated,
 }
 
 EVENT_KINDS = frozenset({"session.created", *_REDUCERS})

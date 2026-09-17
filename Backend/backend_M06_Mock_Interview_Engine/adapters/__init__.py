@@ -52,16 +52,23 @@ class Upstreams:
             return False
 
 
+def on_missing_sentence(module: str) -> str:
+    """The sentence a student reads when `module` is absent — spec §10.
+
+    It comes from `module.json`, which is on disk, so the fixture upstreams
+    serve the same words as the live ones. A test that asserts on what a
+    student is told should be asserting on the copy that ships.
+    """
+    dep = deps().get(module)
+    return dep.on_missing if dep is not None and dep.on_missing else f"{module} is unavailable."
+
+
 def live_upstreams() -> Upstreams:
     registry = deps()
 
     def url(module: str) -> str:
         dep = registry.get(module)
         return dep.base_url if dep is not None else ""
-
-    def sentence(module: str) -> str:
-        dep = registry.get(module)
-        return dep.on_missing if dep is not None and dep.on_missing else f"{module} is unavailable."
 
     return Upstreams(
         m01=LiveResumes(url("M01")),
@@ -70,7 +77,7 @@ def live_upstreams() -> Upstreams:
         m05=LiveQuestions(url("M05")),
         m13=LiveEvaluator(url("M13")),
         is_available=registry.is_available,
-        on_missing=sentence,
+        on_missing=on_missing_sentence,
     )
 
 
@@ -82,6 +89,8 @@ def fixture_upstreams(**overrides) -> Upstreams:
         "m04": FixtureMemory(),
         "m05": LocalQuestions(),
         "m13": FixtureEvaluator(),
+        # Not `is_available`: a fixture is always there. Only the words.
+        "on_missing": on_missing_sentence,
     }
     values.update(overrides)
     return Upstreams(**values)

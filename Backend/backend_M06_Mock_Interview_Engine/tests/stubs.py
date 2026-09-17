@@ -96,6 +96,17 @@ class BankQuestions(LocalQuestions):
         return chosen
 
 
+class DownPlanner:
+    """M02 that fails every call."""
+
+    def _fail(self, *_a, **_k):
+        from backend_M06_Mock_Interview_Engine.adapters.base import UpstreamUnavailable
+
+        raise UpstreamUnavailable("M02", "connection refused")
+
+    plan = job_description = record_coverage = session_coverage = _fail
+
+
 class DownQuestions:
     """M05 that fails every call."""
 
@@ -105,6 +116,17 @@ class DownQuestions:
         raise UpstreamUnavailable("M05", "connection refused")
 
     select = question = seed = observe = close = flag = _fail
+
+
+class DownMemory:
+    """M04 that fails every call — no history, no consent, no pinned prefix."""
+
+    def _fail(self, *_a, **_k):
+        from backend_M06_Mock_Interview_Engine.adapters.base import UpstreamUnavailable
+
+        raise UpstreamUnavailable("M04", "connection refused")
+
+    profile_summary = posterior = consent = _fail
 
 
 def drill_body(candidate: uuid.UUID) -> dict[str, Any]:

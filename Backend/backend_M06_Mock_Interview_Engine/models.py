@@ -124,6 +124,9 @@ class EvaluationOutbox(SQLModel, table=True):
     last_error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     sent_at: datetime | None = None
+    #: When a drain took this row. Set with `sending`, so a row abandoned by a
+    #: crashed process can be told apart from one still in flight.
+    claimed_at: datetime | None = None
 
 
 class LedgerOutbox(SQLModel, table=True):
@@ -152,6 +155,7 @@ class LedgerOutbox(SQLModel, table=True):
     last_error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     sent_at: datetime | None = None
+    claimed_at: datetime | None = None
 
 
 class LLMCall(SQLModel, table=True):

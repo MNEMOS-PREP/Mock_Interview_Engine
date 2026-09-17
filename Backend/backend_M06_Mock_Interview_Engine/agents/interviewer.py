@@ -55,6 +55,10 @@ class Utterance:
     source: str
     call: LLMResult | None = None
     fallback_reason: str | None = None
+    #: The question alone — no greeting, no transition line. This is what is
+    #: repeated when a student answers a different question, so that repeating
+    #: does not also repeat "Okay, let's leave that there. Next question."
+    question: str | None = None
 
 
 TokenSink = Callable[[str], None]
@@ -80,7 +84,7 @@ class Interviewer:
 
     def open_question(self, item: Item, *, lead: str) -> Utterance:
         text = f"{lead} {item.stem}".strip() if lead else item.stem
-        return Utterance(text=text, source="template")
+        return Utterance(text=text, source="template", question=item.stem)
 
     def probe(
         self,
@@ -94,10 +98,15 @@ class Interviewer:
         template, _own = item.rung(depth)
         if not self.enabled:
             return Utterance(
-                template, "template", fallback_reason="interviewer disabled (ablation)"
+                template,
+                "template",
+                fallback_reason="interviewer disabled (ablation)",
+                question=template,
             )
         if not self.llm.available:
-            return Utterance(template, "template", fallback_reason="no model configured")
+            return Utterance(
+                template, "template", fallback_reason="no model configured", question=template
+            )
 
         system = SYSTEM.format(register=view.persona_register)
         recent = "\n".join(f"{t.role.upper()}: {t.text}" for t in view.recent_turns[-4:])
@@ -137,10 +146,13 @@ class Interviewer:
         reason = blocked or (call.reason if call is not None and not call.ok else None)
         reason = reason or _acceptable(text)
         if reason:
-            return Utterance(template, "template", call=call, fallback_reason=reason)
+            return Utterance(
+                template, "template", call=call, fallback_reason=reason, question=template
+            )
         if on_token is not None and len(text) > len(released):
             on_token(text[len(released) :])
-        return Utterance(text, "model", call=call)
+        # A probe carries no lead, so the whole utterance is the question.
+        return Utterance(text, "model", call=call, question=text)
 
     @staticmethod
     def exit_then(lines: Lines, *, graceful: bool, ceiling: bool) -> str:

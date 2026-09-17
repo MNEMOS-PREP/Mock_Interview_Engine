@@ -22,12 +22,14 @@ from ai_core.schema_repair import ensure_schema
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import MODULE_ID, PROMPT_VERSION, store
+from . import MODULE_ID, PROMPT_VERSION, store, sweeper
 from . import models as _models  # noqa: F401 - registers tables
+from .adapters import get_upstreams
 from .broker import broker
 from .keys import load_keys
+from .llm import get_llm
 from .public import public_event
-from .router import router
+from .router import router, session_factory
 
 log = logging.getLogger("uvicorn.error")
 
@@ -56,7 +58,10 @@ async def lifespan(_app: FastAPI):
     for change in ensure_schema(engine):
         log.info("schema: added missing column %s", change)
     log.info("M06 ready — prompt version %s", PROMPT_VERSION)
-    yield
+    # Delivery is retried by a worker, not only by whoever happened to be
+    # holding the request that created it (sweeper.py).
+    with sweeper.running(session_factory(), get_upstreams, get_llm):
+        yield
     store.NOTIFY = None
 
 

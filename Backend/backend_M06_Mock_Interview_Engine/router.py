@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import queue
 import uuid
 from collections.abc import AsyncIterator, Callable
@@ -22,13 +23,13 @@ from ai_core.db import get_session
 from ai_core.dependencies import DependencyStatus
 from ai_core.identity import Principal, Role
 from ai_core.timeutil import utcnow
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from . import outbox, store
 from . import report as report_module
-from . import store
 from .access import enforce_access, require_candidate
 from .adapters import Upstreams, get_upstreams
 from .broker import broker
@@ -40,6 +41,8 @@ from .models import LLMCall
 from .orchestration import mermaid, snapshot
 from .public import public_event
 from .state import InvalidTransition, SessionState
+
+log = logging.getLogger("uvicorn.error")
 
 router = APIRouter(
     prefix="/v1", tags=["M06 Mock Interview Engine"], dependencies=[Depends(enforce_access)]
@@ -328,15 +331,65 @@ def start_session(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -
 
 @router.post("/interviews/{session_id}/answer", response_model=SessionOut)
 def answer(
-    session_id: uuid.UUID, body: AnswerIn, engine: Engine = Depends(get_engine)
+    session_id: uuid.UUID,
+    body: AnswerIn,
+    background: BackgroundTasks,
+    engine: Engine = Depends(get_engine),
 ) -> SessionOut:
-    """A typed answer. Returns the session with the interviewer's next line."""
+    """A typed answer. Returns the session with the interviewer's next line.
+
+    Delivery to M13 and M02 is a background task: FR-6.14 — evaluation never
+    blocks the conversation, and M13 scores synchronously at p95 15 s. The
+    rows are already on disk by the time this returns, so nothing is lost if
+    the task never runs.
+    """
     try:
-        return session_out(engine.answer(session_id, body.question_turn_id, body.text))
+        state = engine.answer(session_id, body.question_turn_id, body.text)
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="No such session.") from exc
     except (AnswerRejected, store.ConcurrentWrite) as exc:
         raise _conflict(exc) from exc
+    background.add_task(_deliver, session_id)
+    return session_out(state)
+
+
+def _deliver(session_id: uuid.UUID) -> None:
+    """Drain one session's outbox, in its own session and its own transaction.
+
+    The request's DB session is closed by the time a background task runs, and
+    the upstreams are built from the registry the same way the request's were.
+    """
+    from .adapters import get_upstreams
+
+    with Session(db_engine) as db:
+        try:
+            Engine(db=db, upstreams=get_upstreams(), llm=get_llm()).deliver(session_id)
+        except Exception:  # noqa: BLE001 - a delivery failure is a queued row
+            log.warning("M06: delivery for %s failed; rows stay queued", session_id)
+
+
+@router.post("/interviews/{session_id}/outbox/drain")
+def drain_outbox(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> dict:
+    """Send what this session owes M13 and M02 now. Idempotent, safe to repeat."""
+    _row_or_404(engine.db, session_id)
+    drained = engine.deliver(session_id)
+    return {
+        "evaluations_sent": drained.evaluations_sent,
+        "coverage_sent": drained.ledger_sent,
+        "still_waiting": drained.failed,
+        # Somebody else is already sending these, so a zero above is not a
+        # zero owed. Without this the caller cannot tell the two apart.
+        "already_sending": drained.in_flight,
+        "held": drained.held,
+        **outbox.status(engine.db, session_id),
+    }
+
+
+@router.get("/interviews/{session_id}/outbox")
+def read_outbox(session_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
+    """What is queued for this session, and why anything failed."""
+    _row_or_404(db, session_id)
+    return outbox.status(db, session_id)
 
 
 @router.post("/interviews/{session_id}/pause", response_model=SessionOut)
@@ -378,12 +431,15 @@ def resume_session(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) 
 @router.post("/interviews/{session_id}/end", response_model=SessionOut)
 def end_session(
     session_id: uuid.UUID,
+    background: BackgroundTasks,
     body: EndRequest | None = None,
     engine: Engine = Depends(get_engine),
 ) -> SessionOut:
     """EC-6.10: ending early still produces a report — framed as a warm-up."""
     try:
-        return session_out(engine.end(session_id, (body or EndRequest()).reason))
+        ended = session_out(engine.end(session_id, (body or EndRequest()).reason))
+        background.add_task(_deliver, session_id)
+        return ended
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="No such session.") from exc
     except (InvalidTransition, store.ConcurrentWrite) as exc:

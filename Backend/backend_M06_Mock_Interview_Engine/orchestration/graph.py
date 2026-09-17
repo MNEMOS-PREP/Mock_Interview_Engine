@@ -125,7 +125,25 @@ class Deps:
 
 
 def _last_question_text(state: SessionState) -> str:
+    """What the student was actually shown. The strategist judges against this
+    because an adapted probe, not the authored rung, is what was asked."""
     return next((t.text for t in reversed(state.transcript) if t.role == "interviewer"), "")
+
+
+def _question_to_repeat(state: SessionState) -> str:
+    """The open question with its transition stripped off.
+
+    `redirect_once` and `answer_briefly` both say a line and then ask the
+    question again. Repeating the rendered turn would repeat the greeting or
+    the hand-off with it — the first live run produced "That's a different
+    question. Here's mine again. Okay, let's leave that there. Next question.
+    Two keys hash to the same bucket." — so the turn keeps the question apart
+    from the words that introduced it.
+    """
+    turn = next((t for t in reversed(state.transcript) if t.role == "interviewer"), None)
+    if turn is None:
+        return ""
+    return turn.question_text or turn.text
 
 
 def _emit(text: str) -> None:
@@ -184,7 +202,7 @@ def build(deps: Deps):
         item = inp.item
         assert item is not None
         move: Move = outcome.move
-        last_q = _last_question_text(inp.state)
+        repeat_q = _question_to_repeat(inp.state)
         last_answer = next(
             (t.text for t in reversed(inp.state.transcript) if t.role == "candidate"),
             inp.answer or "",
@@ -207,9 +225,13 @@ def build(deps: Deps):
         elif move.kind == "clarify":
             utterance = Utterance(deps.lines.clarify, "template")
         elif move.kind == "redirect_once":
-            utterance = Utterance(f"{deps.lines.redirect} {last_q}", "template")
+            utterance = Utterance(
+                f"{deps.lines.redirect} {repeat_q}", "template", question=repeat_q
+            )
         elif move.kind == "answer_briefly":
-            utterance = Utterance(f"{deps.lines.answer_briefly} {last_q}", "template")
+            utterance = Utterance(
+                f"{deps.lines.answer_briefly} {repeat_q}", "template", question=repeat_q
+            )
         elif move.kind == "hint":
             level = inp.state.hint_level + 1
             utterance = Utterance(item.hint_ladder[level - 1], "template")
