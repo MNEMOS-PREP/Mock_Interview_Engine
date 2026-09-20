@@ -85,10 +85,46 @@ class LiveMemory:
             if row.get("theta") is not None
         }
 
+    def register_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Store the answer text M13's evidence quotes (M04 §5.1).
+
+        A service route: M06 is writing on a student's behalf with no student
+        in the room, which is what `X-Service-Secret` is for. 200 and 201 are
+        both success — the second means the turn was already registered, which
+        a retry should be.
+        """
+        return (
+            self.http.post(
+                f"/v1/candidates/{payload['candidate_id']}/artifacts",
+                payload,
+                service=True,
+            ).body
+            or {}
+        )
+
     def consent(self, candidate_id: UUID, purpose: str) -> UUID | None:
-        # M04 stores consent (m04_consent) and exposes no route to read it
-        # (M06_REVIEW 1.3). Asking would 404 on every session; saying "not
-        # recorded" is the true answer until the route exists.
+        """The consent id M13 cites on every observation it writes.
+
+        M06 resolves this at session start rather than at scoring time,
+        because consent is a fact about the session, not about the score.
+        Until M04 grew this route (2026-09-20) it returned None on every
+        session, which was honest and also meant no scored answer ever moved
+        a student's skill graph.
+
+        404 or an empty list means "not recorded", not "M04 is down": the
+        module answered. A student with no consent runs an interview that is
+        scored and says so in the report — it just does not update anything.
+        """
+        response = self.http.get(
+            f"/v1/candidates/{candidate_id}/consent",
+            query={"purpose": purpose},
+            headers=identity_headers(candidate_id),
+            accept=(404,),
+        )
+        rows = response.body if isinstance(response.body, list) else []
+        for row in rows:
+            if row.get("active") and row.get("consent_id"):
+                return UUID(str(row["consent_id"]))
         return None
 
 

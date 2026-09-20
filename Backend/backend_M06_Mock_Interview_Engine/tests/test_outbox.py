@@ -369,7 +369,7 @@ def test_the_outbox_is_visible_over_http(client, candidate_id, as_student):
     sid = created["id"]
     client.post(f"/v1/interviews/{sid}/start", headers=as_student)
     body = client.get(f"/v1/interviews/{sid}/outbox", headers=as_student).json()
-    assert set(body) == {"evaluations", "coverage"}
+    assert set(body) == {"artifacts", "evaluations", "coverage"}
     drained = client.post(f"/v1/interviews/{sid}/outbox/drain", headers=as_student).json()
     assert drained["evaluations_sent"] == 0
     assert (
@@ -414,6 +414,61 @@ def test_a_student_is_told_a_consequence_once(db):
     notes = report.build(state, store.events_for(db, row.id), down.clock()).notes
     said = [n for n in notes if "skill graph" in n]
     assert said == [state.flags.degraded["M04"]], notes
+
+
+# ── the answer text M13's evidence resolves against (M04 §5.1) ───────────
+
+
+@pytest.mark.gate
+def test_the_answer_reaches_m04_before_the_evaluation_reaches_m13(db):
+    """The seam that made a fully scored interview move nothing.
+
+    M13 quotes character spans of the answer and cites `artifact_id =
+    turn_id`; M04 refuses any observation whose evidence does not resolve. Run
+    live, every one of nine observations came back "evidence does not
+    resolve", so the score existed and the skill graph did not move.
+    """
+    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    row = mock_with_plan(engine)
+    engine.start(row.id)
+    say(engine, row, "Keys are hashed to a bucket index, so you do not scan.")
+
+    engine.upstreams.m04.register_artifact = lambda payload: (_ for _ in ()).throw(
+        adapters.UpstreamUnavailable("M04", "connection refused")
+    )
+    held = engine.deliver(row.id)
+    assert held.artifacts_sent == 0
+    # And the evaluation waits with it, rather than being scored into a
+    # rejection two modules downstream.
+    assert held.evaluations_sent == 0
+    assert held.waiting_on_artifact == 1
+    assert engine.upstreams.m13.requests == []
+
+    del engine.upstreams.m04.register_artifact
+    moved = engine.deliver(row.id)
+    assert (moved.artifacts_sent, moved.evaluations_sent) == (1, 1)
+
+    turn_id = next(t.turn_id for t in engine.state(row.id).transcript if t.role == "candidate")
+    # The artifact IS the turn, because that is the id M13 cites.
+    assert engine.upstreams.m04.artifacts[turn_id] == (
+        "Keys are hashed to a bucket index, so you do not scan."
+    )
+    assert engine.upstreams.m13.requests[0]["turn_id"] == str(turn_id)
+
+
+def test_the_registered_text_is_exactly_what_was_scored(db):
+    """M13 quotes character offsets into this string. Trimming, joining or
+    re-punctuating it here moves every span that points at it."""
+    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    row = mock_with_plan(engine)
+    engine.start(row.id)
+    answer = "   Buckets, and a load factor — kept bounded by resizing.   "
+    say(engine, row, answer)
+    engine.deliver(row.id)
+
+    turn_id = next(t.turn_id for t in engine.state(row.id).transcript if t.role == "candidate")
+    registered = engine.upstreams.m04.artifacts[turn_id]
+    assert registered == engine.upstreams.m13.requests[0]["answer_text"]
 
 
 # ── the worker that retries (sweeper.py) ─────────────────────────────────

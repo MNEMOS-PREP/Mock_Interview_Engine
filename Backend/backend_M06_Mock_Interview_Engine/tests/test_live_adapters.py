@@ -110,10 +110,34 @@ def test_m04_posterior_drops_unmeasured_concepts(wire):
     assert got == {"concept:hashing": 0.4}
 
 
-def test_m04_consent_is_honestly_unknown_without_a_call(wire):
-    rec = wire()
+def test_m04_consent_is_read_by_purpose_on_the_students_behalf(wire):
+    """The id M13 cites on every observation. M04 grew this route on
+    2026-09-20; before it, M06 said "not recorded" on every session and no
+    scored answer ever moved a skill graph."""
+    revoked, active = str(uuid.uuid4()), str(uuid.uuid4())
+    rec = wire(
+        body=[
+            # A revoked row is history — never a consent a write may cite —
+            # and it is listed first so picking the right one is a real choice.
+            {"consent_id": revoked, "purpose": "practice", "active": False},
+            {"consent_id": active, "purpose": "practice", "active": True},
+        ]
+    )
+    candidate = uuid.uuid4()
+    assert LiveMemory("http://m04").consent(candidate, "practice") == uuid.UUID(active)
+    assert rec.last.full_url == f"http://m04/v1/candidates/{candidate}/consent?purpose=practice"
+    # A student's own record, read with the student's identity — not as a
+    # service reading across candidates.
+    assert rec.last.headers["X-candidate-id"] == str(candidate)
+
+
+def test_m04_having_no_consent_is_an_answer_not_an_outage(wire):
+    """Empty and 404 both mean "not recorded". Neither degrades the session:
+    the interview runs and is scored, it just updates nothing."""
+    wire(body=[])
     assert LiveMemory("http://m04").consent(uuid.uuid4(), "practice") is None
-    assert rec.requests == []
+    wire(status=404, body={"detail": "no such candidate"})
+    assert LiveMemory("http://m04").consent(uuid.uuid4(), "practice") is None
 
 
 def test_m05_409_is_an_answer_not_a_failure(wire):

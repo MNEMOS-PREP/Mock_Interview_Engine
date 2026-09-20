@@ -216,6 +216,8 @@ class FixtureMemory:
         self._consent = consent_id
         self._posterior = posterior or {}
         self.summaries: dict[UUID, dict[str, Any]] = {}
+        #: turn_id -> the answer text M13's evidence will resolve against.
+        self.artifacts: dict[UUID, str] = {}
 
     def profile_summary(self, candidate_id: UUID, session_id: UUID) -> dict[str, Any]:
         # Pinned: the same object for the life of the session (M04 AC-4.13).
@@ -253,6 +255,10 @@ class FixtureMemory:
 
     def posterior(self, candidate_id: UUID, concepts: list[str]) -> dict[str, float]:
         return {c: v for c, v in self._posterior.items() if c in concepts}
+
+    def register_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.artifacts[UUID(str(payload["turn_id"]))] = payload["content"]
+        return {"artifact_id": payload["turn_id"], "created": True}
 
     def consent(self, candidate_id: UUID, purpose: str) -> UUID | None:
         return self._consent

@@ -1,6 +1,6 @@
 """What M06 owes other modules, written with the turn — FR-6.14, FR-6.24.
 
-Two obligations, one mechanism. An answered turn owes M13 an evaluation, and
+Three obligations, one mechanism. An answered turn owes M13 an evaluation, and
 the requirements behind a question owe M02 a coverage row. Both are written to
 a table **in the same transaction as the turn** and delivered afterwards, by a
 background task or by an explicit drain.
@@ -46,7 +46,7 @@ from sqlmodel import Session, select
 from .adapters import Upstreams, UpstreamUnavailable
 from .contracts import SessionKind
 from .items import Item
-from .models import EvaluationOutbox, InterviewSession, LedgerOutbox
+from .models import ArtifactOutbox, EvaluationOutbox, InterviewSession, LedgerOutbox
 from .state import SessionState
 
 log = logging.getLogger("uvicorn.error")
@@ -142,6 +142,43 @@ def scoreable(state: SessionState, turn, item: Item | None) -> str | None:
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def artifact_request(state: SessionState, turn) -> dict:
+    """What M04's `POST /v1/candidates/{id}/artifacts` takes.
+
+    The answer text and nothing else. M13 quotes character offsets into
+    exactly this string, so what is registered here has to be what was scored
+    — not a trimmed, joined or re-punctuated version of it.
+    """
+    return {
+        "candidate_id": str(state.candidate_id),
+        "session_id": str(state.session_id),
+        "turn_id": str(turn.turn_id),
+        "artifact_type": "transcript",
+        "content": turn.text,
+    }
+
+
+def enqueue_artifact(db: Session, state: SessionState, turn) -> ArtifactOutbox | None:
+    """Register the answer so M13's evidence can resolve against it.
+
+    Queued on the same condition as the evaluation: an answer nobody will
+    score is an artifact nobody will cite.
+    """
+    if not turn.text:
+        return None
+    existing = db.get(ArtifactOutbox, turn.turn_id)
+    if existing is not None:
+        return existing
+    row = ArtifactOutbox(
+        id=turn.turn_id,
+        turn_id=turn.turn_id,
+        session_id=state.session_id,
+        payload=artifact_request(state, turn),
+    )
+    db.add(row)
+    return row
+
+
 def enqueue_evaluation(
     db: Session, state: SessionState, turn, item: Item | None
 ) -> EvaluationOutbox | None:
@@ -224,8 +261,11 @@ def _ledger_exists(
 
 @dataclass
 class Drained:
+    artifacts_sent: int = 0
     evaluations_sent: int = 0
     ledger_sent: int = 0
+    #: Evaluations held back because M04 has not got the answer text yet.
+    waiting_on_artifact: int = 0
     failed: int = 0
     held: int = 0
     #: Rows somebody else is sending. Not a failure, and not work left undone
@@ -240,7 +280,7 @@ class Drained:
 
     @property
     def moved(self) -> int:
-        return self.evaluations_sent + self.ledger_sent
+        return self.artifacts_sent + self.evaluations_sent + self.ledger_sent
 
 
 def _claim(db: Session, model, row, now: datetime) -> bool:
@@ -290,10 +330,36 @@ def drain(
     now = utcnow()
     # A snapshot, before this drain claims anything of its own.
     out.in_flight = sum(
-        _sending(db, model, session_id, now) for model in (EvaluationOutbox, LedgerOutbox)
+        _sending(db, model, session_id, now)
+        for model in (ArtifactOutbox, EvaluationOutbox, LedgerOutbox)
     )
 
+    # Artifacts first, and in their own pass: M04 refuses an observation whose
+    # evidence does not resolve, so an evaluation that overtakes its own
+    # artifact is scored into a rejection two modules downstream.
+    for row in _pending(db, ArtifactOutbox, session_id, limit):
+        if not upstreams.available("M04"):
+            out.failed += 1
+            continue
+        if not _claim(db, ArtifactOutbox, row, now):
+            continue
+        try:
+            upstreams.m04.register_artifact(row.payload)
+        except UpstreamUnavailable as exc:
+            out.held += int(_fail(row, str(exc), now))
+            out.failed += 1
+            db.commit()
+            continue
+        row.state, row.sent_at, row.last_error, row.claimed_at = SENT, now, None, None
+        out.artifacts_sent += 1
+    db.commit()
+
+    unresolved = _turns_without_an_artifact(db, session_id)
     for row in _pending(db, EvaluationOutbox, session_id, limit):
+        if row.turn_id in unresolved:
+            # Its artifact has not landed. Next drain, or the sweeper.
+            out.waiting_on_artifact += 1
+            continue
         if not upstreams.available("M13"):
             out.failed += 1
             continue
@@ -346,6 +412,14 @@ def drain(
     return out
 
 
+def _turns_without_an_artifact(db: Session, session_id: uuid.UUID | None) -> set[uuid.UUID]:
+    """Turns whose answer text M04 has not accepted yet."""
+    statement = select(ArtifactOutbox).where(ArtifactOutbox.state != SENT)
+    if session_id is not None:
+        statement = statement.where(ArtifactOutbox.session_id == session_id)
+    return {row.turn_id for row in db.exec(statement).all()}
+
+
 def _sending(db: Session, model, session_id: uuid.UUID | None, now: datetime) -> int:
     """Rows claimed by a sender that has not yet given up or finished."""
     statement = (
@@ -376,7 +450,7 @@ def sessions_owing(db: Session, *, limit: int) -> list[uuid.UUID]:
     first and a busy session cannot starve a finished one.
     """
     seen: list[uuid.UUID] = []
-    for model in (EvaluationOutbox, LedgerOutbox):
+    for model in (ArtifactOutbox, EvaluationOutbox, LedgerOutbox):
         for row in _pending(db, model, None, limit):
             if row.session_id not in seen:
                 seen.append(row.session_id)
@@ -402,6 +476,7 @@ def status(db: Session, session_id: uuid.UUID | None = None) -> dict:
         }
 
     return {
+        "artifacts": summarise(rows(ArtifactOutbox)),
         "evaluations": summarise(rows(EvaluationOutbox)),
         "coverage": summarise(rows(LedgerOutbox)),
     }
@@ -433,6 +508,8 @@ __all__ = [
     "SENT",
     "Drained",
     "drain",
+    "artifact_request",
+    "enqueue_artifact",
     "enqueue_evaluation",
     "enqueue_ledger",
     "evaluation_request",

@@ -129,6 +129,35 @@ class EvaluationOutbox(SQLModel, table=True):
     claimed_at: datetime | None = None
 
 
+class ArtifactOutbox(SQLModel, table=True):
+    """The answer text M04 resolves M13's evidence against (M04 §5.1).
+
+    M13 quotes character spans of the answer and cites `artifact_id =
+    turn_id`. M04 refuses any observation whose evidence does not resolve, and
+    until M06 registers the turn there is nothing for it to resolve to — which
+    is how a fully scored interview moved no mastery at all.
+
+    M06 owns the transcript, so M06 registers it. Sent BEFORE the evaluation
+    for the same turn, because the artifact has to be there before anything
+    cites it.
+    """
+
+    __tablename__ = "m06_artifact_outbox"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    #: The artifact id itself, which is the turn id — M04 derives it the same
+    #: way, so neither side carries an id the other has to be told.
+    turn_id: uuid.UUID = Field(unique=True)
+    session_id: uuid.UUID = Field(index=True)
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    state: str = Field(default="pending", index=True)
+    attempts: int = 0
+    last_error: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    sent_at: datetime | None = None
+    claimed_at: datetime | None = None
+
+
 class LedgerOutbox(SQLModel, table=True):
     """M02 coverage ledger rows M06 owes (FR-6.24)."""
 

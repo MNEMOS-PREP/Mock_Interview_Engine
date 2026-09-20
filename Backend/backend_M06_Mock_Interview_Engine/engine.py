@@ -466,6 +466,10 @@ class Engine:
             if state.plan is not None and state.current_segment < len(state.plan.segments)
             else None
         )
+        # The answer text goes to M04 before the evaluation goes to M13:
+        # M13's evidence cites this turn, and M04 refuses an observation whose
+        # evidence does not resolve.
+        outbox.enqueue_artifact(self.db, state, answer_turn)
         queued = outbox.enqueue_evaluation(self.db, state, answer_turn, item)
         if segment is not None:
             outbox.enqueue_ledger(

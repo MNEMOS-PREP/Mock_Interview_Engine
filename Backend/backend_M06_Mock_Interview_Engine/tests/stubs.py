@@ -126,7 +126,7 @@ class DownMemory:
 
         raise UpstreamUnavailable("M04", "connection refused")
 
-    profile_summary = posterior = consent = _fail
+    profile_summary = posterior = consent = register_artifact = _fail
 
 
 def drill_body(candidate: uuid.UUID) -> dict[str, Any]:
