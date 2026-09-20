@@ -1,10 +1,10 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 52%** — 8 of 26 functional requirements met, 11 partially. **Days 1–4 of 15 are done**, and on 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. The **defend drill** path also runs whole. The **mock** path still runs on a stub plan (one segment, a fixed round type) until day 5.
+> **Completion: 62%** — 11 of 26 functional requirements met, 10 partially. **Days 1–5 of 15 are done**, and on 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. The **defend drill** path also runs whole. The **mock** path still runs on a stub plan (one segment, a fixed round type) until day 5.
 >
-> Met: the probe ladder and break depths (FR-6.5, 6.6), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), a report for every session (FR-6.18), the drill (FR-6.23), the M05 θ seam (FR-6.25), identity (FR-6.26).
+> Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), the probe ladder and break depths (FR-6.5, 6.6), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), a report for every session (FR-6.18), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
-> Not started: plan assembly and its preview (FR-6.1, 6.2), re-planning (FR-6.4), modes as configs (FR-6.8), Final Boss (FR-6.9), closing questions (FR-6.21). Blocked: steelman (FR-6.20).
+> Not started: re-planning (FR-6.4), modes as configs (FR-6.8), Final Boss (FR-6.9), closing questions (FR-6.21). Blocked: steelman (FR-6.20).
 >
 > _Method: `(met + ½ × partial) ÷ total`, audited against shipped code, 2026-09-17. One measure applied the same way to all nineteen modules so they compare; it counts requirements, not screens or gates._
 
@@ -41,12 +41,12 @@ _Nothing scouted for this module yet._
 
 | | |
 |---|---|
-| Status | **Days 1–4 of 15 done.** A mock interview runs across M04, M05, M06 and M13 and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **173**, no socket opened, no API key |
-| Release gates (`-m gate`) | **25** |
-| Route decorators | **18** on `/v1`, plus `/health` and `/status` |
+| Status | **Days 1–5 of 15 done.** A mock interview is planned from a real job description, runs across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
+| Backend tests passing | **194**, no socket opened, no API key |
+| Release gates (`-m gate`) | **29** |
+| Route decorators | **20** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
-| Frontend | four screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
+| Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
 | Measured | strategist p95 **1106 ms**, interviewer first token p95 **919 ms**, a rung ≈ **2.0 s** to first visible token (AC-6.4 wants ≤ 2.5 s) — `Backend/reports/latency-*.json` |
 | Spec | [Revision 2](M06_Mock_Interview_Engine.md), after [the review](M06_REVIEW.md) |
 | Scope | 26 functional requirements (21 of them P0), 16 acceptance metrics (7 release-blocking), 17 edge cases |
@@ -71,7 +71,7 @@ _Nothing scouted for this module yet._
 | 2 | ✅ | Drill slice (`POST /v1/drills`) end to end + SSE + stage UI + **latency harness on the live account** |
 | 3 | ✅ | `ProbeStrategist` structured call, derived rungs, `break_depth`, `ProvisionalOutcome` → M05; LangGraph adopted (§15.6) |
 | 4 | ✅ | `InterviewerView` + outbound-request gates; eval outbox → M13; ledger → M02; consent adapter; **outbox sweeper** |
-| 5 | ⬜ | Plan assembly over M02 + plan-time availability; preview UI |
+| 5 | ✅ | Plan assembly over M02 + plan-time availability; preview UI with drop-a-segment |
 | 6 | ⬜ | Segments, 409 as honest end, bridges, `RoundTransition` |
 | 7 | ⬜ | Hint ladder (M05), M13 credit table shown |
 | 8 | ⬜ | Context management; AC-6.10 |
@@ -178,12 +178,46 @@ each module tests itself against fixtures by design.
 route to fill it, because the rule ships with the model and the route is left
 to a repo that does not exist yet. Four instances in one afternoon.
 
-### Next: day 5
+### Day 5 — what landed
 
-1. **Plan assembly over M02's `CoveragePlan`** (FR-6.1) — no model call, and
-   `skipped` ledger rows become writable once the plan says what was planned.
-2. **Plan-time availability from M05** and the segment sequence (FR-6.3).
-3. **The plan preview with drop-a-segment** (FR-6.2).
+`planner.py`: M02's `CoveragePlan` becomes an `InterviewPlan`, deterministically.
+M06 **adds to** M02's plan and never re-allocates it (Trap 8) — it reserves the
+warm-up and closing off the top *before* asking M02 to price anything (45 min →
+M02 is asked for 36), carries M02's minutes and question counts across
+untouched, resolves requirement ids to the concept ids M05 selects on, and
+names each segment in the posting's own words.
+
+**Two vocabularies, kept apart** (§5). M02's `round_type` is a MODALITY —
+`verbal`, `coding`, `design`, priced at 3.5, 12 and 20 minutes a question.
+M05's and M13's is a RUBRIC — `dsa_verbal`. A segment carries both: the
+modality decides whether this session can run it, the rubric decides what M13
+scores it against. A coding round has no M07 and a design round no M08, so
+both are dropped with a sentence and their requirements go to M02 as `skipped`.
+
+**Availability is probed at plan time** (§6.1 step 5): one `select` per round
+type M13 can score, and a 409 removes it from the plan instead of surprising
+the student mid-interview. The probe is safe — M05 records an item as
+administered when an outcome is reported, not when one is selected.
+
+**And the plan runs.** `question_budget` is the plan's sum rather than a second
+estimate of the same thing; the segment being run supplies `coverage_debt` and
+`required_requirement_ids` to M05; and a segment advances once it has had the
+questions M02 priced for it. Without that last piece the plan was a screen —
+the session stayed on the warm-up for ever.
+
+Verified live against M02's real plan: a 45-minute session became a 4-minute
+warm-up, M02's 14-minute SQL round for requirement R-8 carrying M02's own
+rationale, and a reserved 5-minute closing. On the second segment M05 returned
+an SQL question — the plan steering selection, end to end.
+
+### Next: day 6
+
+1. **The bridge line between rounds** and `RoundTransition` (FR-6.3) — a
+   segment advance is silent today.
+2. **409 as an honest end** — M05 running dry inside a segment should end that
+   segment, not the session (§6.1 should have caught it at plan time).
+3. **The project segment** from M01's risky claims — `PlanInputs.claims` is
+   wired and always empty.
 
 ---
 
@@ -193,9 +227,9 @@ Spec §4, Revision 2. This is the authoritative list.
 
 | FR | | Priority | Phase |
 |---|---|---|---|
-| FR-6.1 | ⬜ `InterviewPlan` from M02 plan + M04 profile + M05 availability + budget + mode, no model call | P0 | 1 |
-| FR-6.2 | ⬜ Plan preview with drop-a-segment | P1 | 1 |
-| FR-6.3 | 🟡 Segments in sequence, per-segment persona, rubric from M05's selection — one segment and one register today; sequencing lands with the plan (day 5–6) | P0 | 1 |
+| FR-6.1 | ✅ `InterviewPlan` from M02's plan + M05 availability + budget + mode, assembled by `planner.py` with no model call; M04's profile is the pinned prefix, not a plan input | P0 | 1 |
+| FR-6.2 | ✅ `POST /plan` previews without starting; `DELETE /plan/segments/{i}` drops one, only while `planned`; `PlanPreview` shows minutes, questions, M02's rationale, what was dropped and M02's `uncovered` | P1 | 1 |
+| FR-6.3 | 🟡 Segments run in sequence and advance when their question budget is spent; the persona is the mode's default for every segment and the bridge line between rounds is day 6 | P0 | 1 |
 | FR-6.4 | ⬜ Re-plan at boundaries, ≤ 2, hot-path signals only | P1 | 1 |
 | FR-6.5 | ✅ Probe ladder, cap 5, graceful exit, derived rungs — pure function, 14 tests, steelman unreachable | P0 | 1 |
 | FR-6.6 | ✅ `break_depth` per concept per session — recorded by the fold, kept at the shallowest break | P0 | 1 |
@@ -216,7 +250,7 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.21 | ⬜ Record closing questions · ⛔ score them | P1 | 1 · scoring blocked — rubric |
 | FR-6.22 | 🟡 Text measured at ≈ 2.0 s p95 to first visible token, inside the gate | P0 | 1·text · voice ⛔ M11 |
 | FR-6.23 | ✅ Defend drill — M01's contract, end to end, on the live model | P0 | 1 |
-| FR-6.24 | 🟡 M02 ledger: `asked` and `answered` are written with the turn and delivered; `skipped` needs the real plan to know what was never reached (day 5) | P0 | 1 |
+| FR-6.24 | ✅ M02 ledger: `asked` and `answered` with the turn, and `skipped` for every requirement behind a segment the plan dropped or the student removed | P0 | 1 |
 | FR-6.25 | ✅ `ProvisionalOutcome` → M05 per model verdict; θ in memory only, gated twice | P0 | 1 |
 | FR-6.26 | ✅ `may_see` on every route, including the body-scoped `/drills` | P0 | 1 |
 
@@ -234,7 +268,7 @@ Spec §13. A **[GATE]** is release-blocking; the rest are tracked.
 | AC-6.4 **[GATE]** | 🟡 p95 text 2.5 s to first token — measured ≈ 2.0 s on 16 rounds; voice is Phase 3 | harness |
 | AC-6.13 **[GATE]** | ✅ No provisional θ in persisted state — schema test + a real 30-turn checkpoint scanned | unit test |
 | AC-6.14 **[GATE]** | ✅ No steelman while disabled, any mode | 0 / 10,000 per mode |
-| AC-6.15 **[GATE]** | 🟡 `asked` / `answered` ledger rows for every turn — written and delivered whenever a JD is behind the session; `skipped` waits on the real plan (day 5) | 100% |
+| AC-6.15 **[GATE]** | ✅ `asked` / `answered` ledger rows for every turn, `skipped` for every dropped requirement — all three written with the work that caused them | 100% |
 | AC-6.5 | ⬜ Session completion rate | ≥ 80% |
 | AC-6.6 | ⬜ Break point found | ≥ 80% of sessions |
 | AC-6.7 | ⬜ Coverage of must-have requirements | ≥ 90% |
