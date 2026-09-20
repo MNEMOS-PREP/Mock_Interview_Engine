@@ -1,10 +1,10 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 46%** — 7 of 26 functional requirements met, 10 partially. **Days 1–3 of 15 are done**, and the requirement count flatters them: the session mechanics landed early and the big remaining pieces are one requirement each. What works end to end is the **defend drill** — M01 hands over a claim, the ladder climbs its probes, it exits gracefully and produces notes. The **mock** path runs on a stub plan (one segment, a fixed round type) until day 5.
+> **Completion: 52%** — 8 of 26 functional requirements met, 11 partially. **Days 1–4 of 15 are done.** What works end to end now spans three modules: a mock interview asks **M05 bank questions**, the answers reach **M13**, and M13's status comes back into the report — verified against the three services running together, not against fixtures. The **defend drill** path also runs whole. The **mock** path still runs on a stub plan (one segment, a fixed round type) until day 5.
 >
-> Met: the probe ladder and break depths (FR-6.5, 6.6), the interviewer's blind view (FR-6.15), a report for every session (FR-6.18), the drill (FR-6.23), the M05 θ seam (FR-6.25), identity (FR-6.26).
+> Met: the probe ladder and break depths (FR-6.5, 6.6), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), a report for every session (FR-6.18), the drill (FR-6.23), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
-> Not started: plan assembly and its preview (FR-6.1, 6.2), re-planning (FR-6.4), modes as configs (FR-6.8), Final Boss (FR-6.9), the evaluation outbox (FR-6.14), the M02 ledger (FR-6.24), closing questions (FR-6.21). Blocked: steelman (FR-6.20).
+> Not started: plan assembly and its preview (FR-6.1, 6.2), re-planning (FR-6.4), modes as configs (FR-6.8), Final Boss (FR-6.9), closing questions (FR-6.21). Blocked: steelman (FR-6.20).
 >
 > _Method: `(met + ½ × partial) ÷ total`, audited against shipped code, 2026-09-17. One measure applied the same way to all nineteen modules so they compare; it counts requirements, not screens or gates._
 
@@ -41,10 +41,10 @@ _Nothing scouted for this module yet._
 
 | | |
 |---|---|
-| Status | **Days 1–3 of 15 done.** A defend drill runs end to end, on the live model, through the web app. |
-| Backend tests passing | **147**, no socket opened, no API key |
-| Release gates (`-m gate`) | **19** |
-| Route decorators | **17** on `/v1`, plus `/health` and `/status` |
+| Status | **Days 1–4 of 15 done.** A mock interview runs across M05, M06 and M13 with the three services live; a defend drill runs end to end on the live model through the web app. |
+| Backend tests passing | **170**, no socket opened, no API key |
+| Release gates (`-m gate`) | **24** |
+| Route decorators | **18** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | four screens on `:5206`, `m06Routes` exported for Platform_Shell |
 | Measured | strategist p95 **1106 ms**, interviewer first token p95 **919 ms**, a rung ≈ **2.0 s** to first visible token (AC-6.4 wants ≤ 2.5 s) — `Backend/reports/latency-*.json` |
@@ -70,7 +70,7 @@ _Nothing scouted for this module yet._
 | 1 | ✅ | Scaffold and state: repo, ports, `module.json`, Platform_Core v0.9.1, `/health`, `/v1/deps`, adapters + fixtures, session/turn/event tables, event fold, compare-and-swap, one live session, `may_see` |
 | 2 | ✅ | Drill slice (`POST /v1/drills`) end to end + SSE + stage UI + **latency harness on the live account** |
 | 3 | ✅ | `ProbeStrategist` structured call, derived rungs, `break_depth`, `ProvisionalOutcome` → M05; LangGraph adopted (§15.6) |
-| 4 | ⬜ | `InterviewerView` + outbound-request gates; eval outbox → M13; ledger → M02; consent adapter |
+| 4 | ✅ | `InterviewerView` + outbound-request gates; eval outbox → M13; ledger → M02; consent adapter; **outbox sweeper** |
 | 5 | ⬜ | Plan assembly over M02 + plan-time availability; preview UI |
 | 6 | ⬜ | Segments, 409 as honest end, bridges, `RoundTransition` |
 | 7 | ⬜ | Hint ladder (M05), M13 credit table shown |
@@ -108,12 +108,56 @@ _Nothing scouted for this module yet._
 
 **Two new asks** (§7): M13 has **no live M05 client at all** (`get_questions()` is always the fixture bank), so it 404s on every real question id — which blocks the Phase-1 exit gate, not just day 4. And M05's `Bank.get()` cannot find its own fallback-playlist items.
 
-### Next: day 4
+### Day 4 — what landed, and what it found
 
-1. **The evaluation outbox** → M13 (FR-6.14), and the decision about what a *rung* answer is scored against.
-2. **The M02 coverage ledger** — `asked` / `answered` / `skipped` (FR-6.24).
-3. **The outbound-payload gate** (AC-6.2) against M13's `EvaluateRequest`.
-4. **The consent adapter**, and the report line when consent is missing.
+**Built:** `outbox.py` — one mechanism for two obligations (an answered turn owes
+M13 an evaluation, a requirement behind a question owes M02 a ledger row), each
+row written **in the same transaction as the turn**. `EVALUATION_KEYS` is the
+gate on what leaves: the blind-scoring property is what is *absent* — no
+interviewer text, no probe intent, no verdict, no other turn. Scores come back
+as a **status** (`queued` → `complete`), never as a number, because M13 owns
+the number and the gate that says whether anybody may see it.
+
+**Then the three services were started together** — M05 on 8105, M13 on 8113,
+M06 on 8106 — and a real interview was driven through the HTTP API. It found
+four things 166 passing tests had not:
+
+- **One answer reached M13 three times, concurrently.** A background task and
+  an explicit drain both took the same row, because `_pending` read rows
+  without claiming them; the third call timed out at 60 s. A row is now claimed
+  by a conditional UPDATE that commits *before* the network call, and the claim
+  expires (`STALE_CLAIM_S`) so a process that dies mid-send strands nothing.
+  Without the claim the regression test recurses for ever.
+- **A send that failed had nobody left to retry it.** It went back to `pending`
+  and sat there — the student had stopped answering. `sweeper.py` is the worker
+  the outbox docstring already promised: one task per process, every 30 s,
+  working through every session that still owes something. On the live database
+  it picked the stranded row up on its first pass and the report moved
+  `queued` → `complete`.
+- **Repeating a question repeated the turn it arrived in:** *"That's a different
+  question. Here's mine again. Okay, let's leave that there. Next question. Two
+  keys hash to the same bucket."* A turn now carries `question_text` — the
+  question without the words that introduced it.
+- **Pressing End said nothing at all.** `session.ended` has carried a closing
+  line since day 1; the student-initiated path never filled it in.
+
+**Evidence.** M13 scored two live M05 bank questions with verified quote spans
+(correctness 0, reasoning "does not address hashing", on an answer that
+deliberately did not), `composite` withheld by its display gate, and
+`key_point_coverage` against the bank item's own key points. M06's report shows
+those key points as *"a strong answer covers"*. Turn latency 0.6–1.7 s.
+
+**Also:** the report tells a student a consequence **once** — M04 owns consent,
+so when M04 is absent its own sentence is the whole story. And
+`fixture_upstreams` now serves `module.json`'s real `on_missing` copy, so a
+test about what a student is told asserts on the words that ship.
+
+### Next: day 5
+
+1. **Plan assembly over M02's `CoveragePlan`** (FR-6.1) — no model call, and
+   `skipped` ledger rows become writable once the plan says what was planned.
+2. **Plan-time availability from M05** and the segment sequence (FR-6.3).
+3. **The plan preview with drop-a-segment** (FR-6.2).
 
 ---
 
@@ -136,7 +180,7 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.11 | 🟡 Contract fixed and carried; nothing to switch to yet | P0 | 1·text |
 | FR-6.12 | 🟡 Pause once ≤ 5 min, resume — once-only and the 5-min cap on resume are built and tested; the clock does not restart on its own if the student never resumes (day 11) | P1 | 1 |
 | FR-6.13 | 🟡 Reconnect and resume from checkpoint — checkpoint recovery (stale, unreadable, failed write) is built and tested; `resume-state` and the "welcome back" flow are not (day 11) | P0 | 1 |
-| FR-6.14 | ⬜ Evaluation never blocks the hot path — nothing is queued to M13 yet (day 4) | P0 | 1 |
+| FR-6.14 | ✅ Evaluation never blocks the hot path — outbox written with the turn, delivered by a background task, an explicit drain, or the sweeper; claimed before sending; a status returns, never a number | P0 | 1 |
 | FR-6.15 | ✅ Interviewer cannot read scores, band or θ — `InterviewerView` + the type-graph gate | P0 | 1 |
 | FR-6.16 | 🟡 Last six turns only reach the model; no round summary, no constancy test (day 8) | P0 | 1 |
 | FR-6.17 | 🟡 A question is not asked without time for an answer, and the clock can end a session; the 70% checkpoint and the reserved closing are day 10 | P0 | 1 |
@@ -146,7 +190,7 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.21 | ⬜ Record closing questions · ⛔ score them | P1 | 1 · scoring blocked — rubric |
 | FR-6.22 | 🟡 Text measured at ≈ 2.0 s p95 to first visible token, inside the gate | P0 | 1·text · voice ⛔ M11 |
 | FR-6.23 | ✅ Defend drill — M01's contract, end to end, on the live model | P0 | 1 |
-| FR-6.24 | ⬜ M02 ledger: `asked`, `answered`, `skipped` (day 4) | P0 | 1 |
+| FR-6.24 | 🟡 M02 ledger: `asked` and `answered` are written with the turn and delivered; `skipped` needs the real plan to know what was never reached (day 5) | P0 | 1 |
 | FR-6.25 | ✅ `ProvisionalOutcome` → M05 per model verdict; θ in memory only, gated twice | P0 | 1 |
 | FR-6.26 | ✅ `may_see` on every route, including the body-scoped `/drills` | P0 | 1 |
 
@@ -159,12 +203,12 @@ Spec §13. A **[GATE]** is release-blocking; the rest are tracked.
 | AC | | Target |
 |---|---|---|
 | AC-6.1 **[GATE]** | ✅ Every session produces a report | 100%, including aborted |
-| AC-6.2 **[GATE]** | ⬜ M13 request carries no interviewer text, intent, steelman flag, verdict or other turn | unit test |
+| AC-6.2 **[GATE]** | ✅ M13 request carries no interviewer text, intent, steelman flag, verdict or other turn — `EVALUATION_KEYS` asserted against M13's own `EvaluateRequest` | unit test |
 | AC-6.3 **[GATE]** | ✅ Interviewer never receives scores, band or θ | type-graph walk |
 | AC-6.4 **[GATE]** | 🟡 p95 text 2.5 s to first token — measured ≈ 2.0 s on 16 rounds; voice is Phase 3 | harness |
 | AC-6.13 **[GATE]** | ✅ No provisional θ in persisted state — schema test + a real 30-turn checkpoint scanned | unit test |
 | AC-6.14 **[GATE]** | ✅ No steelman while disabled, any mode | 0 / 10,000 per mode |
-| AC-6.15 **[GATE]** | ⬜ `asked` / `answered` ledger rows for every turn | 100% |
+| AC-6.15 **[GATE]** | 🟡 `asked` / `answered` ledger rows for every turn — written and delivered whenever a JD is behind the session; `skipped` waits on the real plan (day 5) | 100% |
 | AC-6.5 | ⬜ Session completion rate | ≥ 80% |
 | AC-6.6 | ⬜ Break point found | ≥ 80% of sessions |
 | AC-6.7 | ⬜ Coverage of must-have requirements | ≥ 90% |
@@ -173,7 +217,7 @@ Spec §13. A **[GATE]** is release-blocking; the rest are tracked.
 | AC-6.10 | ⬜ Context tokens per turn variance | < 15% |
 | AC-6.11 | 🟡 Prompt cache-hit ratio — measured: reported on 2 of 16 structured calls, never on a streamed one | ≥ 0.7, or "not measured" |
 | AC-6.12 | ⬜ Sessions where a student felt humiliated | 0 |
-| AC-6.16 | 🟡 Retries never double-ask or double-write — proven for the event key and a crashed step; the outboxes arrive on day 4 | chaos test |
+| AC-6.16 | 🟡 Retries never double-ask or double-write — proven for the event key, a crashed step, and now two senders racing over one outbox row; the full chaos suite is day 11 | chaos test |
 
 ---
 
@@ -218,7 +262,7 @@ Spec §5 (Revision 2).
 | `m06_checkpoint` (monotonic `last_seq`, no θ) | ✅ | a cache; stale or unreadable → re-fold |
 | `m06_turn` (projection, `text_sha256`) | ✅ | feeds `seen_item_ids` |
 | `m06_llm_call` | ✅ | every model call, with reasoning and cached tokens when reported |
-| `m06_eval_outbox`, `m06_ledger_outbox` | 🟡 | tables exist; day 4 fills them |
+| `m06_eval_outbox`, `m06_ledger_outbox` (`claimed_at`, states `pending`/`sending`/`sent`/`held`) | ✅ | written with the turn, claimed before sending, retried by `sweeper.py` |
 
 ---
 
@@ -227,21 +271,22 @@ Spec §5 (Revision 2).
 From [M06_REVIEW.md](M06_REVIEW.md) Part 5. None blocks day 1. Each belongs in
 the other module's TODO once raised; tick it here when it has been.
 
-| Module | Ask | Raised |
+| Module | Ask | State |
 |---|---|---|
-| M01 | `module.json` repo URL `mock-interview-engine` → `Mock_Interview_Engine` (launcher skips M06 otherwise) | ⬜ |
-| M01 | forward `X-Role` / `X-Candidate-Id` on the drill hand-off (M06 refuses anonymous callers) | ⬜ |
-| M05 | `/questions/select` reads its own `_SESSIONS` θ when the caller omits it | ⬜ |
+| M01 | `module.json` repo URL `mock-interview-engine` → `Mock_Interview_Engine` (launcher skips M06 otherwise) | ✅ landed (`d785b9f`, branch `m01-claim-pipeline`) |
+| M01 | forward `X-Role` / `X-Candidate-Id` on the drill hand-off (M06 refuses anonymous callers) | ✅ landed (`d785b9f`) |
+| M05 | `/questions/select` reads its own `_SESSIONS` θ when the caller omits it | ✅ landed (`d30915d`) |
+| M05 | `Bank.get()` cannot find its own fallback-playlist items | ✅ landed (`d30915d`) |
+| M13 | **a live M05 question source** — `get_questions()` was always the fixture bank, so it 404d on every real question id (blocked the Phase-1 gate) | ✅ landed (`efb5a5a`); confirmed live: M13 resolves `/v1/questions/{id}/package?round_type=` from M05 |
+| M13 | **a worker that drains its own outbox** — `emit.py` promises one ("a row is written in the same transaction and a worker drains it") but only `POST /outbox/drain` exists, so a failed send to M04/M02/M19 is never retried. M06's `sweeper.py` is the pattern | ⬜ new |
 | M05 | `difficulty_offset` on `SelectionRequest` | ⬜ |
 | M05 | per-round-type counts on `/bank/health` | ⬜ |
-| M04 | consent lookup route | ⬜ |
+| M04 | consent lookup route — until it exists, M13 emits **no observations at all** (it requires `consent_id` on every one), so a scored session still moves no mastery | ⬜ |
 | M04 | source `recent_sessions` from M06 | ⬜ |
-| M13 | **a live M05 question source** — `get_questions()` is always the fixture bank, so it 404s on every real question id (blocks the Phase-1 gate) | ⬜ |
 | M13 | `push_back` rubric variant (unblocks FR-6.20) | ⬜ |
 | M13 | `cs_core` and `communication` rubrics | ⬜ |
 | M13 | read `M04_SERVICE_SECRET`, as M04 and M15 do, not `SERVICE_SECRET` | ⬜ |
 | M02 | docstring: M06 writes `asked`/`answered` | ⬜ |
-| M05 | `Bank.get()` cannot find its own fallback-playlist items | ⬜ |
 | Platform_Shell | add `interviews`/`drills`/`agents` to the proxy table and mount `m06Routes` | ⬜ |
 | Platform | `modules_meta` M06 → built; `Platform_Shell` journey card | ⬜ (on ship) |
 

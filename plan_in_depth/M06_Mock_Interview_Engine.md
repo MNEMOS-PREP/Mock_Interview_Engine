@@ -349,7 +349,7 @@ class SessionFlags(BaseModel):
 | `m06_session` | One row per session. `occupying_key` is the candidate id while live or paused and NULL otherwise; a plain UNIQUE on it enforces EC-6.13 identically on SQLite and Postgres, which both allow many NULLs. |
 | `m06_checkpoint` | The fold, cached: `version`, `last_seq`, `state_json`. Only ever moved forward. |
 | `m06_turn` | A projection of the log for queries a fold is bad at (the 90-day `seen_item_ids`); rebuildable. Carries `text_sha256`. |
-| `m06_eval_outbox`, `m06_ledger_outbox` | What M06 owes M13 and M02, written with the turn. |
+| `m06_eval_outbox`, `m06_ledger_outbox` | What M06 owes M13 and M02, written with the turn. `state` is `pending` → `sending` (claimed, with `claimed_at`) → `sent`, or `held` after `MAX_ATTEMPTS`. |
 | `m06_llm_call` | Model id, tier, prompt version, tokens in/out/reasoning, cached tokens if the provider reports them, latency, time to first token. |
 
 ---
@@ -441,6 +441,23 @@ async def on_answer(s: Session, answer: str) -> None:
     append(s, "probe.decided", move=move)
     await (present_probe(s, move) if move.is_rung else present_next(s))
 ```
+
+**The outbox has three senders, and needs all three** (`outbox.py`, `sweeper.py`
+— added after the day-4 live run). The request that created the work delivers it
+in a background task; a student or an operator can force an explicit drain; and
+a per-process **sweeper** works through every session that still owes something,
+every 30 s. The first two are not enough on their own: a send that fails puts
+its row back to `pending`, and if the student has closed the tab nothing ever
+asks again.
+
+Because more than one of them can run at once, **a row is claimed before it is
+sent** — a conditional `UPDATE … WHERE state = <what we read>` that commits
+before the network call, with a claim that expires (`STALE_CLAIM_S`, 180 s) so a
+process that dies mid-send strands nothing. Without the claim, the first live
+run had a background task and an explicit drain both post the same answer, and
+M13 scored one turn three times concurrently until the third call timed out.
+Delivery stays at-least-once by design — M13 keys on `turn_id`, M02's ledger is
+append-only — but at-least-once is a safety net, not a plan.
 
 **`ProbeStrategist` gets a deliberately narrow context** — the question, the answer, the item's key points, and the current ladder depth. Not the full transcript. This keeps the call small and forces the decision to be about *this answer*, which is the right scope. It never sees the candidate's identity or profile either: a strategist that knows the student is "weak on DP" judges the answer by the student.
 
