@@ -253,6 +253,7 @@ class Engine:
         """Spec §6.1 steps 3–4, for what exists by day 2. Each part optional."""
         if state.kind == SessionKind.drill.value:
             return ""
+        already_planned = state.plan is not None
         up = self.upstreams
         prefix = ""
         posterior: dict[str, float] = {}
@@ -275,10 +276,71 @@ class Engine:
             payload={"consent_id": str(consent) if consent else None},
         )
         self._seed_m05(row, posterior)
-        self._plan(row, state)
+        if not already_planned:
+            # The preview built it already; rebuilding would throw away the
+            # student's edits and ask M02 to price the same session twice.
+            self._plan(row, self.state(row.id))
         return prefix
 
-    # ── the plan (FR-6.1, spec §6.1 steps 5–6) ───────────────────────────
+    # ── the plan (FR-6.1, FR-6.2, spec §6.1 steps 5–6) ───────────────────
+
+    def plan(self, session_id: uuid.UUID) -> SessionState:
+        """Build the plan without starting the interview — FR-6.2.
+
+        The preview screen calls this: a student should see what they are
+        about to be asked, and be able to drop a part of it, before the first
+        question arrives. `start` calls the same code and is a no-op if the
+        preview already built one, so previewing costs the bootstrap once.
+        """
+        row = self.row(session_id)
+        state = self.state(session_id)
+        if state.plan is None and state.kind != SessionKind.drill.value:
+            self._plan(row, state)
+        return self.state(session_id)
+
+    def drop_segment(self, session_id: uuid.UUID, index: int) -> SessionState:
+        """FR-6.2's drop-a-segment. Before the interview starts, not during.
+
+        The segment is not removed — it keeps its place with the student's
+        reason on it, because the report has to be able to say what was
+        planned as well as what happened. Its requirements go to M02's ledger
+        as `skipped`, exactly as a segment M06 dropped itself.
+        """
+        row = self.row(session_id)
+        state = self.state(session_id)
+        if state.status is not SessionStatus.planned:
+            raise InvalidTransition("The plan can only be changed before the interview starts.")
+        if state.plan is None:
+            raise InvalidTransition("There is no plan to change yet.")
+        segment = next((s for s in state.plan.segments if s.index == index), None)
+        if segment is None:
+            raise InvalidTransition(f"No segment {index} in this plan.")
+        if segment.is_reserved:
+            raise InvalidTransition("The closing stays — it is where you ask your questions.")
+        if segment.dropped_reason is not None:
+            return state
+
+        plan = state.plan.model_copy(deep=True)
+        for candidate in plan.segments:
+            if candidate.index == index:
+                candidate.dropped_reason = "You removed this part of the plan."
+        store.record(
+            self.db,
+            row,
+            "plan.set",
+            step=f"plan:drop:{index}",
+            payload={"plan": plan.model_dump(mode="json")},
+        )
+        if segment.requirement_ids:
+            outbox.enqueue_ledger(
+                self.db,
+                self.state(session_id),
+                requirement_ids=list(segment.requirement_ids),
+                ledger_state="skipped",
+                turn_id=None,
+            )
+            self.db.commit()
+        return self.state(session_id)
 
     def _plan(self, row: InterviewSession, state: SessionState) -> None:
         """Assemble it, record it, and owe M02 a `skipped` row for what fell.

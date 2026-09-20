@@ -311,6 +311,42 @@ def read_session(session_id: uuid.UUID, db: Session = Depends(get_session)) -> S
     return session_out(store.load_state(db, session_id))
 
 
+@router.post("/interviews/{session_id}/plan", response_model=SessionOut)
+def build_plan(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> SessionOut:
+    """FR-6.2 — what the interview will be, before it is (spec §6.1).
+
+    Separate from `start` so a student sees the plan and can change it before
+    the first question arrives. Idempotent: it builds one if there is none and
+    returns the one there is otherwise, so refreshing the preview does not ask
+    M02 to price the same session twice.
+    """
+    try:
+        return session_out(engine.plan(session_id))
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
+    except (InvalidTransition, store.ConcurrentWrite) as exc:
+        raise _conflict(exc) from exc
+
+
+@router.delete("/interviews/{session_id}/plan/segments/{index}", response_model=SessionOut)
+def drop_segment(
+    session_id: uuid.UUID, index: int, engine: Engine = Depends(get_engine)
+) -> SessionOut:
+    """Drop one part of the plan before starting — FR-6.2.
+
+    The segment stays in the plan with the student's reason on it: the report
+    has to be able to say what was planned as well as what happened. Its
+    requirements are owed to M02's ledger as `skipped`, exactly like a segment
+    M06 dropped itself.
+    """
+    try:
+        return session_out(engine.drop_segment(session_id, index))
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
+    except (InvalidTransition, store.ConcurrentWrite) as exc:
+        raise _conflict(exc) from exc
+
+
 @router.post("/interviews/{session_id}/start", response_model=SessionOut)
 def start_session(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> SessionOut:
     """Starts a planned session — and, on a live one, carries on (idempotent).

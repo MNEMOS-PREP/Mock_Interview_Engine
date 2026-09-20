@@ -103,6 +103,23 @@ export function useCreateSession() {
   });
 }
 
+export function usePlan(id: string) {
+  const write = useSessionWriter(id);
+  return useMutation({
+    mutationFn: () => api.post<Session>(`/v1/interviews/${id}/plan`),
+    onSuccess: write,
+  });
+}
+
+export function useDropSegment(id: string) {
+  const write = useSessionWriter(id);
+  return useMutation({
+    mutationFn: (index: number) =>
+      api.del<Session>(`/v1/interviews/${id}/plan/segments/${index}`),
+    onSuccess: write,
+  });
+}
+
 export function useStart(id: string) {
   const write = useSessionWriter(id);
   return useMutation({

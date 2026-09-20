@@ -191,3 +191,71 @@ def test_the_agent_registry_is_published(client):
     assert {"ProbeStrategist", "TechnicalInterviewer", "SafetyGuard"} <= names
     assert body["model_on"] is False
     assert "strategist" in body["step_graph"]
+
+
+# ── the plan preview (FR-6.2) ────────────────────────────────────────────
+
+
+def test_the_plan_can_be_seen_before_the_interview_starts(client, as_student):
+    """A student should know what they are about to be asked."""
+    sid = client.post(
+        "/v1/interviews", json={"minutes": 45, "jd_id": str(uuid.uuid4())}, headers=as_student
+    ).json()["id"]
+
+    previewed = client.post(f"/v1/interviews/{sid}/plan", headers=as_student).json()
+    assert previewed["status"] == "planned", "previewing is not starting"
+    assert [s["kind"] for s in previewed["plan"]["segments"]] == [
+        "warmup",
+        "technical",
+        "closing",
+    ]
+    assert previewed["transcript"] == [], "nobody has been greeted yet"
+
+    # Idempotent: refreshing the preview does not ask M02 to price it twice.
+    again = client.post(f"/v1/interviews/{sid}/plan", headers=as_student).json()
+    assert again["plan"]["id"] == previewed["plan"]["id"]
+
+
+def test_dropping_a_segment_keeps_it_visible_with_its_reason(client, as_student):
+    """The report has to say what was planned as well as what happened."""
+    sid = client.post(
+        "/v1/interviews", json={"minutes": 45, "jd_id": str(uuid.uuid4())}, headers=as_student
+    ).json()["id"]
+    client.post(f"/v1/interviews/{sid}/plan", headers=as_student)
+
+    edited = client.delete(f"/v1/interviews/{sid}/plan/segments/1", headers=as_student).json()
+    dropped = edited["plan"]["segments"][1]
+    assert dropped["dropped_reason"] == "You removed this part of the plan."
+    assert len(edited["plan"]["segments"]) == 3, "dropped, not deleted"
+
+    # And the interview that follows does not ask it.
+    started = client.post(f"/v1/interviews/{sid}/start", headers=as_student).json()
+    assert started["plan"]["segments"][1]["dropped_reason"] is not None
+    assert started["transcript"], "there is still a warm-up to run"
+
+
+def test_the_closing_cannot_be_dropped(client, as_student):
+    """FR-6.17 — it is reserved, and it is where the student asks."""
+    sid = client.post("/v1/interviews", json={"minutes": 45}, headers=as_student).json()["id"]
+    client.post(f"/v1/interviews/{sid}/plan", headers=as_student)
+    last = (
+        len(client.get(f"/v1/interviews/{sid}", headers=as_student).json()["plan"]["segments"]) - 1
+    )
+
+    refused = client.delete(f"/v1/interviews/{sid}/plan/segments/{last}", headers=as_student)
+    assert refused.status_code == 409
+    assert "where you ask your questions" in refused.json()["detail"]
+
+
+def test_the_plan_cannot_be_edited_once_the_interview_has_started(client, as_student):
+    """Changing it mid-session is a re-plan (FR-6.4), and M06 owns when those
+    happen — a student who could drop the segment they are in could drop the
+    question they are being asked."""
+    sid = client.post(
+        "/v1/interviews", json={"minutes": 45, "jd_id": str(uuid.uuid4())}, headers=as_student
+    ).json()["id"]
+    client.post(f"/v1/interviews/{sid}/start", headers=as_student)
+
+    refused = client.delete(f"/v1/interviews/{sid}/plan/segments/1", headers=as_student)
+    assert refused.status_code == 409
+    assert "before the interview starts" in refused.json()["detail"]

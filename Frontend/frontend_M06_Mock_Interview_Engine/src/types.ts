@@ -46,6 +46,12 @@ export interface PlannedSegment {
   minutes: number;
   question_budget: number;
   rationale: string;
+  requirement_ids: string[];
+  /** Set when this part will not run. The segment stays, so the report can
+   *  say what was planned as well as what happened. */
+  dropped_reason: string | null;
+  /** The closing. It is where the student asks, so it cannot be dropped. */
+  is_reserved: boolean;
 }
 
 export interface InterviewPlan {
@@ -53,7 +59,11 @@ export interface InterviewPlan {
   mode: Mode;
   total_minutes: number;
   segments: PlannedSegment[];
+  /** Requirements in the posting that this session will not reach. M02's
+   *  list, shown rather than hidden — a plan that quietly covers 3 of 8 is
+   *  the one a student would want to know about. */
   uncovered: string[];
+  jd_id: string | null;
 }
 
 export interface Session {

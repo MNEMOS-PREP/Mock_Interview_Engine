@@ -100,7 +100,11 @@ export function MockHome() {
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <Button
-            onClick={() => create.mutate({ minutes }, { onSuccess: (s) => navigate(`/mock/${s.id}`) })}
+            onClick={() =>
+              // Via the plan, not straight into the first question: a student
+              // should see what they are about to be asked (FR-6.2).
+              create.mutate({ minutes }, { onSuccess: (s) => navigate(`/mock/${s.id}/plan`) })
+            }
             disabled={create.isPending || Boolean(unfinished)}
           >
             {create.isPending ? "Setting up…" : "Start interview"}

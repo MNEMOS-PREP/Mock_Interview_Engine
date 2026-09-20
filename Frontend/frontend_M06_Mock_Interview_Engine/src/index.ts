@@ -12,6 +12,7 @@ export { m06Routes } from "./routes";
 export { AppShell } from "./ui/AppShell";
 export { InterviewStage } from "./components/InterviewStage";
 export { MockHome } from "./components/MockHome";
+export { PlanPreview } from "./components/PlanPreview";
 export { SessionNotes } from "./components/SessionNotes";
 export { SystemPage } from "./components/SystemPage";
 export {
@@ -20,10 +21,12 @@ export {
   useAnswer,
   useCreateSession,
   useDeps,
+  useDropSegment,
   useEnd,
   useHealth,
   useHistory,
   usePause,
+  usePlan,
   useReport,
   useResume,
   useSession,
