@@ -68,6 +68,12 @@ class SessionState(BaseModel):
 
     plan: InterviewPlan | None = None
     current_segment: int = 0
+    #: The bridge line owed to the student, set by a segment transition and
+    #: cleared by the question that carries it. Held on the state rather than
+    #: said immediately because in text mode nothing is "said" until the next
+    #: question is asked — a bridge with no question after it is a page that
+    #: changed for no reason.
+    pending_bridge: str | None = None
     #: The index the NEXT turn will take.
     next_turn_index: int = 0
     transcript: list[TurnView] = Field(default_factory=list)
@@ -197,6 +203,7 @@ def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
             question_id=UUID(str(p["question_id"])) if p.get("question_id") else None,
             question_source=p.get("question_source"),
             rubric_round_type=p.get("rubric_round_type"),
+            concept_id=str(p.get("concept_id") or ""),
             probe_depth=int(p.get("probe_depth", 0)),
             probe_move=move,
             at=at,
@@ -204,6 +211,8 @@ def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
     )
     s.open_turn_id = turn_id
     s.pending_move = None
+    # Said with this question, so it is not owed twice.
+    s.pending_bridge = None
     s.next_turn_index = max(s.next_turn_index, int(p["turn_index"]) + 1)
 
 
@@ -271,6 +280,7 @@ def _segment_transition(s: SessionState, p: dict, _at: datetime) -> None:
     s.current_segment = int(p["to"])
     s.ladder = None
     s.pending_move = None
+    s.pending_bridge = p.get("line") or None
 
 
 def _paused(s: SessionState, _p: dict, at: datetime) -> None:

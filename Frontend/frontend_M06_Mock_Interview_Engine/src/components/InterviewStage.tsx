@@ -13,7 +13,7 @@
  *     record when `question.asked` lands (the guard may have swapped it).
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { Button, ErrorNote, Spinner } from "@ai/core";
@@ -146,6 +146,27 @@ function Turn({ turn }: { turn: TurnView }) {
   return <p className="turn-interviewer whitespace-pre-wrap">{turn.text}</p>;
 }
 
+/**
+ * The `RoundTransition` of spec §15.5, as a rule rather than a card.
+ *
+ * §3.2.3 — "a hard cut from DSA to HR feels like a page load" — is answered
+ * twice over, and deliberately not three times: the interviewer SAYS the
+ * bridge ("Let's move to the next part: SQL"), and the transcript SHOWS where
+ * one round ended. Drawing the spoken line again in a box would be the same
+ * sentence twice on one screen, which reads as a bug.
+ *
+ * The title comes from the plan, so it is M02's words for the requirement.
+ */
+function RoundRule({ title }: { title: string }) {
+  return (
+    <div className="flex items-center gap-3 pt-2" role="separator" aria-label={`New round: ${title}`}>
+      <span className="h-px flex-1 bg-line" />
+      <span className="text-2xs uppercase tracking-wide text-ink-faint">{title}</span>
+      <span className="h-px flex-1 bg-line" />
+    </div>
+  );
+}
+
 export function InterviewStage({ sessionId }: { sessionId: string }) {
   const session = useSession(sessionId);
   const start = useStart(sessionId);
@@ -251,9 +272,21 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
           )}
 
           <div className="mt-6 space-y-5">
-            {data.transcript.map((turn) => (
-              <Turn key={turn.turn_id} turn={turn} />
-            ))}
+            {data.transcript.map((turn, index) => {
+              const previous = data.transcript[index - 1];
+              // A rule is drawn where the segment changes, never before the
+              // first turn: the interview opening is not a round ending.
+              const crossed = previous !== undefined && previous.segment_index !== turn.segment_index;
+              const title = data.plan?.segments.find(
+                (segment) => segment.index === turn.segment_index,
+              )?.title;
+              return (
+                <Fragment key={turn.turn_id}>
+                  {crossed && title && <RoundRule title={title} />}
+                  <Turn turn={turn} />
+                </Fragment>
+              );
+            })}
 
             {preview && (
               <p className="turn-interviewer whitespace-pre-wrap text-ink-soft">{preview}</p>

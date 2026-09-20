@@ -55,6 +55,10 @@ class Selected:
     #: module → the sentence the student is owed, when an upstream was missing.
     degraded: dict[str, str] = field(default_factory=dict)
     empty_reason: str | None = None
+    #: §3.2.3. Set when selecting crossed into a new segment: the step's own
+    #: `inp.state` was read before that happened, so the line has to travel
+    #: with the item rather than be looked up again afterwards.
+    bridge: str | None = None
 
 
 #: The QuestionPlanner's tool. Lives in the engine, which owns the adapters.
@@ -103,6 +107,7 @@ class StepState(TypedDict, total=False):
     utterance: Utterance
     hint_level: int
     finish: str
+    bridge: str | None
     calls: Annotated[list[LLMResult], operator.add]
     degraded: Annotated[dict[str, str], _merge]
 
@@ -264,6 +269,7 @@ def build(deps: Deps):
             "new_question": True,
             "selection": found.selection,
             "degraded": found.degraded,
+            "bridge": found.bridge,
         }
 
     def after_select(s: StepState) -> str:
@@ -283,6 +289,12 @@ def build(deps: Deps):
                 lines, graceful=outcome.move.graceful, ceiling=outcome.ceiling is not None
             )
         )
+        bridge = s.get("bridge") or inp.state.pending_bridge
+        if bridge:
+            # A new round starts. The bridge replaces "next question", because
+            # saying both ("Okay, let's leave that there. Next question. Let's
+            # move to the next part: SQL.") is three transitions for one.
+            return f"{exit_line} {bridge}".strip()
         return f"{exit_line} {lines.next_question_lead}".strip()
 
     def phrase(s: StepState) -> dict[str, Any]:

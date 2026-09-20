@@ -98,6 +98,24 @@ class PlannedSegment(BaseModel):
     dropped_reason: str | None = None
 
 
+class RoundTransition(BaseModel):
+    """The card between two segments — §3.2.3, spec §15.5's component list.
+
+    A hard cut from one round to the next reads as a page load, which is the
+    moment a student stops being in an interview. Two seconds of "let's switch
+    gears, next up: SQL" costs nothing and is the difference.
+
+    The line is authored, never generated (§6.2): it is on the hot path, and
+    it is one of the lines that must never telegraph how the last round went.
+    """
+
+    from_index: int
+    to_index: int
+    from_title: str
+    to_title: str
+    line: str
+
+
 ReplanTrigger = Literal[
     "gap_discovered", "ceiling_hit", "struggling", "time_overrun", "modality_lost"
 ]
@@ -124,6 +142,12 @@ class InterviewPlan(BaseModel):
     coverage_plan: dict | None = None
     coverage_plan_version: str | None = None
     jd_id: UUID | None = None
+    #: M01's risky or vague claims, in the order the project segment asks
+    #: about them. On the plan rather than fetched again at selection time,
+    #: because the claim a student is asked to defend must be the one the
+    #: preview showed them — M01 re-parsing a resume mid-session must not
+    #: change the question.
+    claims: list[dict] = Field(default_factory=list)
     replans: list[Replan] = Field(default_factory=list, max_length=2)
     uncovered: list[str] = Field(default_factory=list)
     versions: VersionStamp = Field(default_factory=VersionStamp)
@@ -218,6 +242,9 @@ class TurnView(BaseModel):
     question_id: UUID | None = None
     question_source: QuestionSource | None = None
     rubric_round_type: str | None = None
+    #: What the question is about. `claim:{id}` for a project probe, which is
+    #: how the project segment knows which claims it has already asked.
+    concept_id: str = ""
     probe_depth: int = 0
     probe_move: MoveKind | None = None
     hint_level_used: int = 0
@@ -259,6 +286,7 @@ __all__ = [
     "QuestionSource",
     "Replan",
     "ReplanTrigger",
+    "RoundTransition",
     "SegmentKind",
     "SessionFlags",
     "SessionKind",

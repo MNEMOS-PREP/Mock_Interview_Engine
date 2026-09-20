@@ -75,6 +75,20 @@ MINUTES_PER_VERBAL_QUESTION = 3.5
 #: technical. The distinction is which module scores it, not how it is asked.
 BEHAVIOURAL_MODES = frozenset({"behavioural", "communication"})
 
+#: A claim is one question with its own probe ladder behind it, priced like
+#: any other verbal question.
+MINUTES_PER_CLAIM = MINUTES_PER_VERBAL_QUESTION
+
+#: §6.1: the project segment's minutes come from the largest verbal segment,
+#: never from the closing. It must not eat that segment either — a session
+#: that was 14 minutes of SQL should not become 4 minutes of SQL because the
+#: resume had three shaky lines on it.
+MAX_PROJECT_SHARE = 0.5
+
+#: M01 bands a claim. These are the ones worth defending: a claim nobody
+#: doubts is a question nobody learns from.
+DEFENDABLE_BANDS = frozenset({"risky", "vague"})
+
 
 @dataclass(frozen=True)
 class PlanInputs:
@@ -133,8 +147,13 @@ def _title(inputs: PlanInputs, requirement_ids: list[str], fallback: str) -> str
     texts = _requirement_texts(inputs, requirement_ids)
     if not texts:
         return fallback
-    if len(texts) <= 2:
-        return " and ".join(texts)
+    if len(texts) == 1:
+        return texts[0]
+    if len(texts) == 2:
+        # "SQL and DBMS" reads better than a comma — but not when a
+        # requirement is already called "Data structures and algorithms".
+        joiner = ", " if any(" and " in text for text in texts) else " and "
+        return joiner.join(texts)
     return f"{texts[0]}, {texts[1]} and {len(texts) - 2} more"
 
 
@@ -189,6 +208,13 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
         if inputs.coverage
         else _without_a_job_description(inputs, persona, warmup_minutes, closing_minutes)
     )
+    claims = defendable(inputs.claims)
+    project = _project_segment(claims, persona, middle)
+    if project is not None:
+        # §6.1's order: warm-up, then the student's own work, then the
+        # posting's. Defending your resume first is the gentler ramp and it
+        # is also the part a student is most able to talk about cold.
+        middle = [project, *middle]
 
     segments: list[PlannedSegment] = [
         PlannedSegment(
@@ -226,7 +252,59 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
         coverage_plan=inputs.coverage,
         coverage_plan_version=coverage.get("plan_version"),
         jd_id=inputs.jd_id,
+        claims=list(claims),
         uncovered=[str(u) for u in coverage.get("uncovered") or []],
+    )
+
+
+def defendable(claims: tuple[dict[str, Any], ...] | list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The claims worth a project segment: risky or vague, with probes.
+
+    A claim M01 could not write probes for is one M06 has no question for,
+    and inventing one here would be the model deciding what to ask about
+    somebody's resume — which is M01's job and it already did it.
+    """
+    return [
+        claim
+        for claim in claims
+        if str(claim.get("risk_band")) in DEFENDABLE_BANDS and claim.get("probes")
+    ]
+
+
+def _project_segment(
+    claims: list[dict[str, Any]], persona: str, middle: list[PlannedSegment]
+) -> PlannedSegment | None:
+    """§6.1 — only when M01 has something worth defending, and it is paid for
+    out of the largest verbal segment rather than out of the closing."""
+    if not claims:
+        return None
+    payer = max(
+        (s for s in middle if s.dropped_reason is None and s.question_budget > 0),
+        key=lambda s: s.minutes,
+        default=None,
+    )
+    wanted = len(claims) * MINUTES_PER_CLAIM
+    if payer is None:
+        # No verbal segment to take it from. The project segment is then the
+        # interview, which is what a session with no JD and a shaky resume
+        # should be.
+        minutes = wanted
+    else:
+        minutes = min(wanted, round(payer.minutes * MAX_PROJECT_SHARE, 1))
+        payer.minutes = round(payer.minutes - minutes, 1)
+    budget = max(1, int(minutes // MINUTES_PER_CLAIM))
+    return PlannedSegment(
+        index=0,
+        kind="project",
+        title="Your projects",
+        persona_id=persona,
+        minutes=minutes,
+        question_budget=min(budget, len(claims)),
+        source="m01_claims",
+        rationale=(
+            "Lines from your own resume that an interviewer would push on. "
+            "Not scored — M13 scores questions from the bank."
+        ),
     )
 
 
@@ -316,6 +394,10 @@ def skipped_requirements(plan: InterviewPlan) -> list[str]:
 
 __all__ = [
     "BEHAVIOURAL_MODES",
+    "DEFENDABLE_BANDS",
+    "MAX_PROJECT_SHARE",
+    "MINUTES_PER_CLAIM",
+    "defendable",
     "CLOSING_MINUTES",
     "DEFAULT_PERSONA",
     "MINUTES_PER_VERBAL_QUESTION",

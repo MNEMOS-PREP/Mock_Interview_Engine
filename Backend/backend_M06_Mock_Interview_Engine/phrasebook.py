@@ -37,6 +37,17 @@ class Lines:
     drill_close: str
     session_close: str
     time_up: str
+    #: §3.2.3 — the line between two rounds. Trap: "the transition between
+    #: rounds is where immersion breaks. A hard cut from DSA to HR feels like
+    #: a page load." It costs nothing and it matters a lot, so it is authored
+    #: rather than generated, like every other structural move.
+    bridge: str
+    #: `bridge` plus what is coming next, which is the segment's own title —
+    #: M02's words for the requirement, so "Let's switch gears. Next: SQL."
+    bridge_to: str
+    #: The bridge into the part where the student asks. There is no next
+    #: topic to name, so it gets its own line.
+    bridge_to_closing: str
 
 
 LINES: dict[Register, Lines] = {
@@ -55,6 +66,9 @@ LINES: dict[Register, Lines] = {
         drill_close="That's the drill. Your notes are ready.",
         session_close="That's time. Thanks — I'm putting your notes together now.",
         time_up="We're at time, so I'll stop us here.",
+        bridge="Alright — let's switch gears.",
+        bridge_to="Alright — let's switch gears. Next up: {topic}.",
+        bridge_to_closing="That's everything I wanted to ask. Anything you'd like to ask me?",
     ),
     "neutral": Lines(
         greeting="Hello. Let's begin.",
@@ -71,6 +85,9 @@ LINES: dict[Register, Lines] = {
         drill_close="That's the drill.",
         session_close="That's time. Your report is being prepared.",
         time_up="We're at time.",
+        bridge="Let's move to the next part.",
+        bridge_to="Let's move to the next part: {topic}.",
+        bridge_to_closing="That's my questions. Do you have any for me?",
     ),
     "bar_raiser": Lines(
         greeting="Let's get started.",
@@ -87,6 +104,9 @@ LINES: dict[Register, Lines] = {
         drill_close="Done.",
         session_close="That's time. Report's being prepared.",
         time_up="Time.",
+        bridge="Moving on.",
+        bridge_to="Moving on. {topic}.",
+        bridge_to_closing="That's my questions. Yours?",
     ),
 }
 

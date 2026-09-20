@@ -22,7 +22,7 @@ import logging
 import threading
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
@@ -49,6 +49,10 @@ log = logging.getLogger("uvicorn.error")
 #: today. Since day 5 the plan carries what M05 answered for at plan time;
 #: this is the Rule-2 fallback, used when there is no plan or nothing probed.
 DEFAULT_ROUND_TYPE = "dsa_verbal"
+
+#: A session cannot skip more segments than it has. The bound is here rather
+#: than in a `while True` so a plan that somehow loops cannot hang a request.
+_MAX_SEGMENT_SKIPS = 8
 
 #: Spec §6.5 prices a verbal question at ~3.5 minutes; the closing takes one.
 SECONDS_PER_VERBAL_QUESTION = 210
@@ -103,6 +107,22 @@ theta_cache = ThetaCache()
 # ─────────────────────────────────────────────────────────────────────────
 #  The compiled step, built once per model client
 # ─────────────────────────────────────────────────────────────────────────
+
+
+def bridge_line(arriving: PlannedSegment) -> str:
+    """§3.2.3 — what is said between two rounds.
+
+    Authored, never generated: it is on the hot path, and it is one of the
+    lines that must never telegraph how the round that just ended went. The
+    topic is the segment's own title, which is M02's words for the
+    requirement, so a student hears the posting's language rather than ours.
+    """
+    said = lines("neutral")
+    if arriving.kind == "closing":
+        return said.bridge_to_closing
+    if arriving.kind == "warmup" or not arriving.title:
+        return said.bridge
+    return said.bridge_to.format(topic=arriving.title)
 
 
 def question_budget(state: SessionState) -> int:
@@ -360,6 +380,7 @@ class Engine:
                 coverage=coverage,
                 requirements={str(r.get("id")): r for r in requirements if r.get("id")},
                 available_round_types=self._available_round_types(row, state),
+                claims=self._claims(row),
             )
         )
         store.record(
@@ -377,6 +398,30 @@ class Engine:
                 turn_id=None,
             )
             self.db.commit()
+
+    def _claims(self, row: InterviewSession) -> tuple[dict, ...]:
+        """M01's risky and vague claims, for the project segment (§6.1).
+
+        Optional like every upstream: no M01, no resume, or a resume nobody
+        has confirmed means no project segment — not a degraded one. A student
+        with nothing shaky on their resume is not missing a feature.
+        """
+        up = self.upstreams
+        if not up.available("M01"):
+            return ()
+        try:
+            resumes = up.m01.resumes_for(row.candidate_id)
+            confirmed = next(
+                (r for r in resumes if str(r.get("status")) == "confirmed"),
+                resumes[0] if resumes else None,
+            )
+            if confirmed is None:
+                return ()
+            found = up.m01.claims(uuid.UUID(str(confirmed["id"])), row.candidate_id)
+        except (UpstreamUnavailable, KeyError, ValueError) as exc:
+            log.info("M06: M01 claims unavailable for %s: %s", row.id, exc)
+            return ()
+        return tuple(found.get("claims") or [])
 
     def _coverage(
         self, row: InterviewSession, state: SessionState
@@ -876,7 +921,7 @@ class Engine:
 
     def _advance_segment(
         self, row: InterviewSession, state: SessionState, now: datetime
-    ) -> SessionState:
+    ) -> tuple[SessionState, str | None]:
         """Move on once this segment has had the questions M02 priced for it.
 
         This is the whole of sequencing that day 5 needs: without it the plan
@@ -886,22 +931,31 @@ class Engine:
         """
         live = planner.live_segments(state.plan) if state.plan is not None else []
         if not live:
-            return state
+            return state, None
+        bridge: str | None = None
         position = next((i for i, s in enumerate(live) if s.index == state.current_segment), 0)
         while (
             position + 1 < len(live)
             and state.questions_in_segment(live[position].index) >= live[position].question_budget
         ):
+            leaving, arriving = live[position], live[position + 1]
             store.record(
                 self.db,
                 row,
                 "segment.transition",
-                step=f"segment:{live[position + 1].index}",
-                payload={"from": live[position].index, "to": live[position + 1].index},
+                step=f"segment:{arriving.index}",
+                payload={
+                    "from": leaving.index,
+                    "to": arriving.index,
+                    "from_title": leaving.title,
+                    "to_title": arriving.title,
+                    "line": bridge_line(arriving),
+                },
             )
             state = self.state(row.id)
+            bridge = state.pending_bridge
             position += 1
-        return state
+        return state, bridge
 
     def _round_type(self, state: SessionState) -> str:
         """The plan's answer, because the plan already asked M05 at plan time.
@@ -916,8 +970,100 @@ class Engine:
         return self._rubric_round_types()[0]
 
     def _select(self, row: InterviewSession, state: SessionState, now: datetime) -> Selected:
+        """The next question, or why there is none — and a 409 ends a SEGMENT.
+
+        M05 answering "nothing left for this round type" is a known state with
+        a specified behaviour (M05 §6.8), not a crash and not the end of the
+        interview: §6.1's plan-time probe should have caught it, and when it
+        did not, the honest thing is to close that round and open the next
+        one. Ending the whole session on it would throw away the segments
+        behind it, which is how a thin corner of the bank becomes a short
+        interview about nothing.
+        """
+        state, bridge = self._advance_segment(row, state, now)
+        for _ in range(_MAX_SEGMENT_SKIPS):
+            found = self._select_from_bank(row, state, now)
+            if found.item is not None:
+                return replace(found, bridge=bridge or found.bridge)
+            moved, state, next_bridge = self._abandon_segment(row, state, found.empty_reason)
+            if not moved:
+                # Nothing left to move to. The session ends, and `empty_reason`
+                # is what the report says about it.
+                return replace(found, bridge=bridge or found.bridge)
+            bridge = next_bridge or bridge
+        return Selected(None, empty_reason="bank_exhausted", bridge=bridge)
+
+    def _select_a_claim(self, state: SessionState) -> Selected:
+        """The project segment's questions are M01's probes, not M05's items.
+
+        Never scored: M13 resolves a question package from M05, and a claim
+        probe is not a bank item (`outbox.scoreable` says the same). The
+        report says so rather than leaving a student to wonder why one round
+        has no status beside it.
+        """
+        asked = {t.concept_id for t in state.transcript if t.role == "interviewer"}
+        for claim in state.plan.claims if state.plan is not None else []:
+            item = from_drill(
+                {
+                    "claim_id": str(claim.get("id", "")),
+                    "claim_text": claim.get("text", ""),
+                    "probes": claim.get("probes") or [],
+                }
+            )
+            if item.concept_id not in asked:
+                return Selected(item, {"reason": "m01_claim"})
+        return Selected(None, empty_reason="claims_exhausted")
+
+    def _abandon_segment(
+        self, row: InterviewSession, state: SessionState, reason: str | None
+    ) -> tuple[bool, SessionState, str | None]:
+        """Close the segment M05 cannot fill and open the next. `(moved, …)`.
+
+        Its requirements are owed to M02 as `skipped`: nothing will ask about
+        them now, and a ledger that still expects them is a ledger that says
+        coverage is coming when it is not.
+        """
+        live = planner.live_segments(state.plan) if state.plan is not None else []
+        position = next((i for i, s in enumerate(live) if s.index == state.current_segment), None)
+        if position is None or position + 1 >= len(live):
+            return False, state, None
+        leaving, arriving = live[position], live[position + 1]
+        store.record(
+            self.db,
+            row,
+            "segment.transition",
+            step=f"segment:{arriving.index}",
+            payload={
+                "from": leaving.index,
+                "to": arriving.index,
+                "from_title": leaving.title,
+                "to_title": arriving.title,
+                "line": bridge_line(arriving),
+                "reason": reason or "bank_exhausted",
+            },
+        )
+        state = self.state(row.id)
+        if leaving.requirement_ids:
+            outbox.enqueue_ledger(
+                self.db,
+                state,
+                requirement_ids=list(leaving.requirement_ids),
+                ledger_state="skipped",
+                turn_id=None,
+            )
+            self.db.commit()
+        log.info(
+            "M06: %s has nothing left for %r, moving to %r", row.id, leaving.title, arriving.title
+        )
+        return True, state, state.pending_bridge
+
+    def _select_from_bank(
+        self, row: InterviewSession, state: SessionState, now: datetime
+    ) -> Selected:
+        segment = self.segment(state)
+        if segment is not None and segment.kind == "project":
+            return self._select_a_claim(state)
         up = self.upstreams
-        state = self._advance_segment(row, state, now)
         round_type = self._round_type(state)
         segment = self.segment(state)
         seen = store.seen_item_ids(self.db, row.candidate_id, now=now)

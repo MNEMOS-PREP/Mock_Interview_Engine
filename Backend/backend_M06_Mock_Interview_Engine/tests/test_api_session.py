@@ -204,8 +204,11 @@ def test_the_plan_can_be_seen_before_the_interview_starts(client, as_student):
 
     previewed = client.post(f"/v1/interviews/{sid}/plan", headers=as_student).json()
     assert previewed["status"] == "planned", "previewing is not starting"
+    # The fixture resume has one risky claim, so the plan opens with the
+    # student's own work before the posting's requirements (§6.1's order).
     assert [s["kind"] for s in previewed["plan"]["segments"]] == [
         "warmup",
+        "project",
         "technical",
         "closing",
     ]
@@ -223,14 +226,19 @@ def test_dropping_a_segment_keeps_it_visible_with_its_reason(client, as_student)
     ).json()["id"]
     client.post(f"/v1/interviews/{sid}/plan", headers=as_student)
 
-    edited = client.delete(f"/v1/interviews/{sid}/plan/segments/1", headers=as_student).json()
-    dropped = edited["plan"]["segments"][1]
+    before = client.get(f"/v1/interviews/{sid}", headers=as_student).json()["plan"]["segments"]
+    technical = next(s for s in before if s["kind"] == "technical")
+
+    edited = client.delete(
+        f"/v1/interviews/{sid}/plan/segments/{technical['index']}", headers=as_student
+    ).json()
+    dropped = edited["plan"]["segments"][technical["index"]]
     assert dropped["dropped_reason"] == "You removed this part of the plan."
-    assert len(edited["plan"]["segments"]) == 3, "dropped, not deleted"
+    assert len(edited["plan"]["segments"]) == len(before), "dropped, not deleted"
 
     # And the interview that follows does not ask it.
     started = client.post(f"/v1/interviews/{sid}/start", headers=as_student).json()
-    assert started["plan"]["segments"][1]["dropped_reason"] is not None
+    assert started["plan"]["segments"][technical["index"]]["dropped_reason"] is not None
     assert started["transcript"], "there is still a warm-up to run"
 
 

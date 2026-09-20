@@ -39,7 +39,7 @@ _KEEP: dict[str, tuple[str, ...]] = {
     ),
     "answer.received": ("turn_id", "turn_index", "text", "question_turn_id"),
     "hint.given": ("level",),
-    "segment.transition": ("from", "to"),
+    "segment.transition": ("from", "to", "from_title", "to_title", "line"),
     "upstream.degraded": ("module", "sentence"),
 }
 

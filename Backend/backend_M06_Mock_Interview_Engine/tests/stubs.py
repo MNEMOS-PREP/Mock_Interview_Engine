@@ -127,6 +127,21 @@ class DownQuestions:
     select = question = seed = observe = close = flag = _fail
 
 
+class NoClaims:
+    """M01 with a clean resume — nothing risky, so no project segment.
+
+    The fixture M01 always has one shaky claim, which is right for the drill
+    and is noise in a test about M02's rounds. A test that says which
+    upstreams it cares about is a test whose failure means something.
+    """
+
+    def resumes_for(self, candidate_id: uuid.UUID) -> list[dict[str, Any]]:
+        return []
+
+    def claims(self, resume_id: uuid.UUID, candidate_id: uuid.UUID) -> dict[str, Any]:
+        return {"resume_id": str(resume_id), "claims": [], "counts": {}, "total": 0}
+
+
 class DownMemory:
     """M04 that fails every call — no history, no consent, no pinned prefix."""
 
