@@ -1,0 +1,331 @@
+"""The interview plan, assembled from M02's — FR-6.1, spec §6.1.
+
+**No model call happens here, and that is the point.** Revision 1 built this
+with a frontier-model call, which contradicted Trap 1 (the model would decide
+the structure) and cost ~2.5 s of a 4 s bootstrap budget. Everything below is
+arithmetic over what four modules already said.
+
+**M06 adds to M02's plan; it never re-allocates it** (Trap 8). M02 priced each
+round — minutes, question count, which requirements it covers — against the
+whole ontology and the student's coverage debt. Re-deriving any of that here
+would be a second planner disagreeing with the first one, silently, and the
+coverage ledger would then be keyed to allocations nobody made.
+
+So M06 does exactly four things M02 cannot:
+
+  * **reserves** the warm-up and the closing out of the budget BEFORE asking
+    M02 to price anything, so the plan M02 returns already fits;
+  * **drops** what this session cannot serve — a coding round with no M07, a
+    segment no available rubric can fill — and says why, in the preview and
+    to M02's ledger as `skipped`;
+  * **resolves** each round's requirements to the concept ids M05 selects on;
+  * **orders** the result and names each segment in the student's words.
+
+Two vocabularies meet here and must not be confused (spec §5). M02's
+`round_type` is a MODALITY — `verbal`, `coding`, `design`, priced at 3.5, 12
+and 20 minutes a question. M05's and M13's `round_type` is a RUBRIC —
+`dsa_verbal`, and whatever else is authored. A segment carries both: the
+modality decides whether this session can run it at all, the rubric decides
+what M13 scores the answers against.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from typing import Any
+
+from .contracts import InterviewPlan, Mode, PlannedSegment, SegmentKind
+
+#: What M06 can actually run today. `coding` needs M07 and `design` needs
+#: M08's canvas; neither exists, so a round priced for one is dropped rather
+#: than quietly served as conversation — a student told "talk me through your
+#: solution" has not had a coding round.
+SERVABLE_MODALITIES = frozenset({"verbal"})
+
+#: Why a modality is not servable, in the student's words. Keyed by M02's
+#: vocabulary so an unknown one still gets a sentence.
+MODALITY_BLOCKED = {
+    "coding": "The coding round isn't built yet, so this part is left out.",
+    "design": "The system-design round isn't built yet, so this part is left out.",
+}
+
+#: Spec §6.1's mode table. Day 9 (FR-6.8) turns modes into full configs; the
+#: default persona is the part the plan needs now. `real_drive` is
+#: company-matched and falls back to the mock persona until M15 supplies one.
+DEFAULT_PERSONA: dict[str, str] = {
+    "practice": "friendly_recruiter",
+    "mock": "methodical_engineer",
+    "real_drive": "methodical_engineer",
+    "final_boss": "bar_raiser",
+}
+
+#: The closing is reserved: never dropped by a re-plan or by the clock
+#: (FR-6.17). Five minutes, per §6.1.
+CLOSING_MINUTES = 5.0
+
+#: `min(4, 10% of budget)` — §6.1. One question, to get the student talking.
+WARMUP_MAX_MINUTES = 4.0
+WARMUP_SHARE = 0.10
+
+#: M02 prices a verbal question at 3.5 minutes and so does M06 (§6.5).
+MINUTES_PER_VERBAL_QUESTION = 3.5
+
+#: M02's measurement modes that make a round behavioural rather than
+#: technical. The distinction is which module scores it, not how it is asked.
+BEHAVIOURAL_MODES = frozenset({"behavioural", "communication"})
+
+
+@dataclass(frozen=True)
+class PlanInputs:
+    """Everything the assembly reads. All of it already decided elsewhere."""
+
+    session_id: uuid.UUID
+    mode: Mode
+    requested_minutes: int
+    jd_id: uuid.UUID | None = None
+    #: M02's `CoveragePlan`, exactly as returned. None when there is no JD or
+    #: M02 could not be reached — the two are different and §10 says so.
+    coverage: dict[str, Any] | None = None
+    #: requirement_id -> M02's requirement, for `concept_ids` and `measured_by`.
+    requirements: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: Rubric round types M05 answered for at plan time (§6.1 step 5). Empty
+    #: means M05 could not be asked; that is not the same as "nothing to ask".
+    available_round_types: tuple[str, ...] = ()
+    #: M01's risky or vague claims. A project segment exists only if there is
+    #: at least one (day 6).
+    claims: tuple[dict[str, Any], ...] = ()
+
+
+def reserved_minutes(requested_minutes: int) -> tuple[float, float]:
+    """`(warmup, closing)` — taken off the top, before M02 prices anything."""
+    warmup = min(WARMUP_MAX_MINUTES, round(requested_minutes * WARMUP_SHARE, 1))
+    return warmup, CLOSING_MINUTES
+
+
+def minutes_for_m02(requested_minutes: int) -> int:
+    """What to ask M02 to price. A plan that already fits needs no trimming,
+    and trimming M02's allocations afterwards is re-allocating them."""
+    warmup, closing = reserved_minutes(requested_minutes)
+    return max(1, int(requested_minutes - warmup - closing))
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Naming and classifying one of M02's rounds
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _requirement_texts(inputs: PlanInputs, requirement_ids: list[str]) -> list[str]:
+    texts = []
+    for rid in requirement_ids:
+        text = (inputs.requirements.get(rid) or {}).get("text")
+        if text:
+            texts.append(str(text))
+    return texts
+
+
+def _title(inputs: PlanInputs, requirement_ids: list[str], fallback: str) -> str:
+    """The segment's name, in the posting's own words.
+
+    Not "Technical Round 1": the student is about to be asked about SQL, and
+    the plan preview is the one screen where saying so costs nothing.
+    """
+    texts = _requirement_texts(inputs, requirement_ids)
+    if not texts:
+        return fallback
+    if len(texts) <= 2:
+        return " and ".join(texts)
+    return f"{texts[0]}, {texts[1]} and {len(texts) - 2} more"
+
+
+def _kind(inputs: PlanInputs, requirement_ids: list[str]) -> SegmentKind:
+    """Behavioural when every requirement is measured that way, else technical.
+
+    A round with one behavioural requirement among four technical ones is a
+    technical round that happens to ask about teamwork; calling it behavioural
+    would change which persona runs it.
+    """
+    modes: set[str] = set()
+    for rid in requirement_ids:
+        modes.update((inputs.requirements.get(rid) or {}).get("measured_by") or [])
+    return "behavioural" if modes and modes <= BEHAVIOURAL_MODES else "technical"
+
+
+def _concepts(inputs: PlanInputs, requirement_ids: list[str]) -> list[str]:
+    """The concept ids M05 selects on — M02 resolved these against the same
+    ontology, so there is nothing to translate."""
+    found: list[str] = []
+    for rid in requirement_ids:
+        for concept in (inputs.requirements.get(rid) or {}).get("concept_ids") or []:
+            if concept not in found:
+                found.append(str(concept))
+    return found
+
+
+def _blocked(inputs: PlanInputs, modality: str) -> str | None:
+    """Why this round cannot run, or None. The sentence a student reads."""
+    if modality not in SERVABLE_MODALITIES:
+        return MODALITY_BLOCKED.get(
+            modality, f"The {modality} round isn't built yet, so this part is left out."
+        )
+    if not inputs.available_round_types:
+        # M05 could not be asked, or answered 409 for every round type. Rule 2:
+        # the session narrows, and the reason is not an empty list nobody reads.
+        return "The question bank had nothing for this topic, so it was left out."
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Assembly
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def assemble(inputs: PlanInputs) -> InterviewPlan:
+    """M02's plan, plus what only M06 knows. Deterministic; no model call."""
+    warmup_minutes, closing_minutes = reserved_minutes(inputs.requested_minutes)
+    persona = DEFAULT_PERSONA.get(inputs.mode, DEFAULT_PERSONA["mock"])
+    middle = (
+        _from_coverage(inputs, persona)
+        if inputs.coverage
+        else _without_a_job_description(inputs, persona, warmup_minutes, closing_minutes)
+    )
+
+    segments: list[PlannedSegment] = [
+        PlannedSegment(
+            index=0,
+            kind="warmup",
+            title="Warm-up",
+            persona_id=persona,
+            minutes=warmup_minutes,
+            question_budget=1,
+            rubric_round_types=list(inputs.available_round_types),
+            rationale="One question to get talking before anything counts.",
+        ),
+        *middle,
+        PlannedSegment(
+            index=0,
+            kind="closing",
+            title="Your questions",
+            persona_id=persona,
+            minutes=closing_minutes,
+            question_budget=0,
+            rationale="Time for you to ask, and for the report to be put together.",
+            is_reserved=True,
+        ),
+    ]
+    for index, segment in enumerate(segments):
+        segment.index = index
+
+    coverage = inputs.coverage or {}
+    return InterviewPlan(
+        id=uuid.uuid4(),
+        session_id=inputs.session_id,
+        mode=inputs.mode,
+        total_minutes=inputs.requested_minutes,
+        segments=segments,
+        coverage_plan=inputs.coverage,
+        coverage_plan_version=coverage.get("plan_version"),
+        jd_id=inputs.jd_id,
+        uncovered=[str(u) for u in coverage.get("uncovered") or []],
+    )
+
+
+def _from_coverage(inputs: PlanInputs, persona: str) -> list[PlannedSegment]:
+    """One segment per M02 round, in M02's order, at M02's prices."""
+    segments: list[PlannedSegment] = []
+    for planned in (inputs.coverage or {}).get("rounds") or []:
+        requirement_ids = [str(r) for r in planned.get("requirement_ids") or []]
+        modality = str(planned.get("round_type") or "verbal")
+        segments.append(
+            PlannedSegment(
+                index=0,
+                kind=_kind(inputs, requirement_ids),
+                title=_title(inputs, requirement_ids, fallback=modality.title()),
+                persona_id=persona,
+                # M02's arithmetic, carried over rather than recomputed.
+                minutes=float(planned.get("minutes") or 0.0),
+                question_budget=int(planned.get("question_count") or 0),
+                requirement_ids=requirement_ids,
+                concept_ids=_concepts(inputs, requirement_ids),
+                rubric_round_types=list(inputs.available_round_types),
+                rationale=_rationale(inputs, requirement_ids),
+                dropped_reason=_blocked(inputs, modality),
+            )
+        )
+    return segments
+
+
+def _rationale(inputs: PlanInputs, requirement_ids: list[str]) -> str:
+    """M02 wrote one per requirement; the segment shows the first it has."""
+    wanted = set(requirement_ids)
+    for allocation in (inputs.coverage or {}).get("allocations") or []:
+        if str(allocation.get("requirement_id")) in wanted and allocation.get("rationale"):
+            return str(allocation["rationale"])
+    return ""
+
+
+def _without_a_job_description(
+    inputs: PlanInputs, persona: str, warmup: float, closing: float
+) -> list[PlannedSegment]:
+    """§10: no JD, so the session is what M05 can fill — split evenly, and
+    labelled, because a student must not think this was tailored to a job."""
+    available = inputs.available_round_types
+    if not available:
+        return []
+    usable = max(0.0, inputs.requested_minutes - warmup - closing)
+    each = usable / len(available)
+    return [
+        PlannedSegment(
+            index=0,
+            kind="technical",
+            title=_round_type_title(round_type),
+            persona_id=persona,
+            minutes=round(each, 1),
+            question_budget=max(1, int(each // MINUTES_PER_VERBAL_QUESTION)),
+            rubric_round_types=[round_type],
+            rationale="Not tailored to a job description — add one and the plan follows it.",
+        )
+        for round_type in available
+    ]
+
+
+def _round_type_title(round_type: str) -> str:
+    """`dsa_verbal` is an id, not a title. M13 owns the display name and does
+    not publish one yet, so this is the honest guess: the id split on its
+    separators, short parts left upper-case because they are acronyms."""
+    parts = round_type.replace("-", "_").split("_")
+    return " ".join(part.upper() if len(part) <= 3 else part.capitalize() for part in parts)
+
+
+def live_segments(plan: InterviewPlan) -> list[PlannedSegment]:
+    """The segments that will actually run. A dropped one keeps its place in
+    the plan, with its reason — "I changed the plan here because…" needs the
+    before as much as the after."""
+    return [s for s in plan.segments if s.dropped_reason is None]
+
+
+def skipped_requirements(plan: InterviewPlan) -> list[str]:
+    """Requirement ids owed to M02's ledger as `skipped` (FR-6.24): planned,
+    then dropped, so no turn will ever reach them."""
+    out: list[str] = []
+    for segment in plan.segments:
+        if segment.dropped_reason is not None:
+            out.extend(r for r in segment.requirement_ids if r not in out)
+    return out
+
+
+__all__ = [
+    "BEHAVIOURAL_MODES",
+    "CLOSING_MINUTES",
+    "DEFAULT_PERSONA",
+    "MINUTES_PER_VERBAL_QUESTION",
+    "MODALITY_BLOCKED",
+    "SERVABLE_MODALITIES",
+    "WARMUP_MAX_MINUTES",
+    "PlanInputs",
+    "assemble",
+    "live_segments",
+    "minutes_for_m02",
+    "reserved_minutes",
+    "skipped_requirements",
+]

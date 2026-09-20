@@ -118,6 +118,15 @@ class SessionState(BaseModel):
     def turn(self, turn_id: UUID) -> TurnView | None:
         return next((t for t in self.transcript if t.turn_id == turn_id), None)
 
+    def questions_in_segment(self, segment_index: int) -> int:
+        """New questions asked in one segment — follow-up rungs are the same
+        question going deeper, so they do not count against its budget."""
+        return sum(
+            1
+            for t in self.transcript
+            if t.role == "interviewer" and t.segment_index == segment_index and t.probe_move is None
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────
 #  The reducer

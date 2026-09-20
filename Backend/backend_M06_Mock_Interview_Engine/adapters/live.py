@@ -29,6 +29,20 @@ class LiveCoveragePlanner:
     def job_description(self, jd_id: UUID) -> dict[str, Any]:
         return self.http.get(f"/v1/jds/{jd_id}").body
 
+    def requirements(self, jd_id: UUID, candidate_id: UUID) -> list[dict[str, Any]]:
+        """Each requirement with its `concept_ids` and `measured_by`.
+
+        The plan names requirement ids; this is what turns them into the
+        concepts M05 selects on and the modality M06 has to be able to serve.
+        M02 resolved those against the same ontology M05 uses, so there is
+        nothing to translate — only to look up.
+        """
+        body = self.http.get(
+            f"/v1/jds/{jd_id}/requirements/{candidate_id}",
+            headers=identity_headers(candidate_id),
+        ).body
+        return list((body or {}).get("requirements") or [])
+
     def record_coverage(
         self,
         session_id: UUID,

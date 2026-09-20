@@ -30,7 +30,7 @@ from ai_core.timeutil import utcnow
 from ai_core.versions import VersionStamp
 from sqlmodel import Session, select
 
-from . import PROMPT_VERSION, outbox, store
+from . import PROMPT_VERSION, outbox, planner, store
 from .adapters import Upstreams, UpstreamUnavailable
 from .agents import Interviewer, ProbeStrategist
 from .broker import TokenBroker, broker
@@ -46,8 +46,8 @@ from .state import InvalidTransition, SessionState
 log = logging.getLogger("uvicorn.error")
 
 #: M05's rubric vocabulary, and the only round type its bank is authored for
-#: today. Day 5 replaces this with plan-time availability over M02's plan;
-#: until then it is the Rule-2 fallback, used only when M13 names nothing.
+#: today. Since day 5 the plan carries what M05 answered for at plan time;
+#: this is the Rule-2 fallback, used when there is no plan or nothing probed.
 DEFAULT_ROUND_TYPE = "dsa_verbal"
 
 #: Spec §6.5 prices a verbal question at ~3.5 minutes; the closing takes one.
@@ -106,8 +106,23 @@ theta_cache = ThetaCache()
 
 
 def question_budget(state: SessionState) -> int:
+    """How many questions this session asks.
+
+    M02 priced each round and M06 carried those prices into the plan, so when
+    a plan exists the budget is a sum rather than a second estimate — two
+    numbers for the same thing is how a session runs over (Trap 8). The
+    arithmetic below is the no-plan fallback.
+    """
     if state.kind == SessionKind.drill.value:
         return 1
+    if state.plan is not None:
+        planned = sum(
+            segment.question_budget
+            for segment in state.plan.segments
+            if segment.dropped_reason is None
+        )
+        if planned:
+            return planned
     usable = state.requested_minutes * 60 - CLOSING_SECONDS
     return max(1, usable // SECONDS_PER_VERBAL_QUESTION)
 
@@ -260,7 +275,119 @@ class Engine:
             payload={"consent_id": str(consent) if consent else None},
         )
         self._seed_m05(row, posterior)
+        self._plan(row, state)
         return prefix
+
+    # ── the plan (FR-6.1, spec §6.1 steps 5–6) ───────────────────────────
+
+    def _plan(self, row: InterviewSession, state: SessionState) -> None:
+        """Assemble it, record it, and owe M02 a `skipped` row for what fell.
+
+        Seeding M05 comes first because the availability probe below asks M05
+        to select against this session — an unseeded session would be probed
+        at the prior rather than at the student's own estimate, and a round
+        type that can serve them might answer 409.
+        """
+        coverage, requirements = self._coverage(row, state)
+        plan = planner.assemble(
+            planner.PlanInputs(
+                session_id=row.id,
+                mode=state.mode,
+                requested_minutes=state.requested_minutes,
+                jd_id=state.jd_id,
+                coverage=coverage,
+                requirements={str(r.get("id")): r for r in requirements if r.get("id")},
+                available_round_types=self._available_round_types(row, state),
+            )
+        )
+        store.record(
+            self.db, row, "plan.set", step="plan", payload={"plan": plan.model_dump(mode="json")}
+        )
+        skipped = planner.skipped_requirements(plan)
+        if skipped:
+            # FR-6.24: planned, then dropped, so no turn will ever reach them.
+            # M02's ledger has to hear that from the module that dropped them.
+            outbox.enqueue_ledger(
+                self.db,
+                self.state(row.id),
+                requirement_ids=skipped,
+                ledger_state="skipped",
+                turn_id=None,
+            )
+            self.db.commit()
+
+    def _coverage(
+        self, row: InterviewSession, state: SessionState
+    ) -> tuple[dict | None, list[dict]]:
+        """M02's plan and the requirements behind it. Both optional (§10)."""
+        if state.jd_id is None:
+            return None, []
+        up = self.upstreams
+        if not up.available("M02"):
+            self._degraded(row, "M02")
+            return None, []
+        minutes = planner.minutes_for_m02(state.requested_minutes)
+        try:
+            coverage = up.m02.plan(state.jd_id, row.candidate_id, minutes)
+        except UpstreamUnavailable as exc:
+            self._degraded(row, "M02", exc)
+            return None, []
+        try:
+            requirements = up.m02.requirements(state.jd_id, row.candidate_id)
+        except UpstreamUnavailable as exc:
+            # The plan stands; only the concept ids and the segment titles are
+            # thinner. Not a degradation the student needs a sentence about.
+            log.info("M06: M02 requirements unavailable for %s: %s", row.id, exc)
+            requirements = []
+        return coverage, requirements
+
+    def _available_round_types(self, row: InterviewSession, state: SessionState) -> tuple[str, ...]:
+        """Spec §6.1 step 5: ask M05 for one item per candidate rubric round
+        type, and keep the ones it can serve.
+
+        The probe is a real `POST /v1/questions/select`, which reads this
+        session's estimate and writes nothing — M05 records an item as
+        administered when M06 reports an outcome, not when it selects one. A
+        409 means the bank is thin for that round type, which is an answer
+        (M05 §6.8) and removes it from the plan rather than being discovered
+        mid-interview.
+        """
+        candidates = self._rubric_round_types()
+        if not self.upstreams.available("M05"):
+            return candidates
+        served: list[str] = []
+        for round_type in candidates:
+            try:
+                chosen = self.upstreams.m05.select(
+                    {
+                        "candidate_id": str(row.candidate_id),
+                        "session_id": str(row.id),
+                        "round_type": round_type,
+                        "theta_provisional": self.thetas.get(row.id),
+                        "is_first_of_round": True,
+                        "time_remaining_s": state.requested_minutes * 60,
+                        "modality_allowed": ["verbal"],
+                    }
+                )
+            except UpstreamUnavailable as exc:
+                log.info("M06: M05 availability probe failed for %s: %s", row.id, exc)
+                return candidates
+            if chosen is not None:
+                served.append(round_type)
+        return tuple(served)
+
+    def _rubric_round_types(self) -> tuple[str, ...]:
+        """What M13 can score. Nothing else is worth probing M05 for: a
+        question M13 has no rubric for is a question with no score."""
+        up = self.upstreams
+        if up.available("M13"):
+            try:
+                served = [str(r["round_type"]) for r in up.m13.rubrics() if r.get("round_type")]
+            except UpstreamUnavailable:
+                served = []
+            if served:
+                return tuple(served)
+        return (DEFAULT_ROUND_TYPE,)
 
     def _seed_m05(self, row: InterviewSession, posterior: dict[str, float]) -> None:
         self.thetas.seed(row.id, posterior)
@@ -669,26 +796,79 @@ class Engine:
 
         return select_next
 
-    def _round_type(self) -> str:
-        """Day 2's choice: what M13 can score, else the Rule-2 fallback."""
-        up = self.upstreams
-        if up.available("M13"):
-            try:
-                served = [r["round_type"] for r in up.m13.rubrics()]
-            except UpstreamUnavailable:
-                served = []
-            if served and DEFAULT_ROUND_TYPE not in served:
-                return served[0]
-        return DEFAULT_ROUND_TYPE
+    def segment(self, state: SessionState) -> PlannedSegment | None:
+        """The segment being run, or None before the plan exists.
+
+        Looked up by the plan's own index rather than by position, because a
+        dropped segment keeps its place in the list and `current_segment` is
+        that index — counting positions in the live list would silently run
+        the wrong segment the moment anything is dropped.
+        """
+        if state.plan is None:
+            return None
+        live = planner.live_segments(state.plan)
+        if not live:
+            return None
+        found = next((s for s in live if s.index == state.current_segment), None)
+        return found or live[0]
+
+    def _advance_segment(
+        self, row: InterviewSession, state: SessionState, now: datetime
+    ) -> SessionState:
+        """Move on once this segment has had the questions M02 priced for it.
+
+        This is the whole of sequencing that day 5 needs: without it the plan
+        is a screen, because the session stays on the warm-up for ever and
+        never asks the requirements it promised to cover. Day 6 adds the
+        bridge line and the honest 409 ending; the arithmetic is here.
+        """
+        live = planner.live_segments(state.plan) if state.plan is not None else []
+        if not live:
+            return state
+        position = next((i for i, s in enumerate(live) if s.index == state.current_segment), 0)
+        while (
+            position + 1 < len(live)
+            and state.questions_in_segment(live[position].index) >= live[position].question_budget
+        ):
+            store.record(
+                self.db,
+                row,
+                "segment.transition",
+                step=f"segment:{live[position + 1].index}",
+                payload={"from": live[position].index, "to": live[position + 1].index},
+            )
+            state = self.state(row.id)
+            position += 1
+        return state
+
+    def _round_type(self, state: SessionState) -> str:
+        """The plan's answer, because the plan already asked M05 at plan time.
+
+        Asking M13 again here would let a session drift onto a round type the
+        plan never probed — and then discover mid-interview that the bank is
+        thin for it, which is exactly the 409 §6.1 step 5 exists to prevent.
+        """
+        segment = self.segment(state)
+        if segment is not None and segment.rubric_round_types:
+            return segment.rubric_round_types[0]
+        return self._rubric_round_types()[0]
 
     def _select(self, row: InterviewSession, state: SessionState, now: datetime) -> Selected:
         up = self.upstreams
-        round_type = self._round_type()
+        state = self._advance_segment(row, state, now)
+        round_type = self._round_type(state)
+        segment = self.segment(state)
         seen = store.seen_item_ids(self.db, row.candidate_id, now=now)
         request = {
             "candidate_id": str(row.candidate_id),
             "session_id": str(row.id),
             "round_type": round_type,
+            # What this segment is FOR. M05 matches `coverage_debt` against
+            # item concept ids whatever its name says (M06_REVIEW 1.2), and
+            # `required_requirement_ids` is how a plan's promise to cover a
+            # requirement becomes the question that covers it.
+            "coverage_debt": {c: 1.0 for c in (segment.concept_ids if segment else [])},
+            "required_requirement_ids": list(segment.requirement_ids) if segment else [],
             # In memory only — see ThetaCache.
             "theta_provisional": self.thetas.get(row.id),
             "seen_item_ids": sorted(str(i) for i in seen),

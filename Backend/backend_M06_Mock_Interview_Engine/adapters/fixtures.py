@@ -92,9 +92,15 @@ class LocalQuestions:
 class FixtureCoveragePlanner:
     """M02, answering in `CoveragePlan`'s captured shape."""
 
-    def __init__(self, plan: dict[str, Any] | None = None, jd: dict[str, Any] | None = None):
+    def __init__(
+        self,
+        plan: dict[str, Any] | None = None,
+        jd: dict[str, Any] | None = None,
+        requirements: list[dict[str, Any]] | None = None,
+    ):
         self._plan = plan
         self._jd = jd
+        self._requirements = requirements
         self.ledger: list[dict[str, Any]] = []
         self.plan_calls: list[tuple[UUID, UUID, int]] = []
 
@@ -151,6 +157,26 @@ class FixtureCoveragePlanner:
             "saturated": False,
             "plan_version": "greedy-log-v1",
         }
+
+    def requirements(self, jd_id: UUID, candidate_id: UUID) -> list[dict[str, Any]]:
+        if self._requirements is not None:
+            return self._requirements
+        return [
+            {
+                "id": "r1",
+                "text": "Data structures and algorithms",
+                "measured_by": ["technical"],
+                "concept_ids": ["concept:hashing"],
+                "testable": True,
+            },
+            {
+                "id": "r2",
+                "text": "Recursion",
+                "measured_by": ["technical"],
+                "concept_ids": ["concept:recursion"],
+                "testable": True,
+            },
+        ]
 
     def job_description(self, jd_id: UUID) -> dict[str, Any]:
         if self._jd is not None:

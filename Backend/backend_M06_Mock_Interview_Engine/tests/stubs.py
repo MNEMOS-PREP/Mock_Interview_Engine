@@ -87,9 +87,18 @@ class StubLLM:
 
 
 class BankQuestions(LocalQuestions):
-    """M05 as if it were live: same items, but selected as bank items."""
+    """M05 as if it were live: same items, but selected as bank items.
+
+    Records every request, because half of what the plan does is decide what
+    M05 is asked for — a plan nothing asks against only exists on a screen.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.requests: list[dict] = []
 
     def select(self, request):
+        self.requests.append(dict(request))
         chosen = super().select(request)
         if chosen is not None:
             chosen["reason"] = "max_info"
@@ -104,7 +113,7 @@ class DownPlanner:
 
         raise UpstreamUnavailable("M02", "connection refused")
 
-    plan = job_description = record_coverage = session_coverage = _fail
+    plan = job_description = requirements = record_coverage = session_coverage = _fail
 
 
 class DownQuestions:

@@ -10,11 +10,16 @@ from sqlmodel import select
 
 from backend_M06_Mock_Interview_Engine import adapters, store
 from backend_M06_Mock_Interview_Engine.contracts import SessionStatus
-from backend_M06_Mock_Interview_Engine.engine import AnswerRejected, Engine, ThetaCache
+from backend_M06_Mock_Interview_Engine.engine import (
+    AnswerRejected,
+    Engine,
+    ThetaCache,
+    question_budget,
+)
 from backend_M06_Mock_Interview_Engine.llm import NullLLM
-from backend_M06_Mock_Interview_Engine.models import Checkpoint, LLMCall
+from backend_M06_Mock_Interview_Engine.models import Checkpoint, LedgerOutbox, LLMCall
 
-from .stubs import BankQuestions, DownQuestions, StubLLM, drill_body, verdict
+from .stubs import BankQuestions, DownPlanner, DownQuestions, StubLLM, drill_body, verdict
 
 
 def make(db, llm=None, **upstreams) -> Engine:
@@ -259,9 +264,10 @@ def test_no_consent_is_recorded_and_said(db):
     row = mock(engine)
     state = engine.start(row.id)
     assert state.flags.consent_id is None
-    assert [e.kind for e in store.events_for(db, row.id)][:3] == [
+    assert [e.kind for e in store.events_for(db, row.id)][:4] == [
         "session.created",
         "consent.resolved",
+        "plan.set",
         "session.started",
     ]
 
@@ -396,3 +402,138 @@ def test_a_drill_gets_the_drills_own_closing_line(db):
     engine.start(row.id)
     state = engine.end(row.id, "ended_by_student")
     assert interviewer_lines(state)[-1] == "That's the drill."
+
+
+# ── the plan, built at bootstrap (FR-6.1) ────────────────────────────────
+
+
+def with_jd(engine: Engine, minutes=45):
+    row, _ = store.create_session(
+        engine.db,
+        candidate_id=uuid.uuid4(),
+        kind="mock",
+        mode="mock",
+        minutes=minutes,
+        jd_id=uuid.uuid4(),
+    )
+    return row
+
+
+@pytest.mark.gate
+def test_starting_a_session_builds_a_plan_from_m02s(db):
+    """FR-6.1. The plan exists before the greeting: a session that started
+    without one would be asking questions off a plan the student never saw."""
+    engine = make(db, llm=StubLLM([verdict()] * 6), m05=BankQuestions())
+    row = with_jd(engine)
+    state = engine.start(row.id)
+
+    assert state.plan is not None
+    assert [s.kind for s in state.plan.segments] == ["warmup", "technical", "closing"]
+    # M02 was asked to price what is LEFT after the reserve, not the whole
+    # budget: 45 − 4 warm-up − 5 closing.
+    assert engine.upstreams.m02.plan_calls[0][2] == 36
+    # And its arithmetic came back untouched.
+    technical = state.plan.segments[1]
+    assert (technical.minutes, technical.question_budget) == (14.0, 4)
+    assert technical.requirement_ids == ["r1", "r2"]
+    assert technical.concept_ids == ["concept:hashing", "concept:recursion"]
+
+
+def test_the_plan_decides_how_many_questions_the_session_asks(db):
+    """Two numbers for the same thing is how a session runs over (Trap 8)."""
+    engine = make(db, llm=StubLLM([verdict()] * 6), m05=BankQuestions())
+    state = engine.start(with_jd(engine).id)
+    # 1 warm-up + M02's 4. Not the 45-minute arithmetic, which would say 12.
+    assert question_budget(state) == 5
+
+
+def test_the_segment_being_run_steers_what_m05_is_asked_for(db):
+    """A plan that does not reach the selection request is a plan that only
+    exists on the preview screen."""
+    engine = make(db, llm=StubLLM([verdict()] * 6), m05=BankQuestions())
+    row = with_jd(engine)
+    engine.start(row.id)
+
+    # The warm-up asks for nothing in particular — that is what it is for.
+    warmup = engine.upstreams.m05.requests[-1]
+    assert warmup["required_requirement_ids"] == []
+
+    # One question is the warm-up's whole budget, so once its ladder exits
+    # the next question is M02's.
+    engine.llm.verdicts = [verdict(justification="failed", band="below")]
+    state = say(engine, row, "I do not know.")
+    assert state.current_segment == 1
+    asked = engine.upstreams.m05.requests[-1]
+    assert asked["round_type"] == "dsa_verbal"
+    assert asked["required_requirement_ids"] == ["r1", "r2"]
+    assert set(asked["coverage_debt"]) == {"concept:hashing", "concept:recursion"}
+
+
+def test_a_session_walks_its_plan_and_stops_at_the_closing(db):
+    """The budget is the plan's, and the closing asks nothing — it is where
+    the student asks and the report is put together."""
+    # Every answer ends its ladder, so each one costs exactly one question of
+    # the plan's budget — the arithmetic under test is the plan's, not the
+    # ladder's (which test_ladder.py owns).
+    engine = make(
+        db, llm=StubLLM([verdict(justification="failed", band="below")]), m05=BankQuestions()
+    )
+    row = with_jd(engine)
+    state = engine.start(row.id)
+    seen = [state.current_segment]
+    for _ in range(8):
+        if state.status is not SessionStatus.live or state.open_turn_id is None:
+            break
+        state = say(engine, row, "I do not know.")
+        seen.append(state.current_segment)
+
+    # Warm-up (index 0, one question), then M02's round (index 1).
+    assert seen[0] == 0
+    assert 1 in seen
+    # The plan bounds the session: never more questions than it priced, and
+    # it stops for a reason it can name rather than running until something
+    # breaks. Here the fixture bank runs dry first, which is EC-6.16's
+    # honest ending and not a failure.
+    assert state.questions_asked <= question_budget(state) == 5
+    assert state.status is SessionStatus.ended
+    assert state.end_reason in ("plan_complete", "bank_exhausted")
+    # The closing is never the segment that asks: it is where the student asks.
+    assert state.plan.segments[-1].question_budget == 0
+
+
+def test_m02_being_down_leaves_a_plan_and_a_sentence(db):
+    """Rule 2 — the session narrows to what M05 can fill, and says so."""
+    engine = make(db, llm=StubLLM([verdict()] * 6), m05=BankQuestions(), m02=DownPlanner())
+    state = engine.start(with_jd(engine).id)
+    assert state.plan is not None
+    assert [s.kind for s in state.plan.segments] == ["warmup", "technical", "closing"]
+    assert "M02" in state.flags.degraded
+    assert state.plan.coverage_plan is None
+    assert "Not tailored to a job description" in state.plan.segments[1].rationale
+
+
+def test_a_dropped_segment_is_owed_to_m02_as_skipped(db):
+    """FR-6.24. Planned, then dropped, so no turn will ever reach it — M02's
+    ledger has to hear that from the module that dropped it."""
+    engine = make(db, llm=StubLLM([verdict()] * 6), m05=BankQuestions())
+    coding = {
+        "rounds": [
+            {
+                "round_type": "coding",
+                "minutes": 24.0,
+                "question_count": 2,
+                "requirement_ids": ["r1"],
+            }
+        ],
+        "allocations": [],
+        "uncovered": [],
+        "plan_version": "greedy-log-v1",
+    }
+    engine.upstreams.m02._plan = coding
+    row = with_jd(engine)
+    state = engine.start(row.id)
+
+    dropped = [s for s in state.plan.segments if s.dropped_reason is not None]
+    assert len(dropped) == 1 and "coding round" in dropped[0].dropped_reason
+    owed = db.exec(select(LedgerOutbox).where(LedgerOutbox.session_id == row.id)).all()
+    assert [(r.requirement_id, r.ledger_state) for r in owed] == [("r1", "skipped")]

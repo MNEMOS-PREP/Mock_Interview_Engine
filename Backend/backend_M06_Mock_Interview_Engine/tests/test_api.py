@@ -107,7 +107,15 @@ def test_trace_replays_to_the_same_state(client, as_student):
     client.post(f"/v1/interviews/{sid}/pause", headers=as_student)
     trace = client.get(f"/v1/interviews/{sid}/trace", headers=admin()).json()
     kinds = [e["kind"] for e in trace["events"]]
-    assert kinds[:3] == ["session.created", "consent.resolved", "session.started"]
+    # The plan is assembled during the bootstrap, before the greeting: a
+    # session that started without one would be asking questions off a plan
+    # the student never saw.
+    assert kinds[:4] == [
+        "session.created",
+        "consent.resolved",
+        "plan.set",
+        "session.started",
+    ]
     assert kinds[-1] == "session.paused"
     assert trace["replay_matches"] is True
 
