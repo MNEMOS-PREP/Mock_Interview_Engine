@@ -1,6 +1,6 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 52%** — 8 of 26 functional requirements met, 11 partially. **Days 1–4 of 15 are done.** What works end to end now spans three modules: a mock interview asks **M05 bank questions**, the answers reach **M13**, and M13's status comes back into the report — verified against the three services running together, not against fixtures. The **defend drill** path also runs whole. The **mock** path still runs on a stub plan (one segment, a fixed round type) until day 5.
+> **Completion: 52%** — 8 of 26 functional requirements met, 11 partially. **Days 1–4 of 15 are done**, and on 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. The **defend drill** path also runs whole. The **mock** path still runs on a stub plan (one segment, a fixed round type) until day 5.
 >
 > Met: the probe ladder and break depths (FR-6.5, 6.6), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), a report for every session (FR-6.18), the drill (FR-6.23), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
@@ -41,12 +41,12 @@ _Nothing scouted for this module yet._
 
 | | |
 |---|---|
-| Status | **Days 1–4 of 15 done.** A mock interview runs across M05, M06 and M13 with the three services live; a defend drill runs end to end on the live model through the web app. |
-| Backend tests passing | **170**, no socket opened, no API key |
-| Release gates (`-m gate`) | **24** |
+| Status | **Days 1–4 of 15 done.** A mock interview runs across M04, M05, M06 and M13 and reaches the skill graph; mounted in Platform_Shell on one origin. |
+| Backend tests passing | **173**, no socket opened, no API key |
+| Release gates (`-m gate`) | **25** |
 | Route decorators | **18** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
-| Frontend | four screens on `:5206`, `m06Routes` exported for Platform_Shell |
+| Frontend | four screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
 | Measured | strategist p95 **1106 ms**, interviewer first token p95 **919 ms**, a rung ≈ **2.0 s** to first visible token (AC-6.4 wants ≤ 2.5 s) — `Backend/reports/latency-*.json` |
 | Spec | [Revision 2](M06_Mock_Interview_Engine.md), after [the review](M06_REVIEW.md) |
 | Scope | 26 functional requirements (21 of them P0), 16 acceptance metrics (7 release-blocking), 17 edge cases |
@@ -152,6 +152,32 @@ so when M04 is absent its own sentence is the whole story. And
 `fixture_upstreams` now serves `module.json`'s real `on_missing` copy, so a
 test about what a student is told asserts on the words that ship.
 
+### 2026-09-20 — the chain, and the three seams in it
+
+Five modules were started together and one real answer was driven through
+them. Each blocker was invisible to every module's own green suite, because
+each module tests itself against fixtures by design.
+
+1. **M06 carried no consent.** `LiveMemory.consent()` returned `None` with a
+   comment saying M04 had no route — and M13 refuses to emit any observation
+   without one, so *every* scored session moved nothing. M04 now has
+   `GET`/`POST /v1/candidates/{id}/consent` (`5e01e8d`) and M06 asks it.
+2. **The evidence had nothing to resolve against.** M13 cites
+   `artifact_id = turn_id` on every span it quotes; M04 refuses evidence that
+   does not resolve; nobody registered the turn. All nine observations came
+   back *"evidence does not resolve"*, and the batch took the turn's technical
+   observation with it. M04 grew `POST .../artifacts`, and M06 registers the
+   answer **through the outbox, before the evaluation** — see FR-6.14.
+3. **M13 minted a concept that exists in no ontology.** Its communication
+   filter tested `cid.startswith("concept:communication")`, which matches none
+   of M04's ids (`concept:thinking_aloud`, …), so the fallback wrote
+   `concept:communication` and M04 rejected the batch as "unknown concept".
+   M13 now asks M04's ontology which concepts are communication (`bc30601`).
+
+**The lesson, recorded:** a table whose rule a module *enforces* usually has no
+route to fill it, because the rule ships with the model and the route is left
+to a repo that does not exist yet. Four instances in one afternoon.
+
 ### Next: day 5
 
 1. **Plan assembly over M02's `CoveragePlan`** (FR-6.1) — no model call, and
@@ -180,7 +206,7 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.11 | 🟡 Contract fixed and carried; nothing to switch to yet | P0 | 1·text |
 | FR-6.12 | 🟡 Pause once ≤ 5 min, resume — once-only and the 5-min cap on resume are built and tested; the clock does not restart on its own if the student never resumes (day 11) | P1 | 1 |
 | FR-6.13 | 🟡 Reconnect and resume from checkpoint — checkpoint recovery (stale, unreadable, failed write) is built and tested; `resume-state` and the "welcome back" flow are not (day 11) | P0 | 1 |
-| FR-6.14 | ✅ Evaluation never blocks the hot path — outbox written with the turn, delivered by a background task, an explicit drain, or the sweeper; claimed before sending; a status returns, never a number | P0 | 1 |
+| FR-6.14 | ✅ Evaluation never blocks the hot path — outbox written with the turn, delivered by a background task, an explicit drain, or the sweeper; claimed before sending; a status returns, never a number. Three obligations now: the answer text to M04 (so evidence resolves), the evaluation to M13, the coverage row to M02 — and the artifact goes first | P0 | 1 |
 | FR-6.15 | ✅ Interviewer cannot read scores, band or θ — `InterviewerView` + the type-graph gate | P0 | 1 |
 | FR-6.16 | 🟡 Last six turns only reach the model; no round summary, no constancy test (day 8) | P0 | 1 |
 | FR-6.17 | 🟡 A question is not asked without time for an answer, and the clock can end a session; the 70% checkpoint and the reserved closing are day 10 | P0 | 1 |
@@ -262,7 +288,7 @@ Spec §5 (Revision 2).
 | `m06_checkpoint` (monotonic `last_seq`, no θ) | ✅ | a cache; stale or unreadable → re-fold |
 | `m06_turn` (projection, `text_sha256`) | ✅ | feeds `seen_item_ids` |
 | `m06_llm_call` | ✅ | every model call, with reasoning and cached tokens when reported |
-| `m06_eval_outbox`, `m06_ledger_outbox` (`claimed_at`, states `pending`/`sending`/`sent`/`held`) | ✅ | written with the turn, claimed before sending, retried by `sweeper.py` |
+| `m06_artifact_outbox`, `m06_eval_outbox`, `m06_ledger_outbox` (`claimed_at`, states `pending`/`sending`/`sent`/`held`) | ✅ | written with the turn, claimed before sending, retried by `sweeper.py`; the artifact is delivered before the evaluation that cites it |
 
 ---
 
@@ -279,15 +305,19 @@ the other module's TODO once raised; tick it here when it has been.
 | M05 | `Bank.get()` cannot find its own fallback-playlist items | ✅ landed (`d30915d`) |
 | M13 | **a live M05 question source** — `get_questions()` was always the fixture bank, so it 404d on every real question id (blocked the Phase-1 gate) | ✅ landed (`efb5a5a`); confirmed live: M13 resolves `/v1/questions/{id}/package?round_type=` from M05 |
 | M13 | **a worker that drains its own outbox** — `emit.py` promises one ("a row is written in the same transaction and a worker drains it") but only `POST /outbox/drain` exists, so a failed send to M04/M02/M19 is never retried. M06's `sweeper.py` is the pattern | ⬜ new |
+| M13 | a rejected outbox row disappears from `/v1/outbox` — `pending: 0`, `items: []`, and the only way to read `last_error` is the database. A row nobody can see is a row nobody fixes | ⬜ new |
+| M13 | code and canvas artifacts get a fresh `uuid4()` every evaluation (`service.py`), so they can never resolve in M04 the way a transcript now does. Blocks scored evidence for M07/M08 | ⬜ new |
+| M13 | `authenticated: false` on `/v1/outbox` — no `M04_SERVICE_SECRET` is set, so the observation write is unauthenticated. Same ask as the env-name one below, now visible | ⬜ |
 | M05 | `difficulty_offset` on `SelectionRequest` | ⬜ |
 | M05 | per-round-type counts on `/bank/health` | ⬜ |
-| M04 | consent lookup route — until it exists, M13 emits **no observations at all** (it requires `consent_id` on every one), so a scored session still moves no mastery | ⬜ |
+| M04 | consent lookup route — until it existed, M13 emitted **no observations at all** | ✅ landed (`5e01e8d`): `GET`/`POST /v1/candidates/{id}/consent` |
+| M04 | a route to register an artifact, so evidence can resolve | ✅ landed (`5e01e8d`): `POST /v1/candidates/{id}/artifacts` |
 | M04 | source `recent_sessions` from M06 | ⬜ |
 | M13 | `push_back` rubric variant (unblocks FR-6.20) | ⬜ |
 | M13 | `cs_core` and `communication` rubrics | ⬜ |
 | M13 | read `M04_SERVICE_SECRET`, as M04 and M15 do, not `SERVICE_SECRET` | ⬜ |
 | M02 | docstring: M06 writes `asked`/`answered` | ⬜ |
-| Platform_Shell | add `interviews`/`drills`/`agents` to the proxy table and mount `m06Routes` | ⬜ |
+| Platform_Shell | add `interviews`/`drills`/`agents` to the proxy table and mount `m06Routes` | ✅ landed — and the repo is now under git (`bbd4f69`), which it had never been. **No GitHub remote yet: that is a call for the owner.** |
 | Platform | `modules_meta` M06 → built; `Platform_Shell` journey card | ⬜ (on ship) |
 
 ---
