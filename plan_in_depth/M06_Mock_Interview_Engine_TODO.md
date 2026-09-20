@@ -1,10 +1,12 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 62%** — 11 of 26 functional requirements met, 10 partially. **Days 1–5 of 15 are done**, and on 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. The **defend drill** path also runs whole. The **mock** path still runs on a stub plan (one segment, a fixed round type) until day 5.
+> **Completion: 62%** — 11 of 26 functional requirements met, 10 partially. **Days 1–6 of 15 are done**, and on 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. The **defend drill** path also runs whole. The **mock** path still runs on a stub plan (one segment, a fixed round type) until day 5.
 >
 > Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), the probe ladder and break depths (FR-6.5, 6.6), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), a report for every session (FR-6.18), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
 > Not started: re-planning (FR-6.4), modes as configs (FR-6.8), Final Boss (FR-6.9), closing questions (FR-6.21). Blocked: steelman (FR-6.20).
+>
+> _Day 6 moved no requirement across a line, and the number is right not to move: it deepened FR-6.3 (rounds now end, begin and say so) without completing it, because per-segment personas wait on day 9. The measure counts requirements, not work — which is the point of having one._
 >
 > _Method: `(met + ½ × partial) ÷ total`, audited against shipped code, 2026-09-17. One measure applied the same way to all nineteen modules so they compare; it counts requirements, not screens or gates._
 
@@ -41,9 +43,9 @@ _Nothing scouted for this module yet._
 
 | | |
 |---|---|
-| Status | **Days 1–5 of 15 done.** A mock interview is planned from a real job description, runs across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **194**, no socket opened, no API key |
-| Release gates (`-m gate`) | **29** |
+| Status | **Days 1–6 of 15 done.** A mock interview is planned from a real job description and the student's resume, runs its rounds across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
+| Backend tests passing | **202**, no socket opened, no API key |
+| Release gates (`-m gate`) | **33** |
 | Route decorators | **20** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
@@ -72,7 +74,7 @@ _Nothing scouted for this module yet._
 | 3 | ✅ | `ProbeStrategist` structured call, derived rungs, `break_depth`, `ProvisionalOutcome` → M05; LangGraph adopted (§15.6) |
 | 4 | ✅ | `InterviewerView` + outbound-request gates; eval outbox → M13; ledger → M02; consent adapter; **outbox sweeper** |
 | 5 | ✅ | Plan assembly over M02 + plan-time availability; preview UI with drop-a-segment |
-| 6 | ⬜ | Segments, 409 as honest end, bridges, `RoundTransition` |
+| 6 | ✅ | Segments, 409 as honest end, bridges, `RoundTransition`, the project segment |
 | 7 | ⬜ | Hint ladder (M05), M13 credit table shown |
 | 8 | ⬜ | Context management; AC-6.10 |
 | 9 | ⬜ | Personas (7) as data, modes (4) as configs, guard |
@@ -210,14 +212,40 @@ warm-up, M02's 14-minute SQL round for requirement R-8 carrying M02's own
 rationale, and a reserved 5-minute closing. On the second segment M05 returned
 an SQL question — the plan steering selection, end to end.
 
-### Next: day 6
+### Day 6 — what landed
 
-1. **The bridge line between rounds** and `RoundTransition` (FR-6.3) — a
-   segment advance is silent today.
-2. **409 as an honest end** — M05 running dry inside a segment should end that
-   segment, not the session (§6.1 should have caught it at plan time).
-3. **The project segment** from M01's risky claims — `PlanInputs.claims` is
-   wired and always empty.
+**A crossing is said out loud.** Every register gained bridge copy, authored
+like every other structural move, naming what is coming in M02's words:
+*"Let's move to the next part: SQL."* It **replaces** "next question" rather
+than stacking on it — three transitions for one crossing reads worse than
+none. The line travels with the selection (`Selected.bridge`), because the
+graph step's own state was read before the crossing happened. In the
+transcript a quiet rule marks where a round ended; the spoken line is not
+drawn again in a box, which would be the same sentence twice on one screen.
+
+**M05 running dry ends the round, not the interview.** A 409 is a known state
+with a behaviour (M05 §6.8), so the segment closes and the next opens, and the
+abandoned round's requirements go to M02 as `skipped`. Ending the session
+would throw away every segment behind it — a thin corner of the bank becoming
+a short interview about nothing.
+
+**The project segment.** With a risky or vague claim from M01, the plan opens
+with the student's own work before the posting's. Its minutes come out of the
+largest verbal round, never the closing, and never more than half of it. Its
+questions are M01's probes and are never scored, because M13 resolves a
+package from M05 and a claim probe is not a bank item. The claims ride on the
+plan, so the claim the preview showed is the one the student defends.
+
+**A test that names its upstreams.** Ten tests now say `m01=NoClaims()` where
+they are about M02's rounds rather than resumes — the fixture M01 always has
+one shaky claim, which is right for the drill and noise everywhere else.
+
+### Next: day 7
+
+1. **The hint ladder** (FR-6.7) — M05 serves `hint_ladder` and M06 records
+   `hint_level_used`; what is missing is M13's credit table being SHOWN, so a
+   student knows a hint costs something before taking it.
+2. **M13's credit table** on the stage, and the hint button behind it.
 
 ---
 
@@ -229,7 +257,7 @@ Spec §4, Revision 2. This is the authoritative list.
 |---|---|---|---|
 | FR-6.1 | ✅ `InterviewPlan` from M02's plan + M05 availability + budget + mode, assembled by `planner.py` with no model call; M04's profile is the pinned prefix, not a plan input | P0 | 1 |
 | FR-6.2 | ✅ `POST /plan` previews without starting; `DELETE /plan/segments/{i}` drops one, only while `planned`; `PlanPreview` shows minutes, questions, M02's rationale, what was dropped and M02's `uncovered` | P1 | 1 |
-| FR-6.3 | 🟡 Segments run in sequence and advance when their question budget is spent; the persona is the mode's default for every segment and the bridge line between rounds is day 6 | P0 | 1 |
+| FR-6.3 | 🟡 Segments run in sequence, advance on their budget, and say so crossing over (§3.2.3); the rubric comes from M05's selection. Per-segment personas wait on day 9 — every segment runs the mode's default today | P0 | 1 |
 | FR-6.4 | ⬜ Re-plan at boundaries, ≤ 2, hot-path signals only | P1 | 1 |
 | FR-6.5 | ✅ Probe ladder, cap 5, graceful exit, derived rungs — pure function, 14 tests, steelman unreachable | P0 | 1 |
 | FR-6.6 | ✅ `break_depth` per concept per session — recorded by the fold, kept at the shallowest break | P0 | 1 |
