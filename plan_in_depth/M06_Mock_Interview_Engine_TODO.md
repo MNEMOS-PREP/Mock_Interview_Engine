@@ -1,6 +1,6 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 65%** — 13 of 26 functional requirements met, 8 partially. **Days 1–7 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
+> **Completion: 67%** — 14 of 26 functional requirements met, 7 partially. **Days 1–8 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
 >
 > Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), the probe ladder and break depths (FR-6.5, 6.6), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), a report for every session (FR-6.18), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
@@ -44,8 +44,8 @@ _Nothing scouted for this module yet._
 | | |
 |---|---|
 | Status | **Days 1–7 of 15 done.** A mock interview is planned from a real job description and the student's resume, runs its rounds across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **223**, no socket opened, no API key |
-| Release gates (`-m gate`) | **39** |
+| Backend tests passing | **230**, no socket opened, no API key |
+| Release gates (`-m gate`) | **41** |
 | Route decorators | **21** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
@@ -76,7 +76,7 @@ _Nothing scouted for this module yet._
 | 5 | ✅ | Plan assembly over M02 + plan-time availability; preview UI with drop-a-segment |
 | 6 | ✅ | Segments, 409 as honest end, bridges, `RoundTransition`, the project segment |
 | 7 | ✅ | Hint ladder (M05), M13 credit table shown before the hint is taken |
-| 8 | ⬜ | Context management; AC-6.10 |
+| 8 | ✅ | Context management: §6.6's rolling round summary, bounded view; AC-6.10's mechanism gated, its number a harness run |
 | 9 | ⬜ | Personas (7) as data, modes (4) as configs, guard |
 | 10 | ⬜ | Pacing, re-plan from hot-path signals |
 | 11 | ⬜ | Pause/resume, reconnect, idle prompts, auto-close, chaos tests |
@@ -337,15 +337,47 @@ sentence had no AC; the pause's "five minutes" had no enforcement. Neither
 was in the build order as a task, and both were shipped-today defects. It is
 worth one pass per module.
 
-### Next: day 8
+### Day 8 — what landed
 
-1. **Context management** (FR-6.16) — the last six turns reach the model, but
-   the rolling round summary (§6.6, regenerated every four turns) does not
-   exist, so a long session loses what happened early rather than carrying a
-   summary of it.
-2. **AC-6.10** — context tokens per turn, variance < 15% across session
-   length. `m06_llm_call` already records `tokens_in`; the measurement is a
-   harness run, not new plumbing.
+`agents/summariser.py`. The interviewer saw six turns and nothing else, so a
+long round lost everything before turn fourteen — it asks about hashing again
+because it cannot remember asking. §6.6's note is written every four turns
+and **replaces** the dropped turns rather than joining them; joined, it would
+be a context that grows with the session, which is what AC-6.10 measures.
+
+- **Off the hot path, and before delivery in that task.** Delivery blocks for
+  seconds on M13's ensemble, which measurably made the note land a turn late.
+  Delivery also has a retry behind it (`sweeper.py`); the note has only the
+  next answer.
+- **Counted per round.** A segment transition clears it — carrying the last
+  round's note across would have the interviewer open by referring to a topic
+  it has just left.
+- **Screened by the same guard as every interviewer line.** The prompt forbids
+  judgement, `guard.screen` enforces it, and a note that telegraphs is
+  dropped rather than repaired: a note with the verdict edited out was still
+  written by something thinking about the verdict. No model → no note, never
+  a stitched-up one.
+- **AC-6.10**: the measured number is a harness run; what the suite holds is
+  the mechanism that makes it true — the view is bounded by construction.
+
+Two test mistakes of my own, both found by mutating rather than by reading:
+the telegraph gate passed with the guard disabled, because `summarise_if_due`
+returned False for not being *due* rather than for the note being bad — a
+False from the schedule looks exactly like a False from the guard. There is a
+`force_due` helper now and the gate asserts dueness first.
+
+Verified live on a five-answer session: one note at turn 10, factual, naming
+chaining, tree buckets, O(n) worst case and resizing, with no judgement in it.
+
+### Next: day 9
+
+1. **Personas as data** (FR-6.8, FR-6.9) — seven of them, `personas/*.yaml`,
+   validated at load. **AC-6.17 is already in place**, which is why it was
+   built before this rather than after.
+2. **Modes as configs** — the mode table in §6.1 is read from three separate
+   places today (`planner.DEFAULT_PERSONA`, `outbox.ENSEMBLE_BY_MODE`, and
+   `hint_offer`'s Final Boss check). One config, one source.
+3. **Final Boss** (FR-6.9): pressure through mechanics, never rudeness.
 
 ---
 
@@ -370,7 +402,7 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.13 | 🟡 Reconnect and resume from checkpoint — checkpoint recovery (stale, unreadable, failed write) is built and tested; `resume-state` and the "welcome back" flow are not (day 11) | P0 | 1 |
 | FR-6.14 | ✅ Evaluation never blocks the hot path — outbox written with the turn, delivered by a background task, an explicit drain, or the sweeper; claimed before sending; a status returns, never a number. Three obligations now: the answer text to M04 (so evidence resolves), the evaluation to M13, the coverage row to M02 — and the artifact goes first | P0 | 1 |
 | FR-6.15 | ✅ Interviewer cannot read scores, band or θ — `InterviewerView` + the type-graph gate | P0 | 1 |
-| FR-6.16 | 🟡 Last six turns only reach the model; no round summary, no constancy test (day 8) | P0 | 1 |
+| FR-6.16 | ✅ Last six turns plus §6.6's rolling note, regenerated every four turns and REPLACING the dropped turns; bounded by construction, so a six-times-longer session is not a six-times-larger context | P0 | 1 |
 | FR-6.17 | 🟡 A question is not asked without time for an answer, and the clock can end a session; the 70% checkpoint and the reserved closing are day 10 | P0 | 1 |
 | FR-6.18 | ✅ A report for every session — ended, aborted, or crashed half-way; built from the log | P0 | 1 |
 | FR-6.19 | 🟡 `/trace` serves the log, every model call, and a replay equality check; an offline re-run harness and the Langfuse export are not built | P0 | 1 |
