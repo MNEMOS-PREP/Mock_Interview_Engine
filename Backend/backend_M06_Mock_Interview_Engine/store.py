@@ -77,9 +77,12 @@ def notify(event: SessionEvent) -> None:
 class LiveSessionExists(Exception):
     """EC-6.13. The student already has a live or paused session."""
 
-    def __init__(self, session_id: uuid.UUID):
+    def __init__(self, session_id: uuid.UUID, status: str = "live"):
         self.session_id = session_id
-        super().__init__(f"candidate already has a live session {session_id}")
+        self.status = status
+        # Named, because "live" for a session the student PAUSED sent them
+        # looking for an interview that was not running.
+        super().__init__(f"candidate already has a {status} session {session_id}")
 
 
 class ConcurrentWrite(Exception):
@@ -161,6 +164,18 @@ def occupying_session(db: Session, candidate_id: uuid.UUID) -> InterviewSession 
     return db.exec(
         select(InterviewSession).where(InterviewSession.occupying_key == str(candidate_id))
     ).first()
+
+
+def occupied_sessions(db: Session) -> list[InterviewSession]:
+    """Every session holding a candidate's one slot — live or paused.
+
+    EC-6.13 blocks a second session while one of these exists, which is right
+    while somebody is in the room and a lockout once they have gone. See
+    `sweeper.close_abandoned`.
+    """
+    return list(
+        db.exec(select(InterviewSession).where(InterviewSession.occupying_key.is_not(None))).all()
+    )
 
 
 def seen_item_ids(
@@ -347,7 +362,7 @@ def create_session(
     """
     live = occupying_session(db, candidate_id)
     if live is not None:
-        raise LiveSessionExists(live.id)
+        raise LiveSessionExists(live.id, load_state(db, live.id).status.value)
 
     stale = db.exec(
         select(InterviewSession)

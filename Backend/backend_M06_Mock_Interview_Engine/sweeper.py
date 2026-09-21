@@ -26,11 +26,14 @@ import contextlib
 import logging
 import os
 from collections.abc import Callable, Iterator
+from datetime import datetime
 
+from ai_core.timeutil import utcnow
 from sqlmodel import Session
 
-from . import outbox
+from . import outbox, store
 from .adapters import Upstreams
+from .contracts import SessionStatus
 from .engine import Engine, ThetaCache
 
 log = logging.getLogger("uvicorn.error")
@@ -43,7 +46,76 @@ SWEEP_S = float(os.getenv("M06_OUTBOX_SWEEP_S", "30"))
 #: sweep holding the write lock while a student is mid-answer.
 SESSIONS_PER_SWEEP = 5
 
+#: EC-6.14 — "student pauses and never returns: auto-close after 30 min,
+#: partial report generated". FR-6.12 caps the pause at five, but that cap is
+#: only applied by a student coming BACK; this is the one that applies when
+#: nobody does.
+ABANDONED_PAUSE_S = 30 * 60
+
+#: A live session nobody is in. Its own clock already says the interview is
+#: over — the turn loop just never got a turn to notice on. Generous, because
+#: a student thinking for ten minutes is still in the room, and the session's
+#: own planned length is already counted before this is added.
+ABANDONED_LIVE_GRACE_S = 30 * 60
+
 SessionFactory = Callable[[], Session]
+
+
+def close_abandoned(
+    session_factory: SessionFactory,
+    upstreams: Upstreams,
+    llm,
+    *,
+    now: datetime | None = None,
+) -> list[str]:
+    """End sessions nobody is in — EC-6.14, and a lockout until now.
+
+    A session holds its candidate's one slot while it is live or paused
+    (EC-6.13's `occupying_key`), which is right while somebody is in the room.
+    Nothing released it when they left: a student who paused and closed the
+    tab was refused **every future interview**, permanently, with "candidate
+    already has a live session". That is not a missing feature, it is a door
+    that locks behind you.
+
+    Ending the session frees the slot and produces a report, because a report
+    exists for every session that has an event log (AC-6.1) — so an abandoned
+    interview becomes the partial record EC-6.14 asks for rather than a row
+    nobody can get past.
+    """
+    closed: list[str] = []
+    now = now or utcnow()
+    with session_factory() as db:
+        candidates = [
+            row.id
+            for row in store.occupied_sessions(db)
+            if _abandoned(store.load_state(db, row.id), now)
+        ]
+    for session_id in candidates:
+        try:
+            with session_factory() as db:
+                engine = Engine(db=db, upstreams=upstreams, llm=llm, thetas=ThetaCache())
+                engine.end(session_id, "abandoned")
+        except Exception:  # noqa: BLE001 - one stuck session must not stop the rest
+            log.warning("M06 sweep: %s could not be closed", session_id, exc_info=True)
+            continue
+        closed.append(str(session_id))
+    if closed:
+        log.info("M06 sweep: closed %d abandoned session(s)", len(closed))
+    return closed
+
+
+def _abandoned(state, now) -> bool:
+    """True when nobody is coming back to this one."""
+    if state.status is SessionStatus.paused:
+        paused_at = state.flags.paused_at
+        return paused_at is not None and (now - paused_at).total_seconds() > ABANDONED_PAUSE_S
+    if state.status is SessionStatus.live:
+        # Its own clock ran out, and then some. Measured on `time_used_s`
+        # rather than on what is left, because `time_remaining_s` clamps at
+        # zero — "overdue by an hour" and "just finished" look identical
+        # through it, which made the first version of this check dead code.
+        return state.time_used_s(now) > state.requested_minutes * 60 + ABANDONED_LIVE_GRACE_S
+    return False
 
 
 def sweep_once(
@@ -60,6 +132,7 @@ def sweep_once(
     sweep has to reach the report the same way as one that arrived on a turn.
     """
     total = outbox.Drained()
+    close_abandoned(session_factory, upstreams, llm)
     with session_factory() as db:
         owing = outbox.sessions_owing(db, limit=SESSIONS_PER_SWEEP)
     for session_id in owing:
@@ -117,4 +190,13 @@ def running(
         task.cancel()
 
 
-__all__ = ["SESSIONS_PER_SWEEP", "SWEEP_S", "run_forever", "running", "sweep_once"]
+__all__ = [
+    "ABANDONED_LIVE_GRACE_S",
+    "ABANDONED_PAUSE_S",
+    "SESSIONS_PER_SWEEP",
+    "SWEEP_S",
+    "close_abandoned",
+    "run_forever",
+    "running",
+    "sweep_once",
+]
