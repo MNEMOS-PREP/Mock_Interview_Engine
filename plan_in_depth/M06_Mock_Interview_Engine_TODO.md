@@ -43,10 +43,10 @@ _Nothing scouted for this module yet._
 
 | | |
 |---|---|
-| Status | **Days 1–6 of 15 done.** A mock interview is planned from a real job description and the student's resume, runs its rounds across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **202**, no socket opened, no API key |
-| Release gates (`-m gate`) | **33** |
-| Route decorators | **20** on `/v1`, plus `/health` and `/status` |
+| Status | **Days 1–7 of 15 done.** A mock interview is planned from a real job description and the student's resume, runs its rounds across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
+| Backend tests passing | **211**, no socket opened, no API key |
+| Release gates (`-m gate`) | **35** |
+| Route decorators | **21** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
 | Measured | strategist p95 **1106 ms**, interviewer first token p95 **919 ms**, a rung ≈ **2.0 s** to first visible token (AC-6.4 wants ≤ 2.5 s) — `Backend/reports/latency-*.json` |
@@ -75,7 +75,7 @@ _Nothing scouted for this module yet._
 | 4 | ✅ | `InterviewerView` + outbound-request gates; eval outbox → M13; ledger → M02; consent adapter; **outbox sweeper** |
 | 5 | ✅ | Plan assembly over M02 + plan-time availability; preview UI with drop-a-segment |
 | 6 | ✅ | Segments, 409 as honest end, bridges, `RoundTransition`, the project segment |
-| 7 | ⬜ | Hint ladder (M05), M13 credit table shown |
+| 7 | ✅ | Hint ladder (M05), M13 credit table shown before the hint is taken |
 | 8 | ⬜ | Context management; AC-6.10 |
 | 9 | ⬜ | Personas (7) as data, modes (4) as configs, guard |
 | 10 | ⬜ | Pacing, re-plan from hot-path signals |
@@ -240,12 +240,39 @@ plan, so the claim the preview showed is the one the student defends.
 they are about M02's rounds rather than resumes — the fixture M01 always has
 one shaky claim, which is right for the drill and noise everywhere else.
 
-### Next: day 7
+### Day 7 — what landed
 
-1. **The hint ladder** (FR-6.7) — M05 serves `hint_ladder` and M06 records
-   `hint_level_used`; what is missing is M13's credit table being SHOWN, so a
-   student knows a hint costs something before taking it.
-2. **M13's credit table** on the stage, and the hint button behind it.
+FR-6.7's missing half. The ladder and `hint_level_used` had been there since
+day 3; the **deduction was invisible**, and a hint only fired when the
+strategist spotted a plea for one inside an answer.
+
+- **The price is M13's** (`Rubric.hint_penalty`, already published on
+  `/v1/rubrics`) and is read in the same call that asks which round types M13
+  can score. **Frozen on the plan**: a rubric reloaded mid-session must not
+  change what a hint cost a student quoted 85%. Unlisted levels credit fully
+  — M13's own rule — and the lookup tries int and string keys, because a miss
+  reads as "this hint is free".
+- **The offer is on every read of the session**, not behind a call a client
+  might skip: `available`, `level`, `credit`, `hints_left`, and
+  `unavailable_reason` when there is none. The button says why rather than
+  vanishing; a control that disappears reads as a bug, and "Final Boss runs
+  without hints" is a rule a student should know they are under.
+- **`POST /hint`** takes one, by a button. The strategist path still works for
+  somebody who types "can I have a hint", but a student should not have to
+  phrase a request to use a feature.
+- **The hint is said.** One recorded and not shown is a deduction paid for and
+  not received. It re-opens the same question, so the answer after it still
+  belongs to the question the hint was about.
+
+Verified live against M13's real table (0.95 / 0.85 / 0.70 / 0.50 / 0.30):
+two hints taken, price shown before each, the ladder running out with a
+reason, and `hint_level_used: 2` in the request queued for M13.
+
+### Next: day 8
+
+1. **Context management** (FR-6.16) — only the last six turns reach the model
+   today; a per-round summary and the constancy test are missing.
+2. **AC-6.10**: the same answer judged the same way at turn 2 and turn 20.
 
 ---
 
@@ -261,7 +288,7 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.4 | ⬜ Re-plan at boundaries, ≤ 2, hot-path signals only | P1 | 1 |
 | FR-6.5 | ✅ Probe ladder, cap 5, graceful exit, derived rungs — pure function, 14 tests, steelman unreachable | P0 | 1 |
 | FR-6.6 | ✅ `break_depth` per concept per session — recorded by the fold, kept at the shallowest break | P0 | 1 |
-| FR-6.7 | 🟡 M05 hint ladder served and `hint_level_used` recorded; M13's credit table is not shown yet (day 7) | P0 | 1 |
+| FR-6.7 | ✅ M05's ladder served, `POST /hint` takes one, M13's published factor shown BEFORE it is taken and frozen at plan time, `hint_level_used` carried to M13 | P0 | 1 |
 | FR-6.8 | ⬜ Four modes as configs | P0 | 1 |
 | FR-6.9 | ⬜ Final Boss: pressure via mechanics, never rudeness | P0 | 1 |
 | FR-6.10 | 🟡 Text runs; the turn contract carries `modality` | P0 | 1·text · voice ⛔ M11 · coding ⛔ M07 · canvas ⛔ M08 |
