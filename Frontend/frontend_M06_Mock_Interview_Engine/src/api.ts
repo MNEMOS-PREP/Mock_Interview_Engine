@@ -120,6 +120,14 @@ export function useDropSegment(id: string) {
   });
 }
 
+export function useHint(id: string) {
+  const write = useSessionWriter(id);
+  return useMutation({
+    mutationFn: () => api.post<Session>(`/v1/interviews/${id}/hint`),
+    onSuccess: write,
+  });
+}
+
 export function useStart(id: string) {
   const write = useSessionWriter(id);
   return useMutation({

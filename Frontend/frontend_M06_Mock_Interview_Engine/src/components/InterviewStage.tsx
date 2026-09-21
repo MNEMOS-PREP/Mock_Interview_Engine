@@ -18,9 +18,9 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { Button, ErrorNote, Spinner } from "@ai/core";
 
-import { useAnswer, useEnd, usePause, useResume, useSession, useStart } from "../api";
+import { useAnswer, useEnd, useHint, usePause, useResume, useSession, useStart } from "../api";
 import { useInterviewStream } from "../stream";
-import type { Session, TurnView } from "../types";
+import type { HintOffer, Session, TurnView } from "../types";
 
 const THINKING_AFTER_MS = 800;
 
@@ -167,6 +167,45 @@ function RoundRule({ title }: { title: string }) {
   );
 }
 
+/**
+ * The hint, with its price on it — FR-6.7, master plan §32.5.
+ *
+ * The deduction is M13's and it is shown BEFORE the hint is taken, because a
+ * deduction discovered afterwards is a penalty and one published beforehand
+ * is a choice. When there is no hint to give the button says why rather than
+ * vanishing: a control that disappears reads as a bug, and "Final Boss runs
+ * without hints" is a rule the student should know they are playing under.
+ */
+function HintButton({
+  offer,
+  busy,
+  onTake,
+}: {
+  offer: HintOffer;
+  busy: boolean;
+  onTake: () => void;
+}) {
+  if (!offer.available) {
+    return offer.unavailable_reason ? (
+      <span className="text-2xs text-ink-faint">{offer.unavailable_reason}</span>
+    ) : null;
+  }
+  const kept = Math.round(offer.credit * 100);
+  return (
+    <span className="flex items-center gap-2">
+      <Button variant="secondary" size="sm" onClick={onTake} disabled={busy}>
+        Hint
+      </Button>
+      <span className="text-2xs text-ink-faint">
+        {kept < 100
+          ? `this answer would then count for ${kept}%`
+          : "no deduction for this one"}
+        {offer.hints_left > 1 && ` · ${offer.hints_left} left`}
+      </span>
+    </span>
+  );
+}
+
 export function InterviewStage({ sessionId }: { sessionId: string }) {
   const session = useSession(sessionId);
   const start = useStart(sessionId);
@@ -174,6 +213,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const pause = usePause(sessionId);
   const resume = useResume(sessionId);
   const end = useEnd(sessionId);
+  const hint = useHint(sessionId);
   const navigate = useNavigate();
 
   const [draft, setDraft] = useState("");
@@ -342,10 +382,15 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                 }
                 className="w-full resize-y rounded-lg border border-line bg-surface p-3 text-sm leading-relaxed text-ink placeholder:text-ink-faint focus:border-brand focus:outline-none disabled:bg-surface-sunken"
               />
-              <div className="mt-2 flex items-center gap-3">
+              <div className="mt-2 flex flex-wrap items-center gap-3">
                 <Button type="submit" disabled={!canAnswer || !draft.trim()}>
                   Answer
                 </Button>
+                <HintButton
+                  offer={data.hint}
+                  busy={hint.isPending || !canAnswer}
+                  onTake={() => hint.mutate()}
+                />
                 <span className="text-2xs text-ink-faint">
                   Ctrl or ⌘ + Enter sends. There is no score on this screen — the notes come at
                   the end.

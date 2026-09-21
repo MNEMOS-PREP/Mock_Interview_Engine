@@ -34,7 +34,14 @@ from . import PROMPT_VERSION, outbox, planner, store
 from .adapters import Upstreams, UpstreamUnavailable
 from .agents import Interviewer, ProbeStrategist
 from .broker import TokenBroker, broker
-from .contracts import InterviewPlan, Move, PlannedSegment, SessionKind, SessionStatus
+from .contracts import (
+    HintOffer,
+    InterviewPlan,
+    Move,
+    PlannedSegment,
+    SessionKind,
+    SessionStatus,
+)
 from .items import Item, from_dict, from_drill, from_m05, to_dict
 from .ladder import LadderConfig, Outcome
 from .llm import LLM, LLMResult, get_llm
@@ -123,6 +130,45 @@ def bridge_line(arriving: PlannedSegment) -> str:
     if arriving.kind == "warmup" or not arriving.title:
         return said.bridge
     return said.bridge_to.format(topic=arriving.title)
+
+
+def hint_offer(state: SessionState) -> HintOffer:
+    """What the next hint is and what it costs — FR-6.7, master plan §32.5.
+
+    Answered BEFORE the hint is taken. A deduction discovered afterwards is a
+    penalty; a deduction published beforehand is a choice, and §32.5 asks for
+    the second. The factor is M13's, frozen on the plan at bootstrap, so the
+    price quoted is the price paid even if the rubric is reloaded mid-session.
+
+    A free function because `session_out` answers it on every read and has no
+    Engine to ask — and because it is pure over the state, which is what makes
+    it cheap enough to answer on every read.
+    """
+    if state.status is not SessionStatus.live or state.open_turn_id is None:
+        return HintOffer(available=False, unavailable_reason="Nothing is open to hint about.")
+    if state.mode == "final_boss":
+        # §6.1's mode table. Day 9 makes modes full configs; the rule is the
+        # same either way, and a student is told rather than left guessing.
+        return HintOffer(available=False, unavailable_reason="Final Boss runs without hints.")
+    ladder = list((state.current_item or {}).get("hint_ladder") or [])
+    level = state.hint_level + 1
+    if level > len(ladder):
+        return HintOffer(
+            available=False,
+            unavailable_reason=(
+                "No more hints on this one." if ladder else "This question doesn't come with hints."
+            ),
+        )
+    penalty = state.plan.hint_penalty if state.plan is not None else {}
+    return HintOffer(
+        available=True,
+        level=level,
+        # Unlisted levels credit fully — M13's own rule (`Rubric.credit`).
+        # Keys survive JSON as strings, so both spellings are tried: a lookup
+        # that silently misses reads as "this hint is free".
+        credit=float(penalty.get(level, penalty.get(str(level), 1.0))),
+        hints_left=len(ladder) - state.hint_level,
+    )
 
 
 def question_budget(state: SessionState) -> int:
@@ -371,6 +417,9 @@ class Engine:
         type that can serve them might answer 409.
         """
         coverage, requirements = self._coverage(row, state)
+        rubrics = self._rubrics()
+        scoreable = tuple(str(r["round_type"]) for r in rubrics) or (DEFAULT_ROUND_TYPE,)
+        round_types = self._available_round_types(row, state, scoreable)
         plan = planner.assemble(
             planner.PlanInputs(
                 session_id=row.id,
@@ -379,8 +428,9 @@ class Engine:
                 jd_id=state.jd_id,
                 coverage=coverage,
                 requirements={str(r.get("id")): r for r in requirements if r.get("id")},
-                available_round_types=self._available_round_types(row, state),
+                available_round_types=round_types,
                 claims=self._claims(row),
+                hint_penalty=self._hint_penalty(rubrics, round_types),
             )
         )
         store.record(
@@ -448,7 +498,12 @@ class Engine:
             requirements = []
         return coverage, requirements
 
-    def _available_round_types(self, row: InterviewSession, state: SessionState) -> tuple[str, ...]:
+    def _available_round_types(
+        self,
+        row: InterviewSession,
+        state: SessionState,
+        candidates: tuple[str, ...] | None = None,
+    ) -> tuple[str, ...]:
         """Spec §6.1 step 5: ask M05 for one item per candidate rubric round
         type, and keep the ones it can serve.
 
@@ -459,7 +514,7 @@ class Engine:
         (M05 §6.8) and removes it from the plan rather than being discovered
         mid-interview.
         """
-        candidates = self._rubric_round_types()
+        candidates = candidates or self._rubric_round_types()
         if not self.upstreams.available("M05"):
             return candidates
         served: list[str] = []
@@ -483,18 +538,44 @@ class Engine:
                 served.append(round_type)
         return tuple(served)
 
+    def _rubrics(self) -> list[dict]:
+        """M13's rubric table: which round types it can score, and what each
+        one credits a hinted answer at (§32.5). One call, because both
+        questions have the same answer and the plan needs both."""
+        up = self.upstreams
+        if not up.available("M13"):
+            return []
+        try:
+            return [r for r in up.m13.rubrics() if r.get("round_type")]
+        except UpstreamUnavailable as exc:
+            log.info("M06: M13 rubrics unavailable: %s", exc)
+            return []
+
     def _rubric_round_types(self) -> tuple[str, ...]:
         """What M13 can score. Nothing else is worth probing M05 for: a
         question M13 has no rubric for is a question with no score."""
-        up = self.upstreams
-        if up.available("M13"):
+        served = [str(r["round_type"]) for r in self._rubrics()]
+        return tuple(served) if served else (DEFAULT_ROUND_TYPE,)
+
+    @staticmethod
+    def _hint_penalty(rubrics: list[dict], round_types: tuple[str, ...]) -> dict[int, float]:
+        """M13's credit table for the round type this session will use.
+
+        Keys arrive as strings over JSON and as ints in-process; both are
+        normalised here, because a lookup that silently misses reads as "this
+        hint is free" — the one wrong answer a published deduction can give.
+        """
+        wanted = round_types[0] if round_types else None
+        table = next(
+            (r.get("hint_penalty") or {} for r in rubrics if r.get("round_type") == wanted), {}
+        )
+        out: dict[int, float] = {}
+        for level, factor in table.items():
             try:
-                served = [str(r["round_type"]) for r in up.m13.rubrics() if r.get("round_type")]
-            except UpstreamUnavailable:
-                served = []
-            if served:
-                return tuple(served)
-        return (DEFAULT_ROUND_TYPE,)
+                out[int(level)] = float(factor)
+            except (TypeError, ValueError):
+                continue
+        return out
 
     def _seed_m05(self, row: InterviewSession, posterior: dict[str, float]) -> None:
         self.thetas.seed(row.id, posterior)
@@ -686,6 +767,65 @@ class Engine:
                 payload={"level": result.hint_level},
             )
         self._say(row, result)
+
+    # ── hints (FR-6.7, master plan §32.5) ────────────────────────────────
+
+    def hint(self, session_id: uuid.UUID) -> SessionState:
+        """Give the hint the student asked for, at the published price.
+
+        Asked for explicitly, by a button, rather than inferred from the words
+        of an answer. The strategist's `asks_for_answer` still works and is
+        how somebody who simply types "can I have a hint" gets one — but a
+        student should not have to phrase a request to use a feature.
+        """
+        row = self.row(session_id)
+        state = self.state(session_id)
+        offer = hint_offer(state)
+        if not offer.available:
+            raise InvalidTransition(offer.unavailable_reason or "No hint is available.")
+
+        item = state.current_item or {}
+        text = list(item.get("hint_ladder") or [])[offer.level - 1]
+        asked = state.turn(state.open_turn_id) if state.open_turn_id else None
+        store.record(
+            self.db,
+            row,
+            "hint.given",
+            step=f"hint:{offer.level}",
+            turn_index=asked.turn_index if asked else 0,
+            payload={"level": offer.level, "credit": offer.credit},
+        )
+        # And it is SAID. A hint recorded but never shown is a deduction the
+        # student paid for and did not receive. It re-opens the SAME question
+        # — `probe_move="hint"`, same `question_id` — so the answer that
+        # follows still belongs to the question the hint was about.
+        state = self.state(row.id)
+        index = state.next_turn_index
+        store.record(
+            self.db,
+            row,
+            "question.asked",
+            step=f"hint-said:{offer.level}",
+            turn_index=index,
+            payload={
+                "turn_id": str(_turn_id(row.id, index)),
+                "turn_index": index,
+                "segment_index": state.current_segment,
+                "text": text,
+                "question_text": text,
+                "question_id": str(asked.question_id) if asked and asked.question_id else None,
+                "question_source": asked.question_source if asked else None,
+                "rubric_round_type": asked.rubric_round_type if asked else None,
+                "concept_id": asked.concept_id if asked else "",
+                "probe_depth": asked.probe_depth if asked else 0,
+                "probe_move": "hint",
+                "modality": "verbal",
+                "new_question": False,
+                "item": item,
+                "utterance_source": "template",
+            },
+        )
+        return self.state(row.id)
 
     def _owe(self, row: InterviewSession, answer_turn, item: Item | None) -> None:
         """What this answer owes M13 and M02, written before it is delivered.

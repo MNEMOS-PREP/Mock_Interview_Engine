@@ -33,9 +33,24 @@ from . import report as report_module
 from .access import enforce_access, require_candidate
 from .adapters import Upstreams, get_upstreams
 from .broker import broker
-from .contracts import InterviewPlan, Mode, SessionFlags, SessionKind, SessionStatus, TurnView
+from .contracts import (
+    HintOffer,
+    InterviewPlan,
+    Mode,
+    SessionFlags,
+    SessionKind,
+    SessionStatus,
+    TurnView,
+)
 from .dependencies import deps
-from .engine import MAX_ANSWER_CHARS, AnswerRejected, Engine, SessionNotFound, compiled_step
+from .engine import (
+    MAX_ANSWER_CHARS,
+    AnswerRejected,
+    Engine,
+    SessionNotFound,
+    compiled_step,
+    hint_offer,
+)
 from .llm import get_llm
 from .models import LLMCall
 from .orchestration import mermaid, snapshot
@@ -138,6 +153,8 @@ class SessionOut(BaseModel):
     #: The interviewer turn waiting for an answer — what the answer box posts to.
     open_turn_id: uuid.UUID | None
     transcript: list[TurnView]
+    #: What the next hint would cost, before it is taken (FR-6.7, §32.5).
+    hint: HintOffer
     flags: SessionFlags
     drill_claim: str | None
     created_at: datetime | None
@@ -187,6 +204,7 @@ def session_out(state: SessionState, now: datetime | None = None) -> SessionOut:
         questions_asked=state.questions_asked,
         open_turn_id=state.open_turn_id,
         transcript=state.transcript,
+        hint=hint_offer(state),
         flags=state.flags,
         drill_claim=(state.drill or {}).get("claim_text"),
         created_at=state.created_at,
@@ -341,6 +359,28 @@ def drop_segment(
     """
     try:
         return session_out(engine.drop_segment(session_id, index))
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
+    except (InvalidTransition, store.ConcurrentWrite) as exc:
+        raise _conflict(exc) from exc
+
+
+@router.post("/interviews/{session_id}/hint", response_model=SessionOut)
+def take_hint(
+    session_id: uuid.UUID,
+    background: BackgroundTasks,
+    engine: Engine = Depends(get_engine),
+) -> SessionOut:
+    """Take the hint the session is offering — FR-6.7.
+
+    The price is on every read of the session (`hint.credit`), so a student
+    presses this knowing what it costs. 409 with the reason when there is
+    nothing to give: no hints on this question, none left, or Final Boss.
+    """
+    try:
+        taken = session_out(engine.hint(session_id))
+        background.add_task(_deliver, session_id)
+        return taken
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="No such session.") from exc
     except (InvalidTransition, store.ConcurrentWrite) as exc:

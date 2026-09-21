@@ -66,6 +66,15 @@ export interface InterviewPlan {
   jd_id: string | null;
 }
 
+export interface HintOffer {
+  available: boolean;
+  level: number;
+  /** M13's factor: 0.85 means an answer after this hint credits at 85%. */
+  credit: number;
+  hints_left: number;
+  unavailable_reason: string | null;
+}
+
 export interface Session {
   id: string;
   candidate_id: string;
@@ -77,6 +86,7 @@ export interface Session {
   time_remaining_s: number;
   jd_id: string | null;
   plan: InterviewPlan | null;
+  hint: HintOffer;
   current_segment: number;
   questions_asked: number;
   /** The interviewer turn the answer box posts to. Null when nothing is open. */

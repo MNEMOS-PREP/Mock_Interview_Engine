@@ -109,6 +109,9 @@ class PlanInputs:
     #: M01's risky or vague claims. A project segment exists only if there is
     #: at least one (day 6).
     claims: tuple[dict[str, Any], ...] = ()
+    #: M13's published hint credit for the round type this session will use.
+    #: Frozen here so the price quoted is the price paid (§32.5).
+    hint_penalty: dict[int, float] = field(default_factory=dict)
 
 
 def reserved_minutes(requested_minutes: int) -> tuple[float, float]:
@@ -252,6 +255,7 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
         coverage_plan=inputs.coverage,
         coverage_plan_version=coverage.get("plan_version"),
         jd_id=inputs.jd_id,
+        hint_penalty=dict(inputs.hint_penalty),
         claims=list(claims),
         uncovered=[str(u) for u in coverage.get("uncovered") or []],
     )

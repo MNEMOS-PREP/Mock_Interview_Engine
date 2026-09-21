@@ -98,6 +98,26 @@ class PlannedSegment(BaseModel):
     dropped_reason: str | None = None
 
 
+class HintOffer(BaseModel):
+    """What the next hint is, and what it costs — FR-6.7, master plan §32.5.
+
+    Shown BEFORE the student takes it. A deduction discovered afterwards is a
+    penalty; a deduction published beforehand is a choice, and the difference
+    is the whole point of §32.5. The number is M13's, frozen on the plan.
+    """
+
+    available: bool
+    #: The level this hint would be, 1-based. `hint_level_used` on the turn.
+    level: int = 0
+    #: M13's factor for that level: 0.85 means the answer credits at 85%.
+    credit: float = 1.0
+    #: How many hints this question still has behind it.
+    hints_left: int = 0
+    #: Why not, when `available` is false. A student is told, not left to
+    #: wonder whether the button is broken.
+    unavailable_reason: str | None = None
+
+
 class RoundTransition(BaseModel):
     """The card between two segments — §3.2.3, spec §15.5's component list.
 
@@ -142,6 +162,11 @@ class InterviewPlan(BaseModel):
     coverage_plan: dict | None = None
     coverage_plan_version: str | None = None
     jd_id: UUID | None = None
+    #: M13's published hint credit, frozen at plan time: level -> factor.
+    #: Master plan §32.5 requires the deduction to be transparent, and a price
+    #: quoted to a student has to be the price they pay — a rubric reloaded
+    #: mid-session must not change what a hint cost when they took it.
+    hint_penalty: dict[int, float] = Field(default_factory=dict)
     #: M01's risky or vague claims, in the order the project segment asks
     #: about them. On the plan rather than fetched again at selection time,
     #: because the claim a student is asked to defend must be the one the
@@ -286,6 +311,7 @@ __all__ = [
     "QuestionSource",
     "Replan",
     "ReplanTrigger",
+    "HintOffer",
     "RoundTransition",
     "SegmentKind",
     "SessionFlags",

@@ -297,6 +297,9 @@ class FixtureEvaluator:
         self.round_types = round_types
         self.requests: list[dict[str, Any]] = []
         self.fail = False
+        #: M13's published credit table, as JSON delivers it — string keys.
+        #: Settable so a test can republish it and check who kept the old one.
+        self.hint_penalty: dict[str, float] = {"0": 1.0, "1": 0.85, "2": 0.7, "3": 0.5}
         #: Called while this request is "in flight", before it is answered.
         #: A test drains again from in here to stand in for a second sender.
         self.on_request: Callable[[dict[str, Any]], None] | None = None
@@ -324,7 +327,7 @@ class FixtureEvaluator:
                 "version": "1.0.0",
                 "dimensions": ["correctness", "depth", "communication"],
                 "concept_bearing": "correctness",
-                "hint_penalty": {"0": 1.0, "1": 0.85, "2": 0.7, "3": 0.5},
+                "hint_penalty": dict(self.hint_penalty),
             }
             for rt in self.round_types
         ]
