@@ -75,9 +75,17 @@ class SessionReport(BaseModel):
     framing: str
     questions: list[QuestionReport]
     notes: list[str]
+    #: Spec §6.7 tells M06 to say this, "so students don't think Practice mode
+    #: inflates their score" — which means it has to be exactly right, not
+    #: reassuring. Two facts, and the second one was missing: the STANDARD is
+    #: identical (same rubric, same blind payload, same model tier — gated by
+    #: `test_fairness.py`), and the PRECISION is not, because Practice runs
+    #: M13's `n1_practice`: one evaluator rather than three. Saying only the
+    #: first half lets a student read a Practice result as a mock-grade one.
     persona_note: str = (
-        "The interviewer's manner never changes the standard: the same answer is judged "
-        "the same way in Practice and in Final Boss."
+        "The interviewer's manner never changes the standard: a friendly interviewer and a "
+        "bar-raiser judge the same answer against the same rubric. Practice checks each "
+        "answer once rather than three times, so it is less precise — not more generous."
     )
 
 

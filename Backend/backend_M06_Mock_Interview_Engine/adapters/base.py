@@ -100,6 +100,15 @@ class Evaluator(Protocol):
     def evaluate(self, request: dict[str, Any]) -> dict[str, Any]:
         """`POST /v1/evaluations`. Synchronous — only ever called from the outbox."""
 
+    def ensembles(self) -> list[dict[str, Any]]:
+        """`GET /v1/ensembles` — the configurations M13 will honour by name.
+
+        Worth asking, because M13 falls back to its DEFAULT for a name it does
+        not know, and that default is `n1_practice`: a typo in a mock-mode
+        ensemble would silently score that session with one evaluator instead
+        of three. Quieter than an error and harder to notice.
+        """
+
     def rubrics(self) -> list[dict[str, Any]]:
         """`GET /v1/rubrics` → the round types M13 can score, with hint penalties."""
 

@@ -129,12 +129,6 @@ class Deps:
     question_budget: Callable[[SessionState], int]
 
 
-def _last_question_text(state: SessionState) -> str:
-    """What the student was actually shown. The strategist judges against this
-    because an adapted probe, not the authored rung, is what was asked."""
-    return next((t.text for t in reversed(state.transcript) if t.role == "interviewer"), "")
-
-
 def _question_to_repeat(state: SessionState) -> str:
     """The open question with its transition stripped off.
 
@@ -171,8 +165,15 @@ def build(deps: Deps):
         inp = s["inp"]
         assert inp.item is not None and inp.answer is not None
         ladder = inp.state.ladder or ProbeLadderState(concept_id=inp.item.concept_id)
+        # The question WITHOUT the words that introduced it — §6.7's promise:
+        # "the persona never changes the standard". The rendered turn carries
+        # the register's lead ("Hello. Let's begin. First question." against a
+        # bar-raiser's "Let's get started. First."), and feeding that to the
+        # strategist would make the verdict — which becomes an M05 θ
+        # observation (FR-6.25) — depend on the interviewer's manner. The
+        # adapted probe IS the question and survives; only the lead is cut.
         d = deps.strategist.decide(
-            inp.item, ladder.depth, _last_question_text(inp.state), inp.answer
+            inp.item, ladder.depth, _question_to_repeat(inp.state), inp.answer
         )
         return {
             "verdict": d.verdict,

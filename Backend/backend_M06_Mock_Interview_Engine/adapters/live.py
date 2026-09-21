@@ -210,6 +210,9 @@ class LiveEvaluator:
     def rubrics(self) -> list[dict[str, Any]]:
         return list((self.http.get("/v1/rubrics", timeout_s=3.0).body or {}).get("rubrics", []))
 
+    def ensembles(self) -> list[dict[str, Any]]:
+        return list((self.http.get("/v1/ensembles", timeout_s=3.0).body or {}).get("ensembles", []))
+
     def evaluation(self, turn_id: UUID) -> dict[str, Any] | None:
         response = self.http.get(f"/v1/evaluations/{turn_id}", accept=(404,), timeout_s=3.0)
         return None if response.status == 404 else response.body

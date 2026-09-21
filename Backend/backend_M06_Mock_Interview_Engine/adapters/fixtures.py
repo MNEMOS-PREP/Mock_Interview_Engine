@@ -332,6 +332,11 @@ class FixtureEvaluator:
             for rt in self.round_types
         ]
 
+    def ensembles(self) -> list[dict[str, Any]]:
+        # M13's shipped configs (`ensemble.py`): the count drops in Practice,
+        # never the tier.
+        return [{"name": "n1_practice", "size": 1}, {"name": "n3_het_v1", "size": 3}]
+
     def evaluation(self, turn_id: UUID) -> dict[str, Any] | None:
         return None
 
