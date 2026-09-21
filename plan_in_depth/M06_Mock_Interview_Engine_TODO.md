@@ -1,6 +1,6 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 63%** — 12 of 26 functional requirements met, 9 partially. **Days 1–7 of 15 are done.** On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
+> **Completion: 65%** — 13 of 26 functional requirements met, 8 partially. **Days 1–7 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
 >
 > Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), the probe ladder and break depths (FR-6.5, 6.6), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), a report for every session (FR-6.18), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
@@ -44,8 +44,8 @@ _Nothing scouted for this module yet._
 | | |
 |---|---|
 | Status | **Days 1–7 of 15 done.** A mock interview is planned from a real job description and the student's resume, runs its rounds across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **217**, no socket opened, no API key |
-| Release gates (`-m gate`) | **37** |
+| Backend tests passing | **223**, no socket opened, no API key |
+| Release gates (`-m gate`) | **39** |
 | Route decorators | **21** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
@@ -304,6 +304,39 @@ Spec §13 gains **AC-6.17** and §6.7 records why. Both gates are
 mutation-checked: restoring the rendered turn fails one, misspelling
 `n1_practice` fails two.
 
+### Also inserted — a pause you never come back from locked the student out
+
+Same question as AC-6.17, asked again: **what does the product promise that
+nothing enforces?** The UI says the pause is five minutes. FR-6.12's cap is
+applied by `/resume` — by the student coming *back*. Nothing applied it when
+nobody did.
+
+A session holds its candidate's one slot while it is live or paused
+(EC-6.13's `occupying_key`). Nothing released it when they left. So: pause,
+close the tab, and **every future interview is refused, permanently** — with
+"candidate already has a live session", about a session the student paused.
+Proved before fixing.
+
+EC-6.14 already specified the answer — "auto-close after 30 min; partial
+report generated" — and had it scheduled for **day 11**. That is eleven days
+of a door that locks behind you, and day 4's sweeper already runs every 30
+seconds, so the fix is a query and a function. Two ways a session is
+abandoned: paused past 30 minutes, or live and past its own planned length by
+30 minutes (its clock already said the interview was over; the turn loop
+never got a turn to notice on). The refusal now also names the status it
+found.
+
+Two of my own mistakes, both caught by the tests meant to catch them:
+`time_remaining_s` clamps at zero, so the first live check was dead code; and
+the first gate called `close_abandoned` directly, so deleting the call from
+`sweep_once` left every gate green. The wiring is gated now.
+
+**The pattern, worth keeping.** Both of today's findings came from reading
+what the product *says* and asking what holds it up. The report's fairness
+sentence had no AC; the pause's "five minutes" had no enforcement. Neither
+was in the build order as a task, and both were shipped-today defects. It is
+worth one pass per module.
+
 ### Next: day 8
 
 1. **Context management** (FR-6.16) — the last six turns reach the model, but
@@ -333,7 +366,7 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.9 | ⬜ Final Boss: pressure via mechanics, never rudeness | P0 | 1 |
 | FR-6.10 | 🟡 Text runs; the turn contract carries `modality` | P0 | 1·text · voice ⛔ M11 · coding ⛔ M07 · canvas ⛔ M08 |
 | FR-6.11 | 🟡 Contract fixed and carried; nothing to switch to yet | P0 | 1·text |
-| FR-6.12 | 🟡 Pause once ≤ 5 min, resume — once-only and the 5-min cap on resume are built and tested; the clock does not restart on its own if the student never resumes (day 11) | P1 | 1 |
+| FR-6.12 | ✅ Pause once ≤ 5 min, resume. The cap is applied on `/resume` for a student who comes back, and by the sweeper (EC-6.14) for one who does not — which used to lock them out of every future interview | P1 | 1 |
 | FR-6.13 | 🟡 Reconnect and resume from checkpoint — checkpoint recovery (stale, unreadable, failed write) is built and tested; `resume-state` and the "welcome back" flow are not (day 11) | P0 | 1 |
 | FR-6.14 | ✅ Evaluation never blocks the hot path — outbox written with the turn, delivered by a background task, an explicit drain, or the sweeper; claimed before sending; a status returns, never a number. Three obligations now: the answer text to M04 (so evidence resolves), the evaluation to M13, the coverage row to M02 — and the artifact goes first | P0 | 1 |
 | FR-6.15 | ✅ Interviewer cannot read scores, band or θ — `InterviewerView` + the type-graph gate | P0 | 1 |
