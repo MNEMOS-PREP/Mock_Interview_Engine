@@ -63,6 +63,12 @@ FORBIDDEN_FIELD_NAMES = frozenset(
 )
 
 
+#: `agents.summariser.MAX_CHARS`, imported by value rather than by module to
+#: keep the projection free of agent imports — it is the file that must be
+#: readable end to end when asking what the interviewer can see.
+SUMMARY_MAX_CHARS = 1200
+
+
 class ViewTurn(BaseModel):
     role: Literal["interviewer", "candidate", "system"]
     text: str
@@ -74,6 +80,10 @@ class InterviewerView(BaseModel):
     persona_register: Literal["friendly", "neutral", "bar_raiser"] = "neutral"
     segment_title: str = ""
     recent_turns: list[ViewTurn] = Field(default_factory=list, max_length=6)
+    #: §6.6's rolling note: what happened BEFORE the six turns above. Bounded
+    #: by `summariser.MAX_CHARS`, so a long session costs no more context
+    #: than a short one (AC-6.10).
+    round_summary: str = ""
     #: M04's pinned summary text — byte-stable for the session (AC-4.13).
     profile_prefix: str = ""
     move: MoveKind
@@ -90,10 +100,12 @@ def project_for_interviewer(
     segment_title: str = "",
     profile_prefix: str = "",
     register: str = "neutral",
+    round_summary: str = "",
 ) -> InterviewerView:
     return InterviewerView(
         persona_register=register,  # type: ignore[arg-type]
         segment_title=segment_title,
+        round_summary=round_summary[:SUMMARY_MAX_CHARS],
         recent_turns=[ViewTurn(role=t.role, text=t.text) for t in transcript[-6:]],
         profile_prefix=profile_prefix,
         move=move,

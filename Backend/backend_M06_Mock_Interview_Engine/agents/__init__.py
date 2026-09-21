@@ -4,5 +4,15 @@ deterministic fallback; `orchestration` wires them into a step."""
 from .guard import screen
 from .interviewer import Interviewer, Utterance
 from .strategist import Decision, ProbeStrategist, rule_verdict
+from .summariser import Summariser, Summary
 
-__all__ = ["Decision", "Interviewer", "ProbeStrategist", "Utterance", "rule_verdict", "screen"]
+__all__ = [
+    "Decision",
+    "Interviewer",
+    "ProbeStrategist",
+    "Summariser",
+    "Summary",
+    "Utterance",
+    "rule_verdict",
+    "screen",
+]

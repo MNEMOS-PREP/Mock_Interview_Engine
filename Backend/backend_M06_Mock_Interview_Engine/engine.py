@@ -32,7 +32,7 @@ from sqlmodel import Session, select
 
 from . import PROMPT_VERSION, outbox, planner, store
 from .adapters import Upstreams, UpstreamUnavailable
-from .agents import Interviewer, ProbeStrategist
+from .agents import Interviewer, ProbeStrategist, Summariser, summariser
 from .broker import TokenBroker, broker
 from .contracts import (
     HintOffer,
@@ -767,6 +767,38 @@ class Engine:
                 payload={"level": result.hint_level},
             )
         self._say(row, result)
+
+    # ── the rolling summary (FR-6.16, spec §6.6) ─────────────────────────
+
+    def summarise_if_due(self, session_id: uuid.UUID) -> bool:
+        """Rewrite §6.6's round note when four turns have passed.
+
+        Called from the background task that already follows an answer, so it
+        is ready for the next turn and costs that turn nothing. A note one
+        cycle stale is a rolling summary working; a note that delays the next
+        question is a latency bug.
+        """
+        row = self.row(session_id)
+        state = self.state(session_id)
+        if state.is_final or not summariser.is_due(state.next_turn_index - state.summary_at_turn):
+            return False
+        # The turns of THIS segment only: the note is a round summary, and a
+        # bridge already clears it when the round changes.
+        turns = [t for t in state.transcript if t.segment_index == state.current_segment]
+        written = Summariser(self.llm, enabled=enabled("ReportComposer")).write(turns)
+        if written.call is not None:
+            self._record_calls(row, state, [written.call])
+        if not written.text:
+            log.info("M06: no summary for %s (%s)", session_id, written.fallback_reason)
+            return False
+        store.record(
+            self.db,
+            row,
+            "summary.written",
+            step=f"summary:{state.next_turn_index}",
+            payload={"text": written.text, "at_turn": state.next_turn_index},
+        )
+        return True
 
     # ── hints (FR-6.7, master plan §32.5) ────────────────────────────────
 

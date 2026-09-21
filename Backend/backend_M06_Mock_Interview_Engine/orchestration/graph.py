@@ -222,6 +222,10 @@ def build(deps: Deps):
                 ladder_depth=move.depth,
                 time_remaining_s=inp.state.time_remaining_s(inp.now),
                 profile_prefix=inp.state.profile_prefix,
+                # §6.6: what happened before the last six turns. Without it a
+                # long round asks about hashing twice, because everything
+                # older than six turns simply is not there.
+                round_summary=inp.state.round_summary,
             )
             utterance = deps.interviewer.probe(
                 item, move.depth, view=view, last_answer=last_answer, on_token=_emit

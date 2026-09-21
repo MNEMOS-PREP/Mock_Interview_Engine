@@ -438,8 +438,18 @@ def _deliver(session_id: uuid.UUID) -> None:
     from .adapters import get_upstreams
 
     with Session(db_engine) as db:
+        engine = Engine(db=db, upstreams=get_upstreams(), llm=get_llm())
         try:
-            Engine(db=db, upstreams=get_upstreams(), llm=get_llm()).deliver(session_id)
+            # §6.6's rolling note FIRST. It is what the next turn needs, and
+            # delivery below can block for seconds on M13's ensemble — which
+            # measurably made the note arrive a turn late. Delivery is also
+            # the half with a retry behind it (`sweeper.py`); the note has
+            # only the next answer.
+            engine.summarise_if_due(session_id)
+        except Exception:  # noqa: BLE001 - a missing note costs context, not a score
+            log.warning("M06: summary for %s failed; the interviewer keeps the old one", session_id)
+        try:
+            engine.deliver(session_id)
         except Exception:  # noqa: BLE001 - a delivery failure is a queued row
             log.warning("M06: delivery for %s failed; rows stay queued", session_id)
 

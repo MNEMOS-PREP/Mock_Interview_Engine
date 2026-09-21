@@ -74,6 +74,13 @@ class SessionState(BaseModel):
     #: question is asked — a bridge with no question after it is a page that
     #: changed for no reason.
     pending_bridge: str | None = None
+    #: §6.6's rolling note, regenerated every four turns. It REPLACES the
+    #: turns that fall out of the last-six window rather than being added to
+    #: them — that is what keeps the context a constant size (AC-6.10).
+    round_summary: str = ""
+    #: `next_turn_index` when the summary was written, so "four turns since"
+    #: is arithmetic rather than a counter something has to remember to reset.
+    summary_at_turn: int = 0
     #: The index the NEXT turn will take.
     next_turn_index: int = 0
     transcript: list[TurnView] = Field(default_factory=list)
@@ -281,6 +288,10 @@ def _segment_transition(s: SessionState, p: dict, _at: datetime) -> None:
     s.ladder = None
     s.pending_move = None
     s.pending_bridge = p.get("line") or None
+    # A new round summarises itself. Carrying the last round's note across
+    # would have the interviewer open by referring to a topic it has left.
+    s.round_summary = ""
+    s.summary_at_turn = s.next_turn_index
 
 
 def _paused(s: SessionState, _p: dict, at: datetime) -> None:
@@ -340,6 +351,11 @@ def _aborted(s: SessionState, p: dict, at: datetime) -> None:
     s.open_turn_id = None
 
 
+def _summary_written(s: SessionState, p: dict, _at: datetime) -> None:
+    s.round_summary = str(p.get("text") or "")
+    s.summary_at_turn = int(p.get("at_turn", s.next_turn_index))
+
+
 def _degraded(s: SessionState, p: dict, _at: datetime) -> None:
     s.flags.degraded[p["module"]] = p["sentence"]
 
@@ -374,6 +390,7 @@ _REDUCERS = {
     "consent.resolved": _consent,
     "evaluation.queued": _evaluation,
     "evaluation.completed": _evaluated,
+    "summary.written": _summary_written,
 }
 
 EVENT_KINDS = frozenset({"session.created", *_REDUCERS})
