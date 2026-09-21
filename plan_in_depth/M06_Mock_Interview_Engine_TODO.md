@@ -44,14 +44,14 @@ _Nothing scouted for this module yet._
 | | |
 |---|---|
 | Status | **Days 1–7 of 15 done.** A mock interview is planned from a real job description and the student's resume, runs its rounds across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **211**, no socket opened, no API key |
-| Release gates (`-m gate`) | **35** |
+| Backend tests passing | **217**, no socket opened, no API key |
+| Release gates (`-m gate`) | **37** |
 | Route decorators | **21** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
 | Measured | strategist p95 **1106 ms**, interviewer first token p95 **919 ms**, a rung ≈ **2.0 s** to first visible token (AC-6.4 wants ≤ 2.5 s) — `Backend/reports/latency-*.json` |
 | Spec | [Revision 2](M06_Mock_Interview_Engine.md), after [the review](M06_REVIEW.md) |
-| Scope | 26 functional requirements (21 of them P0), 16 acceptance metrics (7 release-blocking), 17 edge cases |
+| Scope | 26 functional requirements (21 of them P0), 17 acceptance metrics (8 release-blocking), 17 edge cases |
 | Upstreams | M01, M02, M04, M05, M13 — all shipped, all optional at runtime, each behind an adapter with a fixture |
 
 **What the review changed, in one breath.**
@@ -268,11 +268,51 @@ Verified live against M13's real table (0.95 / 0.85 / 0.70 / 0.50 / 0.30):
 two hints taken, price shown before each, the ladder running out with a
 reason, and `hint_level_used: 2` in the request queued for M13.
 
+### Inserted before day 9 — the promise the report was already making
+
+**The decision.** Day 8 was next on the list. It was the wrong thing to do
+first, and the reason is an ordering one: spec §6.7 tells M06 to print *"the
+persona never changes the standard"* in the report, M06 has printed it since
+day 3, and **there was no acceptance metric behind it** — §13 had sixteen and
+none of them was this. Day 9 ships personas, which is the single feature able
+to falsify it. A gate written after the feature it guards is a gate that
+ratifies whatever shipped.
+
+**Writing it found the leak it was written for.** The strategist was handed
+the *rendered* interviewer turn, and a rendered turn carries the register's
+lead — "Hello. Let's begin. First question." against a bar-raiser's "Let's get
+started. First." Its verdict becomes an M05 `ProvisionalOutcome` (FR-6.25), so
+on day 9 the same answer would have been **measured** differently depending on
+the interviewer's manner. It now gets the question without the words that
+introduced it. Day 4 already separated those two things on the turn
+(`question_text`); nothing had connected it here.
+
+**And the sentence was overstated.** M13's `n1_practice` is one evaluator
+where `n3_het_v1` is three — its own comment is "drops the COUNT, never the
+tier". So the standard is identical and the precision is not. The report now
+says both, because §6.7's whole reason for saying anything is that a student
+should not read a Practice result as a mock-grade one.
+
+**One more contract check, from the same thread.** M13 falls back to its
+DEFAULT for an ensemble name it does not know, and that default is
+`n1_practice` — so a typo in a mock-mode name would have scored that session
+with one evaluator instead of three, quieter than an error. `Evaluator.
+ensembles()` is new, and two tests hold M06's names to what M13 publishes and
+to the full set of modes.
+
+Spec §13 gains **AC-6.17** and §6.7 records why. Both gates are
+mutation-checked: restoring the rendered turn fails one, misspelling
+`n1_practice` fails two.
+
 ### Next: day 8
 
-1. **Context management** (FR-6.16) — only the last six turns reach the model
-   today; a per-round summary and the constancy test are missing.
-2. **AC-6.10**: the same answer judged the same way at turn 2 and turn 20.
+1. **Context management** (FR-6.16) — the last six turns reach the model, but
+   the rolling round summary (§6.6, regenerated every four turns) does not
+   exist, so a long session loses what happened early rather than carrying a
+   summary of it.
+2. **AC-6.10** — context tokens per turn, variance < 15% across session
+   length. `m06_llm_call` already records `tokens_in`; the measurement is a
+   harness run, not new plumbing.
 
 ---
 
@@ -332,6 +372,7 @@ Spec §13. A **[GATE]** is release-blocking; the rest are tracked.
 | AC-6.10 | ⬜ Context tokens per turn variance | < 15% |
 | AC-6.11 | 🟡 Prompt cache-hit ratio — measured: reported on 2 of 16 structured calls, never on a streamed one | ≥ 0.7, or "not measured" |
 | AC-6.12 | ⬜ Sessions where a student felt humiliated | 0 |
+| AC-6.17 **[GATE]** | ✅ The persona never changes the standard — for one answer, M13's payload and the strategist's prompt are identical across every mode, save the declared `ensemble`. **New in Revision 2**: §6.7 made the promise and the report printed it; nothing tested it | ✅ |
 | AC-6.16 | 🟡 Retries never double-ask or double-write — proven for the event key, a crashed step, and now two senders racing over one outbox row; the full chaos suite is day 11 | chaos test |
 
 ---

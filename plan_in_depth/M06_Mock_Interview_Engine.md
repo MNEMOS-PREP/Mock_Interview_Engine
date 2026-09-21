@@ -605,6 +605,10 @@ Personas are data (`personas/*.yaml`), validated at load: a persona file missing
 
 **The persona never changes the standard.** A friendly interviewer and a bar-raiser score the same answer identically (blind evaluator, same rubric). Only the *experience* differs. Say this in the report so students don't think Practice mode inflates their score.
 
+Revision 2 added **AC-6.17** to hold that promise, because Revision 1 made it in the report and nowhere else. Two things must be identical for one answer across every mode: the payload M13 scores, and the prompt the strategist judges. The strategist's verdict becomes an M05 `ProvisionalOutcome` (FR-6.25), so a verdict that moved with the interviewer's manner would be a *measurement* of the manner — and the leak was real: the strategist was handed the rendered interviewer turn, which carries the register's lead ("Hello. Let's begin. First question." against a bar-raiser's "Let's get started. First."). It is handed the question without the words that introduced it.
+
+What may differ is the experience: the words, the register, how deep the ladder goes, whether hints exist. And one thing differs that is **not** a standard — Practice declares M13's `n1_practice`, one evaluator rather than three. M13's own note is "drops the COUNT, never the tier", so Practice is measured less *precisely*, never more generously. The report says both halves, because saying only the first lets a student read a Practice result as a mock-grade one. M13 falls back to its default (`n1_practice`) for an ensemble name it does not know, so M06 checks its names against `GET /v1/ensembles`: a typo would silently score a mock with one evaluator.
+
 ### 6.8 Checkpointing & resume
 Session state is a **fold over `m06_event`**. The checkpoint is a cache of that fold, not the truth:
 
@@ -846,6 +850,7 @@ Live event types: `question.asked` · `interviewer.token` · `interviewer.done` 
 | AC-6.14 **[GATE]** | No steelman move while `steelman_enabled` is false, in any mode | 0 in 10,000 driven decisions per mode |
 | AC-6.15 **[GATE]** | Every presented M05 question has an `asked` ledger row, and every received answer an `answered` row | 100% in the scripted-student run (when M02 is up) |
 | AC-6.16 | A retried request never double-asks, double-writes the ledger, or double-enqueues an evaluation | chaos test |
+| AC-6.17 **[GATE]** | The persona never changes the standard: for one answer, the payload M13 scores and the strategist's prompt are identical across every mode, save the declared `ensemble` | unit test, per mode |
 | AC-6.5 | Session completion rate | ≥ 80% |
 | AC-6.6 | Break point found | ≥ 80% of sessions |
 | AC-6.7 | Coverage of must-have requirements | ≥ 90% |
