@@ -96,6 +96,28 @@ def test_m04_service_routes_carry_the_secret_m04_checks(wire, monkeypatch):
     assert header(rec.last, "X-Service-Secret") == "s3cret"
 
 
+def test_m04_service_routes_also_name_the_student(wire, monkeypatch):
+    """The secret says M06 is calling; M04's guard asks for WHOM. Since
+    2026-09-23 a secret without a student is a 403 on every candidate route —
+    and the artifact is the one that matters: without it no evidence resolves
+    and no scored answer moves the skill graph."""
+    monkeypatch.setenv("M04_SERVICE_SECRET", "s3cret")
+    cid, sid = uuid.uuid4(), uuid.uuid4()
+    memory = LiveMemory("http://m04")
+
+    rec = wire(body={"session_id": "x", "pinned": True})
+    memory.profile_summary(cid, sid)
+    assert header(rec.last, "X-Candidate-Id") == str(cid)
+    assert header(rec.last, "X-Role") == "student"
+
+    rec = wire(status=201, body={"artifact_id": "x"})
+    memory.register_artifact({"candidate_id": str(cid), "artifact_id": str(uuid.uuid4())})
+    assert rec.last.full_url == f"http://m04/v1/candidates/{cid}/artifacts"
+    assert header(rec.last, "X-Service-Secret") == "s3cret"
+    assert header(rec.last, "X-Candidate-Id") == str(cid)
+    assert header(rec.last, "X-Role") == "student"
+
+
 def test_m04_posterior_drops_unmeasured_concepts(wire):
     wire(
         body={

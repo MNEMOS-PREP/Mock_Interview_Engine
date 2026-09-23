@@ -80,6 +80,9 @@ class LiveMemory:
             f"/v1/candidates/{candidate_id}/profile-summary",
             query={"session_id": str(session_id)},
             service=True,
+            # The secret says M06 is calling; the student says for whom. M04
+            # guards every candidate route on the second since 2026-09-23.
+            headers=identity_headers(candidate_id),
         ).body
 
     def posterior(self, candidate_id: UUID, concepts: list[str]) -> dict[str, float]:
@@ -89,6 +92,7 @@ class LiveMemory:
             "/v1/skill-graph/theta",
             query={"candidate": str(candidate_id), "concepts": ",".join(concepts)},
             service=True,
+            headers=identity_headers(candidate_id),
         ).body
         # A resolved concept with nothing measured comes back as theta=None,
         # never 0.0 (M04 AC-4.2). Dropping it here keeps it that way: M05
@@ -103,7 +107,8 @@ class LiveMemory:
         """Store the answer text M13's evidence quotes (M04 §5.1).
 
         A service route: M06 is writing on a student's behalf with no student
-        in the room, which is what `X-Service-Secret` is for. 200 and 201 are
+        in the room. `X-Service-Secret` says M06 is the caller; the forwarded
+        identity says which student, and M04's guard checks it. 200 and 201 are
         both success — the second means the turn was already registered, which
         a retry should be.
         """
@@ -112,6 +117,7 @@ class LiveMemory:
                 f"/v1/candidates/{payload['candidate_id']}/artifacts",
                 payload,
                 service=True,
+                headers=identity_headers(payload["candidate_id"]),
             ).body
             or {}
         )
