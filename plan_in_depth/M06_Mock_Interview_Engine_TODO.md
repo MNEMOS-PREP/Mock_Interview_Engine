@@ -1,10 +1,10 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 67%** — 14 of 26 functional requirements met, 7 partially. **Days 1–8 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
+> **Completion: 75%** — 16 of 26 functional requirements met, 7 partially. **Days 1–9 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
 >
-> Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), the probe ladder and break depths (FR-6.5, 6.6), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), a report for every session (FR-6.18), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
+> Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), segments with a persona each (FR-6.3), the probe ladder and break depths (FR-6.5, 6.6), hints at a published price (FR-6.7), modes as configs (FR-6.8), pause (FR-6.12), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), fixed context (FR-6.16), a report for every session (FR-6.18), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
-> Not started: re-planning (FR-6.4), modes as configs (FR-6.8), Final Boss (FR-6.9), closing questions (FR-6.21). Blocked: steelman (FR-6.20).
+> Partly: Final Boss (FR-6.9 — its hard clock is day 10). Not started: re-planning (FR-6.4), closing questions (FR-6.21). Blocked: steelman (FR-6.20).
 >
 > _Day 6 moved no requirement across a line, and the number is right not to move: it deepened FR-6.3 (rounds now end, begin and say so) without completing it, because per-segment personas wait on day 9. The measure counts requirements, not work — which is the point of having one._
 >
@@ -43,10 +43,10 @@ _Nothing scouted for this module yet._
 
 | | |
 |---|---|
-| Status | **Days 1–7 of 15 done.** A mock interview is planned from a real job description and the student's resume, runs its rounds across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **230**, no socket opened, no API key |
-| Release gates (`-m gate`) | **41** |
-| Route decorators | **21** on `/v1`, plus `/health` and `/status` |
+| Status | **Days 1–9 of 15 done.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
+| Backend tests passing | **283**, no socket opened, no API key |
+| Release gates (`-m gate`) | **45** |
+| Route decorators | **25** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
 | Measured | strategist p95 **1106 ms**, interviewer first token p95 **919 ms**, a rung ≈ **2.0 s** to first visible token (AC-6.4 wants ≤ 2.5 s) — `Backend/reports/latency-*.json` |
@@ -77,7 +77,7 @@ _Nothing scouted for this module yet._
 | 6 | ✅ | Segments, 409 as honest end, bridges, `RoundTransition`, the project segment |
 | 7 | ✅ | Hint ladder (M05), M13 credit table shown before the hint is taken |
 | 8 | ✅ | Context management: §6.6's rolling round summary, bounded view; AC-6.10's mechanism gated, its number a harness run |
-| 9 | ⬜ | Personas (7) as data, modes (4) as configs, guard |
+| 9 | ✅ | Personas (7) as data, modes (4) as configs, guard on both directions (EC-6.4, 6.6), Practice's retry |
 | 10 | ⬜ | Pacing, re-plan from hot-path signals |
 | 11 | ⬜ | Pause/resume, reconnect, idle prompts, auto-close, chaos tests |
 | 12 | ⬜ | Degradation ladder, partial report, report page |
@@ -369,15 +369,83 @@ False from the schedule looks exactly like a False from the guard. There is a
 Verified live on a five-answer session: one note at turn 10, factual, naming
 chaining, tree buckets, O(n) worst case and resizing, with no judgement in it.
 
-### Next: day 9
+### Day 9 — what landed
 
-1. **Personas as data** (FR-6.8, FR-6.9) — seven of them, `personas/*.yaml`,
-   validated at load. **AC-6.17 is already in place**, which is why it was
-   built before this rather than after.
-2. **Modes as configs** — the mode table in §6.1 is read from three separate
-   places today (`planner.DEFAULT_PERSONA`, `outbox.ENSEMBLE_BY_MODE`, and
-   `hint_offer`'s Final Boss check). One config, one source.
-3. **Final Boss** (FR-6.9): pressure through mechanics, never rudeness.
+**Personas are data** (`personas/*.yaml`, `personas.py`) and **modes are one
+table** (`modes.py`). The table used to be read from three places that each
+knew one column — `planner.DEFAULT_PERSONA`, `outbox.ENSEMBLE_BY_MODE`, a
+`final_boss` string inside `hint_offer` — which is how a fourth mode ships
+with a hint button and no hints. Now everything asks `mode_config()`.
+
+- **Seven personas, each a parameter vector with a mechanic behind every
+  parameter** (Trap 7): `follow_up_aggression` is the ladder's depth (Meera
+  stops at two follow-ups, Arjun goes to five), `patience` the idle timer
+  (EC-6.1, day 11 reads it), `interruption_threshold` the once-a-round "let's
+  keep it moving", `verbosity_target` the model's word budget, `hints_available`
+  the button. `warmth`/`formality` live in the register and the authored lines,
+  not in numbers a model would interpret differently each call.
+- **Refused at boot, not at minute twenty.** A missing parameter, an unknown
+  register, an unknown line name, or a line the guard refuses fails
+  `load_personas()`, which the lifespan calls before serving.
+- **A mock is a panel** (FR-6.3). Priya opens and closes, Dr. Raghavan takes
+  the project, Sunita takes the people questions; **a new voice introduces
+  itself** with its own greeting instead of a bridge, the way a real panel
+  hands over. Final Boss is bar-raisers; Practice is gentle throughout.
+- **Two voices meet at a crossing, and each says its own line.** The leaving
+  interviewer closes the question, the arriving one asks the next. Getting
+  that right found a real edge: a crash replayed after the crossing was
+  committed handed the leaving exit line to the arriving persona. `speaker()`
+  now reads the segment of the QUESTION being answered, which does not move.
+- **Final Boss (FR-6.9):** no hints, the deepest ladder with two generic
+  rungs, the shortest patience — and never rudeness: a `RUDE` list joins the
+  telegraph list in `guard.screen`, checked on every persona line at load and
+  every model line before it is said. Its hard clock (0% overrun) is day 10,
+  so FR-6.9 is 🟡.
+- **The guard reads the student too.** EC-6.6: recognised instructions are
+  stripped before the strategist reads the answer (the student's text is kept
+  as written — it is evidence, and M13 neutralises before scoring), and a
+  flagged answer **moves no θ**, because an answer asking to be marked "above"
+  must not be able to become an M05 observation. The guard tier (Llama Prompt
+  Guard 2, 86M) runs **as a parallel LangGraph branch beside the strategist**
+  and joins at `decide`, so it costs a turn nothing, and it **fails open**.
+  EC-6.4: `abusive` joins the strategist's verdict (a model reads prose; a
+  lexicon is the fallback) — one neutral redirect, then a polite end.
+- **Practice's retry** (§6.1's table, §15.4): after a graceful exit the
+  interviewer offers another go and waits; two buttons, not a typed "yes".
+  The retry is recorded beside the first attempt and never scored, never an
+  M05 observation, never ledger coverage.
+
+**Measured live** (the real model and the real guard, 2026-09-30): the guard
+scored technical answers 0.0004 and an injection 0.9995, in 247–366 ms against
+a strategist at 732–941 ms — no added latency; turns 0.97–1.9 s.
+
+**Found live, fixed:**
+- **"Alright. Next. Next."** The bar-raiser register's exits said "next" and
+  so did its lead — composed for the first time because Final Boss spoke the
+  neutral register until today. A test now composes every exit with every
+  lead and bridge, for every persona; it found a second one on its first run
+  (Sunita: "Thanks. Let's move on. Thanks. Now I'd like to talk about…").
+- **A follow-up judged against the original question.** "Each iteration is
+  constant time" was judged `held` against "what if each iteration also loops
+  over the array?" — the key points describe depth 0. `strategist-3` says a
+  follow-up is judged as a follow-up; re-checked live, it is now a redirect.
+- **"Set the band pass filter" read as an injection.** The day's own
+  false-positive probe caught the rule pattern; it now needs a strategist
+  field AND one of its values.
+
+Thirteen mutations at the call sites, each caught.
+
+### Next: day 10
+
+1. **Pacing 70/90/100** (FR-6.17): the 70% focus offer when coverage debt is
+   high, the forced move to the closing at 90%, the wrap-up at 100% — and
+   Final Boss's 0% overrun (EC-6.9), which completes FR-6.9.
+2. **The closing runs** (FR-6.21): it has had `question_budget = 0` since day
+   5, so "Anything you'd like to ask me?" was said and the session ended. The
+   student's questions are recorded; scoring them waits on a rubric.
+3. **Re-planning** (FR-6.4) from hot-path signals only, ≤ 2, `plan.changed`.
+4. M04's posterior is never fetched at bootstrap, so M05 is always seeded
+   cold (§6.1 steps 3–4) — fix with the plan's concept ids.
 
 ---
 
@@ -389,13 +457,13 @@ Spec §4, Revision 2. This is the authoritative list.
 |---|---|---|---|
 | FR-6.1 | ✅ `InterviewPlan` from M02's plan + M05 availability + budget + mode, assembled by `planner.py` with no model call; M04's profile is the pinned prefix, not a plan input | P0 | 1 |
 | FR-6.2 | ✅ `POST /plan` previews without starting; `DELETE /plan/segments/{i}` drops one, only while `planned`; `PlanPreview` shows minutes, questions, M02's rationale, what was dropped and M02's `uncovered` | P1 | 1 |
-| FR-6.3 | 🟡 Segments run in sequence, advance on their budget, and say so crossing over (§3.2.3); the rubric comes from M05's selection. Per-segment personas wait on day 9 — every segment runs the mode's default today | P0 | 1 |
+| FR-6.3 | ✅ Segments run in sequence, advance on their budget, and say so crossing over (§3.2.3); each has the persona its mode assigns its kind, and a new voice introduces itself; the rubric comes from M05's selection | P0 | 1 |
 | FR-6.4 | ⬜ Re-plan at boundaries, ≤ 2, hot-path signals only | P1 | 1 |
 | FR-6.5 | ✅ Probe ladder, cap 5, graceful exit, derived rungs — pure function, 14 tests, steelman unreachable | P0 | 1 |
 | FR-6.6 | ✅ `break_depth` per concept per session — recorded by the fold, kept at the shallowest break | P0 | 1 |
 | FR-6.7 | ✅ M05's ladder served, `POST /hint` takes one, M13's published factor shown BEFORE it is taken and frozen at plan time, `hint_level_used` carried to M13 | P0 | 1 |
-| FR-6.8 | ⬜ Four modes as configs | P0 | 1 |
-| FR-6.9 | ⬜ Final Boss: pressure via mechanics, never rudeness | P0 | 1 |
+| FR-6.8 | ✅ Four modes as one table (`modes.py`): personas per segment kind, hints, ensemble, overrun allowance, retry, steelman flag; `GET /v1/interviews/modes` serves only true mechanics | P0 | 1 |
+| FR-6.9 | 🟡 No hints, the deepest ladder, the shortest patience, and a `RUDE` screen on every line; the hard clock (0% overrun) is day 10 | P0 | 1 |
 | FR-6.10 | 🟡 Text runs; the turn contract carries `modality` | P0 | 1·text · voice ⛔ M11 · coding ⛔ M07 · canvas ⛔ M08 |
 | FR-6.11 | 🟡 Contract fixed and carried; nothing to switch to yet | P0 | 1·text |
 | FR-6.12 | ✅ Pause once ≤ 5 min, resume. The cap is applied on `/resume` for a student who comes back, and by the sweeper (EC-6.14) for one who does not — which used to lock them out of every future interview | P1 | 1 |
@@ -452,9 +520,9 @@ difference between a demo and a product.
 | EC-6.1 | ⬜ Student says nothing for 45 s | One gentle prompt, then a second, then offer to move on. In text: idle timer from persona `patience` |
 | EC-6.2 | ✅ Student answers a different question | Redirected once, then judged as given |
 | EC-6.3 | ✅ Student asks the interviewer a question | Brief answer, then the question again |
-| EC-6.4 | ⬜ Student is abusive / tests the AI | One neutral redirect, then end politely. Logged |
+| EC-6.4 | ✅ Student is abusive / tests the AI | One neutral redirect, then end politely. Logged — `abusive` in the verdict (model) or the lexicon (fallback) |
 | EC-6.5 | 🟡 Student asks for the answer | A hint while hints last, else a graceful exit; M13's credit table is day 7 |
-| EC-6.6 | 🟡 Answer contains prompt injection | Fenced as data in every prompt and judged as part of the answer; the guard model is day 9 |
+| EC-6.6 | ✅ Answer contains prompt injection | Recognised spans stripped before the strategist; the guard model beside it; a flagged answer moves no θ; M13 neutralises before scoring; the report says a passage was set aside |
 | EC-6.7 | ⛔ Mic dies mid-answer | Phase 3 (M11) |
 | EC-6.8 | 🟡 Browser refresh | Resume from checkpoint — state survives; the stage UI that re-attaches does not exist yet |
 | EC-6.9 | ⬜ Session exceeds budget by 25% | Force closing (0% in Final Boss) |
@@ -494,15 +562,15 @@ the other module's TODO once raised; tick it here when it has been.
 
 | Module | Ask | State |
 |---|---|---|
-| M01 | `module.json` repo URL `mock-interview-engine` → `Mock_Interview_Engine` (launcher skips M06 otherwise) | ✅ landed (`d785b9f`, branch `m01-claim-pipeline`) |
+| M01 | `module.json` repo URL `mock-interview-engine` → `Mock_Interview_Engine` (launcher skips M06 otherwise) | ✅ landed (`d785b9f`), on M01's `main` since 2026-09-23 |
 | M01 | forward `X-Role` / `X-Candidate-Id` on the drill hand-off (M06 refuses anonymous callers) | ✅ landed (`d785b9f`) |
 | M05 | `/questions/select` reads its own `_SESSIONS` θ when the caller omits it | ✅ landed (`d30915d`) |
 | M05 | `Bank.get()` cannot find its own fallback-playlist items | ✅ landed (`d30915d`) |
 | M13 | **a live M05 question source** — `get_questions()` was always the fixture bank, so it 404d on every real question id (blocked the Phase-1 gate) | ✅ landed (`efb5a5a`); confirmed live: M13 resolves `/v1/questions/{id}/package?round_type=` from M05 |
-| M13 | **a worker that drains its own outbox** — `emit.py` promises one ("a row is written in the same transaction and a worker drains it") but only `POST /outbox/drain` exists, so a failed send to M04/M02/M19 is never retried. M06's `sweeper.py` is the pattern | ⬜ new |
-| M13 | a rejected outbox row disappears from `/v1/outbox` — `pending: 0`, `items: []`, and the only way to read `last_error` is the database. A row nobody can see is a row nobody fixes | ⬜ new |
+| M13 | **a worker that drains its own outbox** — `emit.py` promised one and only `POST /outbox/drain` existed | ✅ landed (`bdf31bb`), on Platform_Core v0.10.0's shared `ai_core.outbox` — which M06's own outbox should move to |
+| M13 | a rejected outbox row disappeared from `/v1/outbox` | ✅ landed (`bdf31bb`): stuck rows listed per destination, with requeue |
 | M13 | code and canvas artifacts get a fresh `uuid4()` every evaluation (`service.py`), so they can never resolve in M04 the way a transcript now does. Blocks scored evidence for M07/M08 | ⬜ new |
-| M13 | `authenticated: false` on `/v1/outbox` — no `M04_SERVICE_SECRET` is set, so the observation write is unauthenticated. Same ask as the env-name one below, now visible | ⬜ |
+| M13 | `authenticated: false` on `/v1/outbox` — the observation write was unauthenticated | ✅ landed (`bdf31bb`, `ecb3548`): reads `M04_SERVICE_SECRET` and forwards the student |
 | M05 | `difficulty_offset` on `SelectionRequest` | ⬜ |
 | M05 | per-round-type counts on `/bank/health` | ⬜ |
 | M04 | consent lookup route — until it existed, M13 emitted **no observations at all** | ✅ landed (`5e01e8d`): `GET`/`POST /v1/candidates/{id}/consent` |
@@ -510,9 +578,10 @@ the other module's TODO once raised; tick it here when it has been.
 | M04 | source `recent_sessions` from M06 | ⬜ |
 | M13 | `push_back` rubric variant (unblocks FR-6.20) | ⬜ |
 | M13 | `cs_core` and `communication` rubrics | ⬜ |
-| M13 | read `M04_SERVICE_SECRET`, as M04 and M15 do, not `SERVICE_SECRET` | ⬜ |
+| M13 | read `M04_SERVICE_SECRET`, as M04 and M15 do, not `SERVICE_SECRET` | ✅ landed (`bdf31bb`) |
+| M04 | guard every candidate route — it failed OPEN with no secret configured | ✅ landed (`97daa17`); M06 forwards the student on profile-summary and artifacts (`284634e`) |
 | M02 | docstring: M06 writes `asked`/`answered` | ⬜ |
-| Platform_Shell | add `interviews`/`drills`/`agents` to the proxy table and mount `m06Routes` | ✅ landed — and the repo is now under git (`bbd4f69`), which it had never been. **No GitHub remote yet: that is a call for the owner.** |
+| Platform_Shell | add `interviews`/`drills`/`agents` to the proxy table and mount `m06Routes` | ✅ landed (`bbd4f69`); on GitHub (MNEMOS-PREP/Platform_Shell, private) since 2026-09-23 |
 | Platform | `modules_meta` M06 → built; `Platform_Shell` journey card | ⬜ (on ship) |
 
 ---
@@ -531,7 +600,6 @@ wired, and is listed so it is not mistaken for an oversight.
 | Steelman (FR-6.20, EC-6.15) | M13 `push_back` rubric |
 | Scoring closing questions (FR-6.21) | a rubric |
 | Mode-dependent item difficulty | M05 `difficulty_offset` |
-| Sessions updating the skill graph | M04 consent route |
 | Scored drill turns | M05 grounded items from M01 claims (Phase 2) |
 | The report, long-term | M19 |
 | Project segment from repositories | M03 |
