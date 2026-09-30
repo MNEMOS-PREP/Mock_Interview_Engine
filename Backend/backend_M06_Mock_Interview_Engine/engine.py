@@ -33,6 +33,7 @@ from sqlmodel import Session, select
 from . import PROMPT_VERSION, outbox, planner, store
 from .adapters import Upstreams, UpstreamUnavailable
 from .agents import Interviewer, ProbeStrategist, Summariser, summariser
+from .agents.guard import SafetyGuard
 from .broker import TokenBroker, broker
 from .contracts import (
     HintOffer,
@@ -46,8 +47,9 @@ from .items import Item, from_dict, from_drill, from_m05, to_dict
 from .ladder import LadderConfig, Outcome
 from .llm import LLM, LLMResult, get_llm
 from .models import InterviewSession, LLMCall, SessionEvent
+from .modes import mode_config
 from .orchestration import Deps, Selected, StepInput, StepResult, build, enabled, run_step
-from .phrasebook import lines
+from .personas import Persona, persona
 from .state import InvalidTransition, SessionState
 
 log = logging.getLogger("uvicorn.error")
@@ -116,15 +118,101 @@ theta_cache = ThetaCache()
 # ─────────────────────────────────────────────────────────────────────────
 
 
-def bridge_line(arriving: PlannedSegment) -> str:
+def current_segment(state: SessionState) -> PlannedSegment | None:
+    """The segment being run, or None before the plan exists.
+
+    Looked up by the plan's own index rather than by position, because a
+    dropped segment keeps its place in the list and `current_segment` is
+    that index — counting positions in the live list would silently run
+    the wrong segment the moment anything is dropped.
+    """
+    if state.plan is None:
+        return None
+    live = planner.live_segments(state.plan)
+    if not live:
+        return None
+    found = next((s for s in live if s.index == state.current_segment), None)
+    return found or live[0]
+
+
+def speaker(state: SessionState) -> Persona:
+    """Who is asking right now (FR-6.3): whoever asked the question being
+    worked on — or, before any question, the current segment's persona.
+
+    Not simply the current segment's. A crossing into the next round is
+    recorded while the next question is being selected, so a step that
+    crashed after that and is replayed would otherwise hand the leaving
+    interviewer's exit line to the one arriving. The question's own segment
+    is the fact that does not move.
+    """
+    asked = state.open_question_turn()
+    segment = (
+        next((s for s in state.plan.segments if s.index == asked.segment_index), None)
+        if asked is not None and state.plan is not None
+        else current_segment(state)
+    )
+    if segment is not None and segment.persona_id:
+        return persona(segment.persona_id)
+    return persona(mode_config(state.mode).persona_for("default"))
+
+
+def ladder_config(state: SessionState) -> LadderConfig:
+    """The ladder's rules for this state — the persona's depth, the mode's
+    hints and steelman flag.
+
+    A drill keeps the ladder it was handed: M01 wrote the probes, and their
+    depth is the drill (FR-6.23), so no persona shortens it.
+    """
+    mode = mode_config(state.mode)
+    if state.kind == SessionKind.drill.value:
+        return LadderConfig(hints_available=False)
+    who = speaker(state)
+    return LadderConfig(
+        steelman_enabled=mode.steelman_enabled,
+        steelman_rate=mode.steelman_rate,
+        hints_available=mode.hints and who.hints_available,
+        max_depth=who.max_depth,
+        max_generic_rungs=who.max_generic_rungs,
+    )
+
+
+def retry_allowed(state: SessionState) -> bool:
+    """§15.4: Practice only, once per question, never in a drill, and never
+    for a retry itself — the second attempt is the last one."""
+    if state.kind == SessionKind.drill.value or not mode_config(state.mode).retry_allowed:
+        return False
+    if state.ladder_is_retry:
+        return False
+    asked = state.open_question_turn()
+    return asked is not None and str(asked.turn_id) not in state.retried
+
+
+def introduced(state: SessionState) -> frozenset[str]:
+    """The personas who have already spoken in this session."""
+    if state.plan is None:
+        return frozenset()
+    spoke = {t.segment_index for t in state.transcript if t.role == "interviewer"}
+    return frozenset(s.persona_id for s in state.plan.segments if s.index in spoke)
+
+
+def bridge_line(arriving: PlannedSegment, introduced: frozenset[str] | None = None) -> str:
     """§3.2.3 — what is said between two rounds.
 
     Authored, never generated: it is on the hot path, and it is one of the
     lines that must never telegraph how the round that just ended went. The
     topic is the segment's own title, which is M02's words for the
     requirement, so a student hears the posting's language rather than ours.
+
+    Said by the ARRIVING segment's persona: in a panel, the next interviewer
+    is the one who picks the conversation up — and one the student has not
+    met yet introduces themselves instead, with their own greeting, the way
+    a real panel hands over. `introduced` is who has spoken so far; None
+    means "do not introduce anybody".
     """
-    said = lines("neutral")
+    who = persona(arriving.persona_id)
+    said = who.said()
+    if introduced is not None and arriving.kind != "closing" and who.id not in introduced:
+        return said.greeting
     if arriving.kind == "closing":
         return said.bridge_to_closing
     if arriving.kind == "warmup" or not arriving.title:
@@ -146,10 +234,16 @@ def hint_offer(state: SessionState) -> HintOffer:
     """
     if state.status is not SessionStatus.live or state.open_turn_id is None:
         return HintOffer(available=False, unavailable_reason="Nothing is open to hint about.")
-    if state.mode == "final_boss":
-        # §6.1's mode table. Day 9 makes modes full configs; the rule is the
-        # same either way, and a student is told rather than left guessing.
-        return HintOffer(available=False, unavailable_reason="Final Boss runs without hints.")
+    mode = mode_config(state.mode)
+    if not mode.hints:
+        # §6.1's mode table, from the one place it lives. A student is told
+        # rather than left guessing whether the button broke.
+        return HintOffer(
+            available=False, unavailable_reason=mode.no_hints_reason or "No hints in this mode."
+        )
+    who = speaker(state)
+    if not who.hints_available:
+        return HintOffer(available=False, unavailable_reason=f"{who.name} doesn't give hints.")
     ladder = list((state.current_item or {}).get("hint_ladder") or [])
     level = state.hint_level + 1
     if level > len(ladder):
@@ -193,17 +287,22 @@ def question_budget(state: SessionState) -> int:
     return max(1, usable // SECONDS_PER_VERBAL_QUESTION)
 
 
-#: (id(llm), strategist_on, interviewer_on) -> (llm, compiled). Keyed by
+#: (id(llm), strategist_on, interviewer_on, guard_on) -> (llm, compiled). Keyed by
 #: identity: the model clients are dataclasses, so equal-but-distinct clients
 #: would otherwise share a graph bound to the wrong one. The client is kept in
 #: the value so its id cannot be reused while the entry exists.
-_COMPILED: dict[tuple[int, bool, bool], tuple[LLM, object]] = {}
+_COMPILED: dict[tuple[int, bool, bool, bool], tuple[LLM, object]] = {}
 _COMPILED_LOCK = threading.Lock()
 _COMPILED_MAX = 8
 
 
 def compiled_step(llm: LLM):
-    key = (id(llm), enabled("ProbeStrategist"), enabled("TechnicalInterviewer"))
+    key = (
+        id(llm),
+        enabled("ProbeStrategist"),
+        enabled("TechnicalInterviewer"),
+        enabled("SafetyGuard"),
+    )
     with _COMPILED_LOCK:
         hit = _COMPILED.get(key)
         if hit is not None and hit[0] is llm:
@@ -211,9 +310,11 @@ def compiled_step(llm: LLM):
         deps = Deps(
             strategist=ProbeStrategist(llm, enabled=key[1]),
             interviewer=Interviewer(llm, enabled=key[2]),
-            lines=lines("neutral"),
-            ladder_config=LadderConfig(),
+            guard=SafetyGuard(llm, enabled=key[3]),
+            persona_for=speaker,
+            ladder_for=ladder_config,
             question_budget=question_budget,
+            retry_allowed=retry_allowed,
         )
         graph = build(deps)
         if len(_COMPILED) >= _COMPILED_MAX:
@@ -665,7 +766,7 @@ class Engine:
         return self.state(session_id)
 
     def _closing_for(self, state: SessionState) -> str:
-        said = lines("neutral")
+        said = speaker(state).said()
         return said.drill_close if state.kind == SessionKind.drill.value else said.session_close
 
     def _close_m05(self, row: InterviewSession, state: SessionState) -> None:
@@ -685,8 +786,11 @@ class Engine:
         state = self.state(session_id)
         if state.status is not SessionStatus.live or state.open_turn_id is not None:
             return state
+        if state.retry_offer is not None:
+            # §15.4: the student is choosing. Nothing is asked until they do.
+            return state
         last = state.transcript[-1] if state.transcript else None
-        if last is None:
+        if last is None or state.awaiting_next:
             self._step(row, state, answer=None)
         elif last.role == "candidate":
             recorded = self._recorded_outcome(row, last.turn_index)
@@ -756,6 +860,9 @@ class Engine:
         if answer_turn is not None and recorded is None and result.outcome is not None:
             self._record_decision(row, state, answer_turn, item, result)
             self._owe(row, answer_turn, item)
+        if result.offer_retry:
+            self._offer_retry(row, result)
+            return
 
         if result.hint_level is not None and answer_turn is not None:
             store.record(
@@ -867,6 +974,11 @@ class Engine:
         anything tries to send it, so a crash costs a delay and not a score.
         """
         state = self.state(row.id)
+        if answer_turn.retry:
+            # §15.4: a retry is practice on top of the measurement. It owes
+            # M13 nothing (the first attempt is scored) and M02 nothing (the
+            # requirement was already asked and answered once).
+            return
         segment = (
             state.plan.segments[state.current_segment]
             if state.plan is not None and state.current_segment < len(state.plan.segments)
@@ -937,14 +1049,25 @@ class Engine:
                 # The trace keeps the verdict; the fold drops it (FR-6.15).
                 "verdict": verdict.model_dump(mode="json") if verdict else None,
                 "strategist_fallback": result.strategist_fallback,
+                # EC-6.4: counted by the fold; the second ends the session.
+                "conduct": outcome.conduct,
+                # EC-6.6: what the guard found. Trace only — `public.py`
+                # passes the move and nothing else to a browser.
+                "screen": result.screen.as_payload() if result.screen else None,
             },
         )
+        flagged = result.screen is not None and result.screen.injection
         if (
             verdict is not None
             and verdict.source == "model"
             and item is not None
             and item.source == "m05_bank"
             and item.concept_id
+            # An answer that talked to the system moves no θ: its verdict may
+            # be the one it asked for (EC-6.6). A retry moves none either —
+            # the first attempt is the measurement (§15.4).
+            and not flagged
+            and not answer_turn.retry
         ):
             self._observe(row, answer_turn.turn_id, item.concept_id, verdict)
 
@@ -1039,8 +1162,90 @@ class Engine:
                 "utterance_source": utterance.source,
                 "utterance_fallback": utterance.fallback_reason,
                 "selection_reason": (result.selection or {}).get("reason"),
+                "nudged": result.nudged,
             },
         )
+
+    def _offer_retry(self, row: InterviewSession, result: StepResult) -> None:
+        """§15.4: say the exit and the offer; open nothing until they choose."""
+        state = self.state(row.id)
+        asked = state.open_question_turn()
+        if asked is None or result.utterance is None:
+            return
+        index = state.next_turn_index
+        store.record(
+            self.db,
+            row,
+            "retry.offered",
+            step="retry-offer",
+            turn_index=index,
+            payload={
+                "turn_id": str(_turn_id(row.id, index)),
+                "turn_index": index,
+                "segment_index": state.current_segment,
+                "text": result.utterance.text,
+                "of": str(asked.turn_id),
+                "item": state.current_item,
+            },
+        )
+
+    # ── §15.4: the student's choice ──────────────────────────────────────
+
+    def retry(self, session_id: uuid.UUID) -> SessionState:
+        """Take the offered retry: the same question, a fresh ladder, not scored."""
+        row = self.row(session_id)
+        state = self.state(session_id)
+        offer = state.retry_offer
+        if offer is None:
+            raise InvalidTransition("There is no retry on offer.")
+        original = state.turn(uuid.UUID(offer["of"]))
+        item = from_dict(offer["item"]) if offer.get("item") else None
+        if original is None or item is None:
+            raise InvalidTransition("That question can't be asked again.")
+        lead = speaker(state).said().retry_lead
+        index = state.next_turn_index
+        store.record(
+            self.db,
+            row,
+            "question.asked",
+            step="retry",
+            turn_index=index,
+            payload={
+                "turn_id": str(_turn_id(row.id, index)),
+                "turn_index": index,
+                "segment_index": state.current_segment,
+                "text": f"{lead} {item.stem}",
+                "question_text": item.stem,
+                "question_id": str(item.question_id) if item.question_id else None,
+                "question_source": original.question_source,
+                "rubric_round_type": item.rubric_round_type,
+                "concept_id": item.concept_id,
+                "probe_depth": 0,
+                "probe_move": None,
+                "modality": "verbal",
+                "new_question": True,
+                "retry": True,
+                "retry_of": str(original.turn_id),
+                "item": to_dict(item),
+                "utterance_source": "template",
+            },
+        )
+        return self.state(session_id)
+
+    def move_on(self, session_id: uuid.UUID) -> SessionState:
+        """Decline the retry and carry on with the next question."""
+        row = self.row(session_id)
+        state = self.state(session_id)
+        if state.retry_offer is None:
+            raise InvalidTransition("There is no retry on offer.")
+        store.record(
+            self.db,
+            row,
+            "retry.declined",
+            step="retry-declined",
+            turn_index=state.next_turn_index,
+        )
+        return self.continue_session(session_id)
 
     def _record_calls(
         self, row: InterviewSession, state: SessionState, calls: list[LLMResult]
@@ -1076,20 +1281,8 @@ class Engine:
         return select_next
 
     def segment(self, state: SessionState) -> PlannedSegment | None:
-        """The segment being run, or None before the plan exists.
-
-        Looked up by the plan's own index rather than by position, because a
-        dropped segment keeps its place in the list and `current_segment` is
-        that index — counting positions in the live list would silently run
-        the wrong segment the moment anything is dropped.
-        """
-        if state.plan is None:
-            return None
-        live = planner.live_segments(state.plan)
-        if not live:
-            return None
-        found = next((s for s in live if s.index == state.current_segment), None)
-        return found or live[0]
+        """The segment being run — see `current_segment`."""
+        return current_segment(state)
 
     def _advance_segment(
         self, row: InterviewSession, state: SessionState, now: datetime
@@ -1121,7 +1314,7 @@ class Engine:
                     "to": arriving.index,
                     "from_title": leaving.title,
                     "to_title": arriving.title,
-                    "line": bridge_line(arriving),
+                    "line": bridge_line(arriving, introduced(state)),
                 },
             )
             state = self.state(row.id)
@@ -1156,7 +1349,9 @@ class Engine:
         for _ in range(_MAX_SEGMENT_SKIPS):
             found = self._select_from_bank(row, state, now)
             if found.item is not None:
-                return replace(found, bridge=bridge or found.bridge)
+                # Whoever runs the segment the item belongs to asks it — read
+                # here because the step's own state predates the crossing.
+                return replace(found, bridge=bridge or found.bridge, persona=speaker(state))
             moved, state, next_bridge = self._abandon_segment(row, state, found.empty_reason)
             if not moved:
                 # Nothing left to move to. The session ends, and `empty_reason`
@@ -1210,7 +1405,7 @@ class Engine:
                 "to": arriving.index,
                 "from_title": leaving.title,
                 "to_title": arriving.title,
-                "line": bridge_line(arriving),
+                "line": bridge_line(arriving, introduced(state)),
                 "reason": reason or "bank_exhausted",
             },
         )
@@ -1288,6 +1483,10 @@ class Engine:
 __all__ = [
     "AnswerRejected",
     "Engine",
+    "current_segment",
+    "ladder_config",
+    "retry_allowed",
+    "speaker",
     "SessionNotFound",
     "ThetaCache",
     "compiled_step",

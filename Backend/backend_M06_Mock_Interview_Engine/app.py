@@ -28,6 +28,7 @@ from .adapters import get_upstreams
 from .broker import broker
 from .keys import load_keys
 from .llm import get_llm
+from .personas import personas
 from .public import public_event
 from .router import router, session_factory
 
@@ -50,6 +51,9 @@ def _publish(event) -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     load_keys()
+    # §6.7: a persona file missing a parameter, or carrying a line the guard
+    # refuses, fails the BOOT — here, loudly — rather than a session later.
+    log.info("M06 personas: %s", ", ".join(sorted(personas())))
     store.NOTIFY = _publish
     # create_all() makes missing TABLES and ignores existing ones, so a model
     # that gained a field leaves an older dev.db one column short and the next

@@ -18,6 +18,8 @@ import type {
   AgentsResponse,
   DependencyRow,
   Health,
+  ModeOption,
+  PersonaCard,
   Session,
   SessionReport,
   SessionSummary,
@@ -27,6 +29,8 @@ export const m06Keys = {
   health: ["m06", "health"] as const,
   deps: ["m06", "deps"] as const,
   agents: ["m06", "agents"] as const,
+  modes: ["m06", "modes"] as const,
+  personas: ["m06", "personas"] as const,
   session: (id: string) => ["m06", "session", id] as const,
   report: (id: string) => ["m06", "report", id] as const,
   history: (candidateId: string) => ["m06", "history", candidateId] as const,
@@ -53,6 +57,24 @@ export function useAgents() {
     queryKey: m06Keys.agents,
     queryFn: () => api.get<AgentsResponse>("/v1/agents"),
     retry: false,
+  });
+}
+
+/** FR-6.8 — the four modes, each described by what it actually does. */
+export function useModes() {
+  return useQuery({
+    queryKey: m06Keys.modes,
+    queryFn: () => api.get<ModeOption[]>("/v1/interviews/modes"),
+    staleTime: Infinity,
+  });
+}
+
+/** §6.7 — who might be asking, for the plan preview. */
+export function usePersonas() {
+  return useQuery({
+    queryKey: m06Keys.personas,
+    queryFn: () => api.get<PersonaCard[]>("/v1/interviews/personas"),
+    staleTime: Infinity,
   });
 }
 
@@ -157,6 +179,24 @@ export function useResume(id: string) {
   const write = useSessionWriter(id);
   return useMutation({
     mutationFn: () => api.post<Session>(`/v1/interviews/${id}/resume`),
+    onSuccess: write,
+  });
+}
+
+/** §15.4, Practice: take the offered retry — the same question, not scored. */
+export function useRetry(id: string) {
+  const write = useSessionWriter(id);
+  return useMutation({
+    mutationFn: () => api.post<Session>(`/v1/interviews/${id}/retry`),
+    onSuccess: write,
+  });
+}
+
+/** §15.4: decline the retry and carry on. */
+export function useMoveOn(id: string) {
+  const write = useSessionWriter(id);
+  return useMutation({
+    mutationFn: () => api.post<Session>(`/v1/interviews/${id}/move-on`),
     onSuccess: write,
   });
 }

@@ -86,6 +86,36 @@ class StubLLM:
         )
 
 
+class GuardedStubLLM(StubLLM):
+    """A stub with the guard tier too (EC-6.6). Separate from `StubLLM` so a
+    test about the strategist or the interviewer is not also a test about
+    how many model calls the guard adds.
+
+    `guard_score` is what the classifier answers for every text; `fail_guard`
+    makes it fail, which the guard must survive by failing open.
+    """
+
+    def __init__(self, *args, guard_score: float = 0.0, fail_guard: str | None = None, **kw):
+        super().__init__(*args, **kw)
+        self.guard_score = guard_score
+        self.fail_guard = fail_guard
+        self.classify_calls: list[str] = []
+
+    def classify(self, *, job, text):
+        self.classify_calls.append(text)
+        if self.fail_guard:
+            return LLMResult(ok=False, reason=self.fail_guard, job=job, model="stub-guard")
+        return LLMResult(
+            ok=True,
+            data={"score": self.guard_score},
+            text=str(self.guard_score),
+            job=job,
+            tier="guard",
+            model="stub-guard",
+            latency_ms=5,
+        )
+
+
 class BankQuestions(LocalQuestions):
     """M05 as if it were live: same items, but selected as bank items.
 

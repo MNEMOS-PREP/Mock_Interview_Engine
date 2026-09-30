@@ -46,6 +46,9 @@ log = logging.getLogger("uvicorn.error")
 JOB_STRATEGIST = "probe_strategist"
 JOB_INTERVIEWER = "interviewer_phrasing"
 JOB_SUMMARY = "segment_summary"
+#: EC-6.6. The guard tier is a classifier, not a conversation: it takes the
+#: text as the user message and answers with a probability (`classify`).
+JOB_GUARD = "input_guard"
 
 
 @dataclass(frozen=True)
@@ -86,6 +89,16 @@ JOBS: dict[str, JobSpec] = {
         max_tokens=1500,
         timeout_s=10.0,
     ),
+    JOB_GUARD: JobSpec(
+        tier="guard",
+        env="M06_MODEL_GUARD",
+        reasoning_effort=None,
+        max_tokens=16,
+        # Measured 230–680 ms. It runs beside the strategist, so it only
+        # delays a turn if it outlasts it — and past this it fails open.
+        timeout_s=float(os.getenv("M06_GUARD_TIMEOUT", "1.5")),
+        temperature=0.0,
+    ),
 }
 
 #: Request fields that are extensions to the base dialect and may be refused.
@@ -125,6 +138,8 @@ class LLM(Protocol):
 
     def stream(self, *, job: str, system: str, user: str) -> Iterator[str | LLMResult]: ...
 
+    def classify(self, *, job: str, text: str) -> LLMResult: ...
+
 
 @dataclass
 class NullLLM:
@@ -141,6 +156,9 @@ class NullLLM:
 
     def stream(self, *, job: str, system: str, user: str) -> Iterator[str | LLMResult]:
         yield LLMResult(ok=False, reason=self.reason, job=job)
+
+    def classify(self, *, job: str, text: str) -> LLMResult:
+        return LLMResult(ok=False, reason=self.reason, job=job)
 
 
 def _usage(result: LLMResult, usage: dict[str, Any] | None) -> None:
@@ -291,6 +309,48 @@ class OpenAICompatLLM:
         result.ok, result.data, result.text = True, parsed, content
         return result
 
+    def classify(self, *, job: str, text: str) -> LLMResult:
+        """A classifier's score for `text`: `data = {"score": float}`.
+
+        The guard tier (Llama Prompt Guard 2) answers with the probability,
+        as text, that its input is an attack — measured, not documented. It
+        takes no system prompt: the text is the whole input, because a system
+        message is itself text it would classify.
+        """
+        spec, route = self._route(job)
+        result = LLMResult(job=job, tier=spec.tier, model=route.model)
+        if not route:
+            result.reason = route.unusable or "no route"
+            return result
+        body: dict[str, Any] = {
+            "model": route.model,
+            "messages": [{"role": "user", "content": text}],
+            "temperature": spec.temperature,
+            "max_tokens": spec.max_tokens,
+        }
+        started = time.perf_counter()
+        response, error = self._open(route, body, spec.timeout_s)
+        if response is None:
+            result.reason = error or "no response"
+            result.latency_ms = int((time.perf_counter() - started) * 1000)
+            return result
+        with response:
+            try:
+                payload = json.loads(response.read())
+            except (json.JSONDecodeError, TimeoutError) as exc:
+                result.reason = f"unreadable response: {exc}"
+                return result
+        result.latency_ms = int((time.perf_counter() - started) * 1000)
+        _usage(result, payload.get("usage"))
+        try:
+            content = str(payload["choices"][0]["message"]["content"] or "").strip()
+            score = float(content)
+        except (KeyError, IndexError, TypeError, ValueError):
+            result.reason = "classifier answered with something that is not a score"
+            return result
+        result.ok, result.data, result.text = True, {"score": score}, content
+        return result
+
     def stream(self, *, job: str, system: str, user: str) -> Iterator[str | LLMResult]:
         """Yields text deltas, then exactly one `LLMResult` (always last)."""
         spec, route = self._route(job)
@@ -370,6 +430,7 @@ def set_llm(llm: LLM | None) -> None:
 
 __all__ = [
     "JOBS",
+    "JOB_GUARD",
     "JOB_INTERVIEWER",
     "JOB_STRATEGIST",
     "JOB_SUMMARY",

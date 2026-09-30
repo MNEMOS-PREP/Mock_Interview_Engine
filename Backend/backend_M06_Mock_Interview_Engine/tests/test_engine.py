@@ -101,7 +101,9 @@ def test_a_drill_that_breaks_exits_gracefully_and_ends(db):
     assert state.status is SessionStatus.ended
     assert state.end_reason == "drill_complete"
     closing = interviewer_lines(state)[-1]
-    assert closing.startswith("Okay, let's leave that there.")
+    # A drill is Practice, and Practice's interviewer is Meera (friendly):
+    # the persona the drill plan has named since day 2, now actually heard.
+    assert closing.startswith("That's fair — it's a detail people usually look up.")
     assert state.break_depths == {"claim:c-7": 0}
 
 
@@ -142,7 +144,7 @@ def test_a_mock_opens_with_a_greeting_and_a_verbatim_stem(db):
     row = mock(engine)
     state = engine.start(row.id)
     first = interviewer_lines(state)[0]
-    assert first.startswith("Hello. Let's begin. First question.")
+    assert first.startswith("Hello, I'm Priya. Let's begin. First question.")
     assert "single loop over an array" in first
     assert state.transcript[0].question_source == "m05_bank"
     assert state.transcript[0].rubric_round_type == "dsa_verbal"
@@ -227,7 +229,7 @@ def test_model_calls_are_recorded_for_the_trace(db):
     jobs = sorted(c.job for c in calls)
     assert jobs == ["interviewer_phrasing", "probe_strategist"]
     strategist = next(c for c in calls if c.job == "probe_strategist")
-    assert strategist.prompt_version == "strategist-2"
+    assert strategist.prompt_version == "strategist-3"
     assert strategist.reasoning_tokens == 20
     assert strategist.cached_tokens is None
 
@@ -379,7 +381,7 @@ def test_repeating_a_question_does_not_repeat_the_hand_off(db):
     state = engine.start(row.id)
     asked = interviewer_lines(state)[-1]
     stem = state.current_item["stem"]
-    assert asked.startswith("Hello. Let's begin. First question.")  # the lead is in the turn
+    assert asked.startswith("Hello, I'm Priya. Let's begin. First question.")  # the lead
 
     state = say(engine, row, "Something about a different question entirely.")
     repeat = interviewer_lines(state)[-1]
@@ -417,7 +419,7 @@ def test_a_drill_gets_the_drills_own_closing_line(db):
     row = drill(engine)
     engine.start(row.id)
     state = engine.end(row.id, "ended_by_student")
-    assert interviewer_lines(state)[-1] == "That's the drill."
+    assert interviewer_lines(state)[-1] == "That's the drill. Your notes are ready."
 
 
 # ── the plan, built at bootstrap (FR-6.1) ────────────────────────────────

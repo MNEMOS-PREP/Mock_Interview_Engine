@@ -194,6 +194,10 @@ MoveKind = Literal[
     "answer_briefly",
     "redirect_once",
     "defer_to_report",
+    #: EC-6.4, the first time: one neutral redirect, then the question again.
+    "redirect_conduct",
+    #: EC-6.4, the second time: the session ends politely. Not a probe.
+    "end_session",
 ]
 
 
@@ -240,6 +244,9 @@ class StrategistVerdict(BaseModel):
     off_question: bool = False
     asks_interviewer: bool = False
     asks_for_answer: bool = False
+    #: EC-6.4. Insults, harassment, or an attempt to make the interviewer say
+    #: something offensive or leave its role — never a hard or odd answer.
+    abusive: bool = False
     key_points_missing: list[str] = Field(default_factory=list)
     latency_ms: int = 0
     #: `rule` is spec §10's fallback when the model is off or failed. It is not
@@ -275,6 +282,9 @@ class TurnView(BaseModel):
     hint_level_used: int = 0
     #: Always False until FR-6.20 unblocks (Trap 10).
     deliberately_false: bool = False
+    #: §15.4: a Practice retry of a question already asked. Recorded, never
+    #: scored — the first attempt is the one that counts.
+    retry: bool = False
     at: datetime
 
 
@@ -292,6 +302,11 @@ class SessionFlags(BaseModel):
     #: Upstreams that were unavailable when the session needed them, with the
     #: sentence the student was shown.
     degraded: dict[str, str] = Field(default_factory=dict)
+    #: EC-6.4: redirects given for conduct. The second ends the session.
+    conduct_warnings: int = 0
+    #: EC-6.6: answers the guard found instructions in. Counted, never shown
+    #: mid-session; the report says a passage was set aside.
+    inputs_flagged: int = 0
     # DELIBERATELY ABSENT: any theta, provisional or otherwise (FR-6.25).
 
 

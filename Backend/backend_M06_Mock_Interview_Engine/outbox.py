@@ -47,6 +47,7 @@ from .adapters import Upstreams, UpstreamUnavailable
 from .contracts import SessionKind
 from .items import Item
 from .models import ArtifactOutbox, EvaluationOutbox, InterviewSession, LedgerOutbox
+from .modes import ENSEMBLE_BY_MODE as _ENSEMBLE_BY_MODE
 from .state import SessionState
 
 log = logging.getLogger("uvicorn.error")
@@ -66,14 +67,9 @@ STALE_CLAIM_S = 180
 
 PENDING, SENDING, SENT, HELD = "pending", "sending", "sent", "held"
 
-#: M13's ensemble configs (`ensemble.py`): the count drops in Practice and on
-#: the degradation ladder, never the tier.
-ENSEMBLE_BY_MODE = {
-    "practice": "n1_practice",
-    "mock": "n3_het_v1",
-    "real_drive": "n3_het_v1",
-    "final_boss": "n3_het_v1",
-}
+#: M13's ensemble configs, per mode — `modes.py` is the one table, and this
+#: name is kept because the fairness gate and the contract tests read it.
+ENSEMBLE_BY_MODE = _ENSEMBLE_BY_MODE
 
 
 # ─────────────────────────────────────────────────────────────────────────

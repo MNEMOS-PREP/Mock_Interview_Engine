@@ -36,7 +36,11 @@ _KEEP: dict[str, tuple[str, ...]] = {
         "probe_depth",
         "question_source",
         "new_question",
+        "retry",
     ),
+    # §15.4: the offer is said, so it is seen; what it is about is not.
+    "retry.offered": ("turn_id", "turn_index", "segment_index", "text"),
+    "retry.declined": (),
     "answer.received": ("turn_id", "turn_index", "text", "question_turn_id"),
     "hint.given": ("level",),
     "segment.transition": ("from", "to", "from_title", "to_title", "line"),

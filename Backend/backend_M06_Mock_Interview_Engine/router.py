@@ -50,10 +50,13 @@ from .engine import (
     SessionNotFound,
     compiled_step,
     hint_offer,
+    speaker,
 )
 from .llm import get_llm
 from .models import LLMCall
+from .modes import MODES, mode_config
 from .orchestration import mermaid, snapshot
+from .personas import personas
 from .public import public_event
 from .state import InvalidTransition, SessionState
 
@@ -155,6 +158,16 @@ class SessionOut(BaseModel):
     transcript: list[TurnView]
     #: What the next hint would cost, before it is taken (FR-6.7, §32.5).
     hint: HintOffer
+    #: Who is asking (FR-6.3): the persona of the question being worked on.
+    #: A card — name, title, patience — never the parameters behind the
+    #: ladder, which would tell a student how deep this interviewer goes.
+    interviewer: dict | None
+    #: §15.4, Practice: a retry is on offer and nothing is open until the
+    #: student chooses — the stage shows two buttons instead of the answer box.
+    retry_offered: bool
+    #: A sentence about the panel when it is not what the mode's name
+    #: suggests (Real drive, until M15 can match a company's style).
+    mode_note: str | None
     flags: SessionFlags
     drill_claim: str | None
     created_at: datetime | None
@@ -205,6 +218,9 @@ def session_out(state: SessionState, now: datetime | None = None) -> SessionOut:
         open_turn_id=state.open_turn_id,
         transcript=state.transcript,
         hint=hint_offer(state),
+        interviewer=_interviewer_card(state),
+        retry_offered=state.retry_offer is not None,
+        mode_note=mode_config(state.mode).persona_note,
         flags=state.flags,
         drill_claim=(state.drill or {}).get("claim_text"),
         created_at=state.created_at,
@@ -212,6 +228,15 @@ def session_out(state: SessionState, now: datetime | None = None) -> SessionOut:
         ended_at=state.ended_at,
         end_reason=state.end_reason,
     )
+
+
+def _interviewer_card(state: SessionState) -> dict | None:
+    if state.plan is None:
+        return None
+    card = speaker(state).card()
+    # What a student may know: who, and how long they wait for an answer —
+    # the stage's idle timer reads it (EC-6.1). Never the ladder's depth.
+    return {k: card[k] for k in ("id", "name", "title", "idle_after_s", "long_answer_words")}
 
 
 def _row_or_404(db: Session, session_id: uuid.UUID):
@@ -257,6 +282,36 @@ def agents() -> dict:
         "model_on": get_llm().available,
         "step_graph": mermaid(compiled_step(get_llm())),
     }
+
+
+@router.get("/interviews/modes", tags=["meta"])
+def modes() -> list[dict]:
+    """FR-6.8 — the four modes, and what each one actually does.
+
+    The setup card lists these. Every summary names only mechanics the engine
+    enforces today, because a mode that promises what the session cannot do
+    is a promise the session breaks in front of the student.
+    """
+    return [
+        {
+            "id": config.id,
+            "label": config.label,
+            "summary": config.summary,
+            "hints": config.hints,
+            "retry_allowed": config.retry_allowed,
+            "overrun_allowance": config.overrun_allowance,
+        }
+        for config in MODES.values()
+    ]
+
+
+@router.get("/interviews/personas", tags=["meta"])
+def persona_cards() -> list[dict]:
+    """§6.7 — who might interview a student, for the plan preview."""
+    return [
+        {k: card[k] for k in ("id", "name", "title", "style")}
+        for card in (p.card() for p in personas().values())
+    ]
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -381,6 +436,29 @@ def take_hint(
         taken = session_out(engine.hint(session_id))
         background.add_task(_deliver, session_id)
         return taken
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
+    except (InvalidTransition, store.ConcurrentWrite) as exc:
+        raise _conflict(exc) from exc
+
+
+@router.post("/interviews/{session_id}/retry", response_model=SessionOut)
+def take_retry(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> SessionOut:
+    """§15.4, Practice: the question again, from the top. Not scored — the
+    first attempt is the one that counts, and the notes say which is which."""
+    try:
+        return session_out(engine.retry(session_id))
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
+    except (InvalidTransition, store.ConcurrentWrite) as exc:
+        raise _conflict(exc) from exc
+
+
+@router.post("/interviews/{session_id}/move-on", response_model=SessionOut)
+def move_on(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> SessionOut:
+    """§15.4: decline the retry and carry on with the next question."""
+    try:
+        return session_out(engine.move_on(session_id))
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="No such session.") from exc
     except (InvalidTransition, store.ConcurrentWrite) as exc:

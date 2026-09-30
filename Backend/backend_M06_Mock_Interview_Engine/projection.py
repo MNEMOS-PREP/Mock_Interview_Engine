@@ -78,6 +78,11 @@ class InterviewerView(BaseModel):
     """Everything the interviewer's model receives."""
 
     persona_register: Literal["friendly", "neutral", "bar_raiser"] = "neutral"
+    #: The persona's one authored sentence (`personas/*.yaml` `style`). The
+    #: experience, which §6.7 lets differ — never the standard.
+    persona_style: str = ""
+    #: The persona's `verbosity_target`: the most words a phrased probe may use.
+    max_words: int = 30
     segment_title: str = ""
     recent_turns: list[ViewTurn] = Field(default_factory=list, max_length=6)
     #: §6.6's rolling note: what happened BEFORE the six turns above. Bounded
@@ -101,9 +106,13 @@ def project_for_interviewer(
     profile_prefix: str = "",
     register: str = "neutral",
     round_summary: str = "",
+    persona_style: str = "",
+    max_words: int = 30,
 ) -> InterviewerView:
     return InterviewerView(
         persona_register=register,  # type: ignore[arg-type]
+        persona_style=persona_style,
+        max_words=max_words,
         segment_title=segment_title,
         round_summary=round_summary[:SUMMARY_MAX_CHARS],
         recent_turns=[ViewTurn(role=t.role, text=t.text) for t in transcript[-6:]],

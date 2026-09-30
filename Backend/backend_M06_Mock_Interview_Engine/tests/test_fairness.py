@@ -41,8 +41,9 @@ from backend_M06_Mock_Interview_Engine.models import EvaluationOutbox
 
 from .stubs import BankQuestions, NoClaims, StubLLM, verdict
 
-#: The registers `phrasebook.py` authors, and the modes §6.1 maps onto them.
-MODES = ("practice", "mock", "final_boss")
+#: Every mode, now that each one is a config with its own personas (day 9):
+#: the gate has to hold for the feature it was written before.
+MODES = ("practice", "mock", "real_drive", "final_boss")
 
 ANSWER = "Keys are hashed to a bucket index, so you jump straight to it instead of scanning."
 
@@ -86,8 +87,8 @@ def test_the_payload_m13_scores_does_not_depend_on_the_mode(db):
     identity = {"turn_id", "session_id", "candidate_id", "consent_id"}
     scoring = {m: {k: v for k, v in p.items() if k not in identity} for m, p in sent.items()}
 
-    practice, mock, boss = (scoring[m] for m in MODES)
-    assert mock == boss, "mock and Final Boss send M13 the same thing"
+    practice, mock, drive, boss = (scoring[m] for m in MODES)
+    assert mock == boss == drive, "mock, Real drive and Final Boss send M13 the same thing"
     assert practice["answer_text"] == mock["answer_text"] == ANSWER
     assert practice["question_id"] == mock["question_id"]
     assert practice["round_type"] == mock["round_type"]
@@ -124,12 +125,13 @@ def test_the_strategist_judges_the_question_not_the_register(db):
         assert prompts[mode]["system"] == first["system"], f"{mode}: same instructions"
         assert prompts[mode]["user"] == first["user"], f"{mode}: same question and answer"
 
-    # And no register word reached it, whatever the phrasebook says.
+    # And no register word reached it — the phrasebook's, or any persona's
+    # own greeting, which is where a name and a manner live since day 9.
+    from backend_M06_Mock_Interview_Engine.personas import personas
     from backend_M06_Mock_Interview_Engine.phrasebook import LINES
 
-    leads = {lines.greeting for lines in LINES.values()} | {
-        lines.first_question_lead for lines in LINES.values()
-    }
+    tables = [*LINES.values(), *(p.said() for p in personas().values())]
+    leads = {lines.greeting for lines in tables} | {lines.first_question_lead for lines in tables}
     for lead in leads:
         assert lead not in first["user"], f"the register leaked: {lead!r}"
     assert ANSWER in first["user"], "the answer itself is still there to judge"
@@ -199,4 +201,6 @@ def test_the_null_model_is_judged_the_same_way_too(db):
             e.payload for e in store.events_for(engine.db, row.id) if e.kind == "probe.decided"
         )
         verdicts[mode] = {k: v for k, v in decided.items() if k not in ("turn_id",)}
-    assert verdicts["practice"] == verdicts["mock"] == verdicts["final_boss"]
+    assert (
+        verdicts["practice"] == verdicts["mock"] == verdicts["real_drive"] == verdicts["final_boss"]
+    )

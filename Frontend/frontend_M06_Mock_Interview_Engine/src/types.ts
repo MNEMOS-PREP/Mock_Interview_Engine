@@ -23,7 +23,36 @@ export interface TurnView {
   probe_move: string | null;
   hint_level_used: number;
   deliberately_false: boolean;
+  /** Practice retry (§15.4): recorded beside the first attempt, never scored. */
+  retry: boolean;
   at: string;
+}
+
+/** Who is asking (FR-6.3). A card — never the parameters behind the ladder. */
+export interface InterviewerCard {
+  id: string;
+  name: string;
+  title: string;
+  /** EC-6.1: seconds of silence before a gentle prompt. */
+  idle_after_s: number;
+  long_answer_words: number;
+}
+
+export interface ModeOption {
+  id: Mode;
+  label: string;
+  /** Mechanics only, and only ones the engine enforces today. */
+  summary: string;
+  hints: boolean;
+  retry_allowed: boolean;
+  overrun_allowance: number;
+}
+
+export interface PersonaCard {
+  id: string;
+  name: string;
+  title: string;
+  style: string;
 }
 
 export interface SessionFlags {
@@ -37,6 +66,10 @@ export interface SessionFlags {
   consent_id: string | null;
   /** module id → the sentence the student is owed. */
   degraded: Record<string, string>;
+  /** EC-6.4: neutral redirects given; the second ends the session. */
+  conduct_warnings: number;
+  /** EC-6.6: answers the guard found instructions in. */
+  inputs_flagged: number;
 }
 
 export interface PlannedSegment {
@@ -52,6 +85,8 @@ export interface PlannedSegment {
   dropped_reason: string | null;
   /** The closing. It is where the student asks, so it cannot be dropped. */
   is_reserved: boolean;
+  /** Who runs this part (FR-6.3) — `/v1/interviews/personas` names them. */
+  persona_id: string;
 }
 
 export interface InterviewPlan {
@@ -87,6 +122,11 @@ export interface Session {
   jd_id: string | null;
   plan: InterviewPlan | null;
   hint: HintOffer;
+  interviewer: InterviewerCard | null;
+  /** §15.4: a retry is on offer; nothing is open until the student chooses. */
+  retry_offered: boolean;
+  /** A sentence about the panel when it isn't what the mode's name suggests. */
+  mode_note: string | null;
   current_segment: number;
   questions_asked: number;
   /** The interviewer turn the answer box posts to. Null when nothing is open. */

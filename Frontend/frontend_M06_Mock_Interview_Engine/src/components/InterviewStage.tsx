@@ -18,7 +18,17 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { Button, ErrorNote, Spinner } from "@ai/core";
 
-import { useAnswer, useEnd, useHint, usePause, useResume, useSession, useStart } from "../api";
+import {
+  useAnswer,
+  useEnd,
+  useHint,
+  useMoveOn,
+  usePause,
+  useResume,
+  useRetry,
+  useSession,
+  useStart,
+} from "../api";
 import { useInterviewStream } from "../stream";
 import type { HintOffer, Session, TurnView } from "../types";
 
@@ -107,6 +117,12 @@ function StatusStrip({
         <span className={`status-dot ${tone}`} aria-hidden />
         {label}
       </span>
+      {session.interviewer && (
+        <span className="text-2xs text-ink-soft">
+          {session.interviewer.name}
+          <span className="text-ink-faint"> · {session.interviewer.title}</span>
+        </span>
+      )}
       <span className="text-2xs text-ink-faint">
         {session.kind === "drill"
           ? "Defend drill · not scored"
@@ -214,6 +230,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const resume = useResume(sessionId);
   const end = useEnd(sessionId);
   const hint = useHint(sessionId);
+  const retry = useRetry(sessionId);
+  const moveOn = useMoveOn(sessionId);
   const navigate = useNavigate();
 
   const [draft, setDraft] = useState("");
@@ -222,7 +240,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const bottom = useRef<HTMLDivElement>(null);
 
   const data = session.data;
-  const waiting = answer.isPending || start.isPending;
+  const waiting = answer.isPending || start.isPending || retry.isPending || moveOn.isPending;
 
   const { connected } = useInterviewStream(data?.status === "live" ? sessionId : undefined, {
     onToken: (text) => setPreview((current) => current + text),
@@ -352,7 +370,21 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             </ul>
           )}
 
-          {data.status === "live" || data.status === "paused" ? (
+          {data.status === "live" && data.retry_offered ? (
+            // §15.4: the interviewer asked; the student chooses. Two buttons,
+            // because a typed "yes" would be judged as an answer.
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <Button onClick={() => retry.mutate()} disabled={waiting}>
+                Try it again
+              </Button>
+              <Button variant="ghost" onClick={() => moveOn.mutate()} disabled={waiting}>
+                Move on
+              </Button>
+              <span className="text-2xs text-ink-faint">
+                Practice only. Your first attempt is the one that counts.
+              </span>
+            </div>
+          ) : data.status === "live" || data.status === "paused" ? (
             <form
               className="mt-8"
               onSubmit={(event) => {

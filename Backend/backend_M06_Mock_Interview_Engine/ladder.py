@@ -18,6 +18,16 @@ prevent. Missing points are the report's business.
 
 **A rule verdict deepens once, then moves on** (spec §10): with no judgement
 of the answer, one more rung is a fair question and a second is a guess.
+
+**How deep is the persona's, not the ladder's** (§6.7). `max_depth` comes from
+`follow_up_aggression`: a friendly recruiter stops at two follow-ups, a
+bar-raiser goes to five. That is the experience, which §6.7 allows to differ;
+the verdict it is decided on is the same prompt in every mode (AC-6.17).
+
+**Conduct comes before the answer** (EC-6.4). Abuse is not an answer to
+judge: the first time is one neutral redirect with the question again, the
+second ends the session politely. Neither consumes depth or records a break —
+the ladder is about knowledge, and this is not.
 """
 
 from __future__ import annotations
@@ -34,6 +44,8 @@ class LadderConfig:
     steelman_enabled: bool = False
     steelman_rate: float = 0.0
     hints_available: bool = True
+    #: The persona's `max_depth` (§6.7). Never above the spec's cap.
+    max_depth: int = DEPTH_CAP
     #: Stop early when the question has no wording of its own past this depth
     #: AND the student has already cleared a rung. A generic "where else would
     #: you use it?" on a warm-up is noise, not depth.
@@ -48,6 +60,9 @@ class Outcome:
     success: bool | None
     break_depth: int | None = None
     ceiling: int | None = None
+    #: EC-6.4. True when this move answers the student's conduct, which the
+    #: fold counts and the second of which ends the session.
+    conduct: bool = False
 
 
 def decide(
@@ -57,10 +72,17 @@ def decide(
     config: LadderConfig,
     has_own_rung: Callable[[int], bool],
     hints_left: int = 0,
+    conduct_warnings: int = 0,
     rng: Callable[[], float] = random.random,
 ) -> Outcome:
     depth = ladder.depth
     success = verdict.band != "below" and verdict.justification != "failed"
+
+    # EC-6.4 first: abuse is not an answer, so nothing below applies to it.
+    if verdict.abusive:
+        if conduct_warnings == 0:
+            return Outcome(Move(kind="redirect_conduct"), success=None, conduct=True)
+        return Outcome(Move(kind="end_session"), success=None, conduct=True)
 
     # Moves that answer the student rather than the question. No depth.
     if verdict.asks_interviewer:
@@ -84,7 +106,7 @@ def decide(
     # Don't punish success: two clears in a row at depth ≥ 4 is the ceiling.
     if success and streak >= 2 and depth >= 4:
         return Outcome(Move(kind="move_on"), success=True, ceiling=depth)
-    if depth >= DEPTH_CAP:
+    if depth >= min(config.max_depth, DEPTH_CAP):
         return Outcome(Move(kind="move_on"), success=success, ceiling=depth if success else None)
 
     if verdict.source == "rule" and depth >= 1:

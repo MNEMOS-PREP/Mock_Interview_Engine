@@ -81,6 +81,19 @@ class SessionState(BaseModel):
     #: `next_turn_index` when the summary was written, so "four turns since"
     #: is arithmetic rather than a counter something has to remember to reset.
     summary_at_turn: int = 0
+    #: §6.7: the rounds that have had their one "let's keep it moving".
+    nudged_segments: list[int] = Field(default_factory=list)
+    #: §15.4, Practice: the question a retry was offered for, while the
+    #: student decides. Nothing is selected until they do.
+    retry_offer: dict | None = None
+    #: Question turn ids already retried — one retry each.
+    retried: list[str] = Field(default_factory=list)
+    #: True while the ladder open is a retry's, so its rungs and answers are
+    #: recorded as the retry they are and never sent to be scored.
+    ladder_is_retry: bool = False
+    #: The student has chosen to move on and nothing has been asked since —
+    #: what `continue_session` reads to know a question is owed.
+    awaiting_next: bool = False
     #: The index the NEXT turn will take.
     next_turn_index: int = 0
     transcript: list[TurnView] = Field(default_factory=list)
@@ -131,13 +144,38 @@ class SessionState(BaseModel):
     def turn(self, turn_id: UUID) -> TurnView | None:
         return next((t for t in self.transcript if t.turn_id == turn_id), None)
 
+    def turn_retry(self, turn_id: object) -> bool:
+        """Whether the turn with this id (any spelling) was part of a retry."""
+        found = next((t for t in self.transcript if str(t.turn_id) == str(turn_id)), None)
+        return bool(found and found.retry)
+
     def questions_in_segment(self, segment_index: int) -> int:
         """New questions asked in one segment — follow-up rungs are the same
-        question going deeper, so they do not count against its budget."""
+        question going deeper, and a retry is the same question again, so
+        neither counts against its budget. Neither does a line that asked
+        nothing (a retry offer, a closing line): it has no source."""
         return sum(
             1
             for t in self.transcript
-            if t.role == "interviewer" and t.segment_index == segment_index and t.probe_move is None
+            if t.role == "interviewer"
+            and t.segment_index == segment_index
+            and t.probe_move is None
+            and t.question_source is not None
+            and not t.retry
+        )
+
+    def open_question_turn(self) -> TurnView | None:
+        """The question the current ladder belongs to: the last NEW question
+        asked, ignoring the rungs, hints and redirects that followed it."""
+        return next(
+            (
+                t
+                for t in reversed(self.transcript)
+                if t.role == "interviewer"
+                and t.probe_move is None
+                and t.question_source is not None
+            ),
+            None,
         )
 
 
@@ -190,12 +228,21 @@ def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
     _require_open(s, "question.asked")
     turn_id = UUID(str(p["turn_id"]))
     move = p.get("probe_move")
+    retry = bool(p.get("retry"))
     if p.get("new_question", move is None):
         # A fresh question opens a fresh ladder; a rung or a clarify continues
         # the one already open.
         s.ladder = ProbeLadderState(concept_id=p.get("concept_id") or "")
         s.hint_level = 0
-        s.questions_asked += 1
+        s.ladder_is_retry = retry
+        if retry:
+            # §15.4: the same question again. It does not count as a new
+            # one against the budget, and it can be retried only once.
+            s.retry_offer = None
+            if p.get("retry_of") and str(p["retry_of"]) not in s.retried:
+                s.retried.append(str(p["retry_of"]))
+        else:
+            s.questions_asked += 1
     if p.get("item") is not None:
         s.current_item = p["item"]
     s.transcript.append(
@@ -213,11 +260,15 @@ def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
             concept_id=str(p.get("concept_id") or ""),
             probe_depth=int(p.get("probe_depth", 0)),
             probe_move=move,
+            retry=retry or s.ladder_is_retry,
             at=at,
         )
     )
     s.open_turn_id = turn_id
     s.pending_move = None
+    s.awaiting_next = False
+    if p.get("nudged") and s.current_segment not in s.nudged_segments:
+        s.nudged_segments.append(s.current_segment)
     # Said with this question, so it is not owed twice.
     s.pending_bridge = None
     s.next_turn_index = max(s.next_turn_index, int(p["turn_index"]) + 1)
@@ -246,6 +297,7 @@ def _answer_received(s: SessionState, p: dict, at: datetime) -> None:
             rubric_round_type=asked.rubric_round_type if asked else None,
             probe_depth=asked.probe_depth if asked else 0,
             hint_level_used=s.hint_level,
+            retry=asked.retry if asked else False,
             at=at,
         )
     )
@@ -274,7 +326,39 @@ def _probe_decided(s: SessionState, p: dict, _at: datetime) -> None:
                 s.break_depths[concept] = min(depth, s.break_depths.get(concept, depth))
         if p.get("ceiling") is not None:
             ladder.ceiling = int(p["ceiling"])
+    if p.get("conduct"):
+        # EC-6.4: counted, because the second one ends the session.
+        s.flags.conduct_warnings += 1
+    if (p.get("screen") or {}).get("injection"):
+        s.flags.inputs_flagged += 1
     s.pending_move = move
+
+
+def _retry_offered(s: SessionState, p: dict, at: datetime) -> None:
+    """§15.4: the exit line and the offer, said; nothing open until a choice."""
+    _require_open(s, "retry.offered")
+    s.transcript.append(
+        TurnView(
+            turn_id=UUID(str(p["turn_id"])),
+            turn_index=int(p["turn_index"]),
+            segment_index=int(p.get("segment_index", s.current_segment)),
+            role="interviewer",
+            text=p["text"],
+            at=at,
+        )
+    )
+    s.retry_offer = {"of": str(p["of"]), "item": p.get("item")}
+    s.open_turn_id = None
+    s.pending_move = None
+    s.next_turn_index = max(s.next_turn_index, int(p["turn_index"]) + 1)
+
+
+def _retry_declined(s: SessionState, _p: dict, _at: datetime) -> None:
+    _require_open(s, "retry.declined")
+    if s.retry_offer is None:
+        raise InvalidTransition("There is no retry on offer.")
+    s.retry_offer = None
+    s.awaiting_next = True
 
 
 def _hint_given(s: SessionState, p: dict, _at: datetime) -> None:
@@ -380,6 +464,8 @@ _REDUCERS = {
     "answer.received": _answer_received,
     "probe.decided": _probe_decided,
     "hint.given": _hint_given,
+    "retry.offered": _retry_offered,
+    "retry.declined": _retry_declined,
     "segment.transition": _segment_transition,
     "session.paused": _paused,
     "session.resumed": _resumed,

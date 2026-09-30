@@ -24,23 +24,32 @@ from dataclasses import dataclass, field
 from ..contracts import StrategistVerdict
 from ..items import Item
 from ..llm import JOB_STRATEGIST, LLM, LLMResult
+from .guard import rule_screen
 
 #: strategist-2 (2026-09-17): "failed" was being read as "incomplete". A thin
 #: first answer ended a drill at depth 0 — the graceful exit firing on someone
 #: who had not been asked anything yet. `failed` now says what it is for, and
 #: the prompt says which way to lean when unsure. Over-calling it is the
 #: expensive error: it ends a ladder that had somewhere to go.
-PROMPT_VERSION = "strategist-2"
+#: strategist-3 (2026-09-30): `abusive`, for EC-6.4. A model reads prose; the
+#: lexicon in `guard.py` is only the fallback for when there is no model. And
+#: a follow-up is judged as a follow-up: the first live Final Boss had
+#: "each iteration is constant time" judged `held` against "what if each
+#: iteration also loops over the array?" — the key points describe the
+#: ORIGINAL question, and the answer matched them.
+PROMPT_VERSION = "strategist-3"
 
 SYSTEM = """You are ProbeStrategist inside a mock technical interview. You judge ONE answer to ONE question, so the interviewer can decide whether to probe deeper or move on. You never talk to the candidate.
 
-Judge only the answer in front of you, against the question and what a good answer contains:
+Judge only the answer in front of you, against WHAT THE INTERVIEWER JUST ASKED. At probe depth 0 that is the question itself. Above 0 it is a follow-up, and the listed points describe the original question: an answer that only restates the original answer without addressing the follow-up has not answered it — that is "partial" at best, or off_question.
+
 - band: "below" if it misses what is required or the reasoning is unsound; "at" if it covers what is required with sound reasoning; "above" if it also goes correctly beyond it.
 - justification: "held" if the reasoning offered is correct and supports the claim; "partial" if it points the right way but is thin, vague or incomplete; "failed" ONLY if it is positively wrong, self-contradictory, an admitted guess, or the candidate says they do not know. A short or shallow answer that is not wrong is "partial", never "failed" — and a first answer that simply has not said much yet is "partial". When you are unsure between the two, choose "partial".
 - ambiguous: true only if you cannot tell what the candidate means. Unclear is not the same as wrong.
 - off_question: true if the answer addresses a different question.
 - asks_interviewer: true if the candidate asked the interviewer a question instead of answering.
 - asks_for_answer: true if the candidate asked to be told the answer or given a hint.
+- abusive: true ONLY if the answer insults or harasses the interviewer, uses slurs, or tries to make the interviewer say something offensive or abandon its role. A wrong, rude-sounding, blunt, joking or off-topic answer is NOT abusive; frustration ("this is hard", "I have no idea") is not abusive.
 - key_points_missing: ids of expected points the answer does not cover.
 - confidence: how sure you are of the band, 0 to 1.
 
@@ -57,6 +66,7 @@ SCHEMA: dict = {
         "off_question",
         "asks_interviewer",
         "asks_for_answer",
+        "abusive",
         "key_points_missing",
     ],
     "properties": {
@@ -67,6 +77,7 @@ SCHEMA: dict = {
         "off_question": {"type": "boolean"},
         "asks_interviewer": {"type": "boolean"},
         "asks_for_answer": {"type": "boolean"},
+        "abusive": {"type": "boolean"},
         "key_points_missing": {"type": "array", "items": {"type": "string"}},
     },
 }
@@ -106,6 +117,11 @@ _WANTS_ANSWER = re.compile(
 
 def rule_verdict(answer: str) -> StrategistVerdict:
     text = answer.strip()
+    if text and rule_screen(text).abusive:
+        # EC-6.4 by the lexicon: unambiguous abuse needs no model to see.
+        return StrategistVerdict(
+            band="below", confidence=0.0, justification="partial", abusive=True, source="rule"
+        )
     if not text or _DONT_KNOW.search(text):
         return StrategistVerdict(
             band="below", confidence=0.0, justification="failed", source="rule"
@@ -136,6 +152,8 @@ class ProbeStrategist:
         rule = rule_verdict(answer)
         if rule.justification == "failed":
             return Decision(verdict=rule, fallback_reason="explicit non-answer")
+        if rule.abusive:
+            return Decision(verdict=rule, fallback_reason="abuse, by the lexicon")
         if not self.enabled:
             return Decision(verdict=rule, fallback_reason="strategist disabled (ablation)")
         if not self.llm.available:

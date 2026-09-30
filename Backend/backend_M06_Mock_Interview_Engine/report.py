@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field
 
 from .contracts import SessionStatus
 from .models import SessionEvent
+from .modes import mode_config
+from .personas import persona
 from .state import SessionState
 
 NOT_SCORED = {
@@ -40,6 +42,8 @@ class Exchange(BaseModel):
     text: str
     move: str | None = None
     depth: int = 0
+    #: §15.4: part of a Practice retry — shown, and never the scored attempt.
+    retry: bool = False
 
 
 class QuestionReport(BaseModel):
@@ -60,6 +64,12 @@ class QuestionReport(BaseModel):
     hints_used: int = 0
     #: What a strong answer covers. Shown only once the session is over.
     strong_answer_covers: list[str] = Field(default_factory=list)
+    #: Who asked it (FR-6.3) — a panel is several people, and the notes say
+    #: which of them this was.
+    asked_by: str | None = None
+    #: §15.4: the student took a Practice retry on this one. The first
+    #: attempt is the one scored; the retry is recorded beside it.
+    retried: bool = False
 
 
 class SessionReport(BaseModel):
@@ -94,6 +104,9 @@ def _framing(state: SessionState, now: datetime) -> str:
     planned = state.requested_minutes * 60
     if state.status is SessionStatus.aborted:
         return "This session didn't get going, so there is nothing to review yet."
+    if state.end_reason == "conduct":
+        # EC-6.4. Neutral: it says what happened, not what the student is.
+        return "This session ended early. Here's what was covered before it did."
     if state.kind == "drill":
         return "A two-minute drill on one line from your resume. Not scored — it's practice."
     if state.end_reason == "ended_by_student" and planned and used < WARM_UP_SHARE * planned:
@@ -104,6 +117,16 @@ def _framing(state: SessionState, now: datetime) -> str:
     return "Here's how each question went."
 
 
+def _asked_by(state: SessionState, segment_index: int | None) -> str | None:
+    if state.plan is None or segment_index is None:
+        return None
+    segment = next((s for s in state.plan.segments if s.index == segment_index), None)
+    if segment is None:
+        return None
+    who = persona(segment.persona_id)
+    return f"{who.name}, {who.title}"
+
+
 def build(state: SessionState, events: list[SessionEvent], now: datetime) -> SessionReport:
     questions: list[QuestionReport] = []
     current: QuestionReport | None = None
@@ -111,6 +134,14 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
 
     for event in sorted(events, key=lambda e: e.seq):
         p = event.payload
+        if event.kind == "question.asked" and p.get("retry") and current is not None:
+            # §15.4: the same question again, on the same entry — the notes
+            # show both attempts together, and the first stays the scored one.
+            current.retried = True
+            current.exchanges.append(
+                Exchange(role="interviewer", text=p.get("text", ""), retry=True)
+            )
+            continue
         if event.kind == "question.asked":
             if p.get("new_question", p.get("probe_move") is None) or current is None:
                 item = p.get("item") or {}
@@ -129,6 +160,7 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
                     )
                     if final
                     else [],
+                    asked_by=_asked_by(state, p.get("segment_index")),
                 )
                 questions.append(current)
             current.exchanges.append(
@@ -141,8 +173,11 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
             )
             current.depth_reached = max(current.depth_reached, int(p.get("probe_depth") or 0))
         elif event.kind == "answer.received" and current is not None:
-            current.exchanges.append(Exchange(role="candidate", text=p.get("text", "")))
-            if current.scored:
+            retry_turn = state.turn_retry(p.get("turn_id"))
+            current.exchanges.append(
+                Exchange(role="candidate", text=p.get("text", ""), retry=retry_turn)
+            )
+            if current.scored and not retry_turn:
                 # Queued the moment the turn was written; `scored` once M13 has
                 # accepted it. Either way, no number appears here.
                 current.scoring_status = state.evaluation_status.get(
@@ -171,6 +206,18 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
         notes.append("Some answers are still with the evaluator — check back in a minute.")
     if any(q.scored for q in questions):
         notes.append("Scores appear here once they are calibrated against human raters.")
+    if any(q.retried for q in questions):
+        notes.append("Where you took another go, the first attempt is the one that was scored.")
+    if state.flags.inputs_flagged:
+        # EC-6.6. Said once, plainly: part of an answer read as instructions
+        # to the system, so it was set aside rather than judged.
+        notes.append(
+            "Part of one of your answers read as instructions to the system rather than an "
+            "answer, so that part was set aside and the rest was judged as usual."
+        )
+    mode_note = mode_config(state.mode).persona_note
+    if mode_note and state.kind != "drill":
+        notes.append(mode_note)
 
     return SessionReport(
         session_id=str(state.session_id),

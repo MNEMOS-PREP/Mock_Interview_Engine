@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .contracts import InterviewPlan, Mode, PlannedSegment, SegmentKind
+from .modes import ModeConfig, mode_config
 
 #: What M06 can actually run today. `coding` needs M07 and `design` needs
 #: M08's canvas; neither exists, so a round priced for one is dropped rather
@@ -48,16 +49,6 @@ SERVABLE_MODALITIES = frozenset({"verbal"})
 MODALITY_BLOCKED = {
     "coding": "The coding round isn't built yet, so this part is left out.",
     "design": "The system-design round isn't built yet, so this part is left out.",
-}
-
-#: Spec §6.1's mode table. Day 9 (FR-6.8) turns modes into full configs; the
-#: default persona is the part the plan needs now. `real_drive` is
-#: company-matched and falls back to the mock persona until M15 supplies one.
-DEFAULT_PERSONA: dict[str, str] = {
-    "practice": "friendly_recruiter",
-    "mock": "methodical_engineer",
-    "real_drive": "methodical_engineer",
-    "final_boss": "bar_raiser",
 }
 
 #: The closing is reserved: never dropped by a re-plan or by the clock
@@ -203,16 +194,22 @@ def _blocked(inputs: PlanInputs, modality: str) -> str | None:
 
 
 def assemble(inputs: PlanInputs) -> InterviewPlan:
-    """M02's plan, plus what only M06 knows. Deterministic; no model call."""
+    """M02's plan, plus what only M06 knows. Deterministic; no model call.
+
+    Each segment gets the persona the MODE assigns to its kind (FR-6.3): a
+    mock is a panel — the lead engineer opens, a professor takes the project,
+    HR takes the people questions — and the lead closes, because a closing
+    run by someone the student has not met is a page load.
+    """
     warmup_minutes, closing_minutes = reserved_minutes(inputs.requested_minutes)
-    persona = DEFAULT_PERSONA.get(inputs.mode, DEFAULT_PERSONA["mock"])
+    mode = mode_config(inputs.mode)
     middle = (
-        _from_coverage(inputs, persona)
+        _from_coverage(inputs, mode)
         if inputs.coverage
-        else _without_a_job_description(inputs, persona, warmup_minutes, closing_minutes)
+        else _without_a_job_description(inputs, mode, warmup_minutes, closing_minutes)
     )
     claims = defendable(inputs.claims)
-    project = _project_segment(claims, persona, middle)
+    project = _project_segment(claims, mode, middle)
     if project is not None:
         # §6.1's order: warm-up, then the student's own work, then the
         # posting's. Defending your resume first is the gentler ramp and it
@@ -224,7 +221,7 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
             index=0,
             kind="warmup",
             title="Warm-up",
-            persona_id=persona,
+            persona_id=mode.persona_for("warmup"),
             minutes=warmup_minutes,
             question_budget=1,
             rubric_round_types=list(inputs.available_round_types),
@@ -235,7 +232,7 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
             index=0,
             kind="closing",
             title="Your questions",
-            persona_id=persona,
+            persona_id=mode.persona_for("closing"),
             minutes=closing_minutes,
             question_budget=0,
             rationale="Time for you to ask, and for the report to be put together.",
@@ -276,7 +273,7 @@ def defendable(claims: tuple[dict[str, Any], ...] | list[dict[str, Any]]) -> lis
 
 
 def _project_segment(
-    claims: list[dict[str, Any]], persona: str, middle: list[PlannedSegment]
+    claims: list[dict[str, Any]], mode: ModeConfig, middle: list[PlannedSegment]
 ) -> PlannedSegment | None:
     """§6.1 — only when M01 has something worth defending, and it is paid for
     out of the largest verbal segment rather than out of the closing."""
@@ -301,7 +298,7 @@ def _project_segment(
         index=0,
         kind="project",
         title="Your projects",
-        persona_id=persona,
+        persona_id=mode.persona_for("project"),
         minutes=minutes,
         question_budget=min(budget, len(claims)),
         source="m01_claims",
@@ -312,18 +309,19 @@ def _project_segment(
     )
 
 
-def _from_coverage(inputs: PlanInputs, persona: str) -> list[PlannedSegment]:
+def _from_coverage(inputs: PlanInputs, mode: ModeConfig) -> list[PlannedSegment]:
     """One segment per M02 round, in M02's order, at M02's prices."""
     segments: list[PlannedSegment] = []
     for planned in (inputs.coverage or {}).get("rounds") or []:
         requirement_ids = [str(r) for r in planned.get("requirement_ids") or []]
         modality = str(planned.get("round_type") or "verbal")
+        kind = _kind(inputs, requirement_ids)
         segments.append(
             PlannedSegment(
                 index=0,
-                kind=_kind(inputs, requirement_ids),
+                kind=kind,
                 title=_title(inputs, requirement_ids, fallback=modality.title()),
-                persona_id=persona,
+                persona_id=mode.persona_for(kind),
                 # M02's arithmetic, carried over rather than recomputed.
                 minutes=float(planned.get("minutes") or 0.0),
                 question_budget=int(planned.get("question_count") or 0),
@@ -347,7 +345,7 @@ def _rationale(inputs: PlanInputs, requirement_ids: list[str]) -> str:
 
 
 def _without_a_job_description(
-    inputs: PlanInputs, persona: str, warmup: float, closing: float
+    inputs: PlanInputs, mode: ModeConfig, warmup: float, closing: float
 ) -> list[PlannedSegment]:
     """§10: no JD, so the session is what M05 can fill — split evenly, and
     labelled, because a student must not think this was tailored to a job."""
@@ -361,7 +359,7 @@ def _without_a_job_description(
             index=0,
             kind="technical",
             title=_round_type_title(round_type),
-            persona_id=persona,
+            persona_id=mode.persona_for("technical"),
             minutes=round(each, 1),
             question_budget=max(1, int(each // MINUTES_PER_VERBAL_QUESTION)),
             rubric_round_types=[round_type],
@@ -403,7 +401,6 @@ __all__ = [
     "MINUTES_PER_CLAIM",
     "defendable",
     "CLOSING_MINUTES",
-    "DEFAULT_PERSONA",
     "MINUTES_PER_VERBAL_QUESTION",
     "MODALITY_BLOCKED",
     "SERVABLE_MODALITIES",

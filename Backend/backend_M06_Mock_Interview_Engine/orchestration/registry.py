@@ -7,7 +7,8 @@ three each has:
     QuestionPlanner       tools (M05 selection) — no model of its own
     TechnicalInterviewer  tier (generation) + boundary (InterviewerView)
     ProbeStrategist       tier (classification) + boundary (narrow context)
-    SafetyGuard           rules now; the guard tier on day 9
+    SafetyGuard           tier (guard) + rules — screens every line said, and
+                          every answer received, beside the strategist
     ReportComposer        templates in Phase 1
 
 **Ablation hooks** (§26.2): every agent can be switched off by config, which is
@@ -75,10 +76,11 @@ AGENTS: dict[str, AgentSpec] = {
         AgentSpec(
             "SafetyGuard",
             "support",
-            None,
-            0,
-            0.6,
-            "Screens every interviewer line for telegraphed verdicts and personal questions.",
+            "guard",
+            64,
+            1.5,
+            "Screens every interviewer line (verdicts, rudeness, personal questions) and every "
+            "answer (instructions to the system, abuse), beside the strategist; fails open.",
         ),
         AgentSpec(
             "ReportComposer",
