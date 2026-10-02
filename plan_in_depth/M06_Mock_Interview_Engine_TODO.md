@@ -1,6 +1,6 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 87%** — 20 of 26 functional requirements met, 5 partially. **Days 1–12 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 12 **a session degrades instead of breaking**: a failing model is noticed turn by turn, the session wraps up early and then stops asking it, and if everything fails the student gets an apology and an honest record rather than a spinner. The notes now carry M13's own words about each answer — never its numbers. Since day 11 **a session survives the student leaving**: the clock stops while their stage is gone, they come back to "we were on question 2 of Data structures", silence gets a prompt rather than a stare, and the spec's five chaos scenarios pass with nothing done twice. Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
+> **Completion: 87%** — 20 of 26 functional requirements met, 5 partially. **Days 1–13 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 13 **every route has a screen** — or a named caller — and a gate fails the build the day one does not; the setup offers the four modes and honours a job description handed over, the preview says who runs each part, and §7's last three routes exist. Since day 12 **a session degrades instead of breaking**: a failing model is noticed turn by turn, the session wraps up early and then stops asking it, and if everything fails the student gets an apology and an honest record rather than a spinner. The notes now carry M13's own words about each answer — never its numbers. Since day 11 **a session survives the student leaving**: the clock stops while their stage is gone, they come back to "we were on question 2 of Data structures", silence gets a prompt rather than a stare, and the spec's five chaos scenarios pass with nothing done twice. Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
 >
 > Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), segments with a persona each (FR-6.3), the probe ladder and break depths (FR-6.5, 6.6), hints at a published price (FR-6.7), modes as configs (FR-6.8), pause (FR-6.12), reconnect and resume (FR-6.13), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), fixed context (FR-6.16), a report for every session (FR-6.18), re-planning (FR-6.4), Final Boss (FR-6.9), pacing and the reserved closing (FR-6.17), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
@@ -43,10 +43,10 @@ _Nothing scouted for this module yet._
 
 | | |
 |---|---|
-| Status | **Days 1–12 of 15 done.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **363**, no socket opened, no API key |
-| Release gates (`-m gate`) | **74** |
-| Route decorators | **28** on `/v1`, plus `/health` and `/status` |
+| Status | **Days 1–13 of 15 done.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
+| Backend tests passing | **373**, no socket opened, no API key |
+| Release gates (`-m gate`) | **78** |
+| Route decorators | **31** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
 | Measured | strategist p95 **1106 ms**, interviewer first token p95 **919 ms**, a rung ≈ **2.0 s** to first visible token (AC-6.4 wants ≤ 2.5 s) — `Backend/reports/latency-*.json` |
@@ -81,7 +81,7 @@ _Nothing scouted for this module yet._
 | 10 | ✅ | Pacing 70/90 and a round's own clock, the closing runs, re-plan from hot-path signals, M05 seeded from M04 |
 | 11 | ✅ | Presence (a disconnect stops the clock, a return restarts it after a grace), `resume-state`, idle prompts, the five chaos scenarios |
 | 12 | ✅ | The degradation ladder (L0 → panic, from what the session saw), everything-fails with the apology, M13's words in the notes, AC-6.9's number from the log |
-| 13 | ⬜ | UI pass, `routes.tsx`, mobile, ARIA |
+| 13 | ✅ | UI pass: mode picker, `?jd=`, who runs each part, round name, pause confirmation, Repeat and ⚑; §7's `/repeat`, `/flag`, `/switch-modality`; the route-client contract gate |
 | 14 | ⬜ | Scripted student 20 × 4, manual QA |
 | 15 | ⬜ | Cross-module asks raised, TODO reconciled, human eval prep |
 
@@ -668,23 +668,70 @@ Sixteen mutations at the call sites, all caught on the first pass.
 - *What the evaluator noticed* under each question in the notes.
 - The reliability card on the System page.
 
-### Next: day 13 — the UI pass
+### Day 13 — what landed
 
-1. **Setup**: the mode picker from `GET /v1/interviews/modes`, which serves
-   only true mechanics; and `?jd=` passed through from M02 and M15.
-2. **Plan preview**: who runs each part.
-3. **Stage**:
-   - the round indicator;
-   - the transcript drawer;
-   - the pause dialog;
-   - the `RoundTransition` card;
-   - the end card.
-4. **§7's last three routes**:
-   - `/repeat` — the question verbatim;
-   - `/flag` — ⚑, forwarded to M05;
-   - `/switch-modality` — the contract fixed now, text only.
-5. **Mobile, ARIA**, and a **route-client contract gate**: every `/v1` route
-   has a hook, and every hook has a route.
+**The route-client contract gate** (`test_client_contract.py`). `api.ts` has
+said "one hook per endpoint, and no hook without one" since day 2, and
+nothing checked it. The gate reads both sides — the frontend's source and the
+backend's own OpenAPI document — and fails on either break:
+- a route with no screen and no named caller;
+- a hook calling a path the backend does not serve.
+
+Routes that other modules call are listed with their caller (M01's drills,
+M04's recent sessions, the trace harness, operations), and a third test
+fails if that list names a route that no longer exists. Its first run found
+its own blind spot: `@ai/core` spells DELETE `api.del`.
+
+**§7's last three routes**, each named in the spec and absent until now:
+- `POST /repeat` gives the open question **verbatim**. A rephrasing could
+  change what is being asked, so it is never one, and it is never a turn,
+  so the answer box keeps answering the question. It is recorded once per
+  question for the trace.
+- `POST /flag` is ⚑, forwarded to M05, which owns the item and stops
+  selecting it (FR-5.19). The flag is recorded here either way, and
+  `forwarded: false` tells the student the item has not been excluded yet
+  rather than "thanks, done". Only an item M05 owns can be flagged. The
+  test caught the first version letting M06's own backup set through:
+  backup items carry ids too, so the check is the source, not the id.
+  `M05_OWNED` is now one constant, shared with the report's scoring rule,
+  which had kept its own copy of the same pair.
+- `POST /switch-modality` fixes the contract now (FR-6.11). Text is a no-op;
+  anything else is a 409 that names the module it waits on (M07, M08).
+
+**The UI pass.**
+- **Setup** offers the four modes from `/v1/interviews/modes`, which since
+  day 9 are real and serve only mechanics the engine enforces. A job
+  description handed over as `?jd=` (M02, M15) tailors the session and
+  says so.
+- **The plan preview** says who runs each part: *"with Priya, Senior
+  Engineer · 8 min"*. A mock is a panel (FR-6.3), and the preview never
+  said so.
+- **The stage**:
+  - the round by M02's name beside the question count;
+  - a pause that asks before spending the student's one pause;
+  - *Repeat the question*, with the words shown nearest the box;
+  - *⚑ Flag*, with three reasons and an honest answer.
+
+Already true and kept: banners are `role="status"`, the timer is announced at
+10/5/1 minutes, every control is a labelled button, and layouts wrap at
+phone width.
+
+Four mutations at the new call sites, all caught.
+
+### Next: day 14
+
+1. **The scripted student** (§12's integration test): 20 sessions × 4
+   modes, recorded answers. Assert:
+   - no crashes;
+   - coverage honoured;
+   - break points recorded;
+   - a report for every session;
+   - the trace replays.
+2. **The manual QA script** (§12): 15 minutes, in a document a person can
+   follow.
+3. **A live run of the full chain** — M06 → M05 → M13 → M04 — with M04's
+   guard on. Unit tests assert the headers; only a live run proves the
+   seams.
 
 ---
 
