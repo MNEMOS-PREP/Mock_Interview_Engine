@@ -51,10 +51,10 @@ class CoveragePlanner(Protocol):
         state: str,
         turn_id: UUID | None,
     ) -> dict[str, Any]:
-        """`POST /v1/sessions/{sid}/coverage/{cid}` — asked / answered / skipped."""
+        """`POST /v1/coverage/{sid}/{cid}` — asked / answered / skipped."""
 
     def session_coverage(self, session_id: UUID, candidate_id: UUID) -> dict[str, Any]:
-        """`GET /v1/sessions/{sid}/coverage/{cid}` — the report's coverage block."""
+        """`GET /v1/coverage/{sid}/{cid}` — the report's coverage block."""
 
 
 class Memory(Protocol):

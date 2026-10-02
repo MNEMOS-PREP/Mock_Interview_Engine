@@ -243,3 +243,17 @@ def test_m05_session_calls_forward_the_student(wire):
     for request in rec.requests:
         assert header(request, "X-Candidate-Id") == str(cid), request.full_url
         assert header(request, "X-Role") == "student"
+
+
+def test_the_m02_ledger_is_written_under_m02s_own_noun(wire):
+    """M02 moved its ledger from `/v1/sessions/...` (M05's noun in the shell's
+    table) to `/v1/coverage/...` on 2026-10-02. The old path now 404s, and an
+    outbox row that 404s is rejected — a ledger quietly not written."""
+    rec = wire(body={"id": "x", "state": "asked"})
+    sid, cid = uuid.uuid4(), uuid.uuid4()
+    m02 = LiveCoveragePlanner("http://m02")
+    m02.record_coverage(
+        sid, cid, jd_id=uuid.uuid4(), requirement_id="R-1", state="asked", turn_id=None
+    )
+    m02.session_coverage(sid, cid)
+    assert [r.full_url for r in rec.requests] == [f"http://m02/v1/coverage/{sid}/{cid}"] * 2

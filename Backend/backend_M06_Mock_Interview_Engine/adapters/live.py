@@ -64,7 +64,7 @@ class LiveCoveragePlanner:
         turn_id: UUID | None,
     ) -> dict[str, Any]:
         return self.http.post(
-            f"/v1/sessions/{session_id}/coverage/{candidate_id}",
+            f"/v1/coverage/{session_id}/{candidate_id}",
             {
                 "jd_id": str(jd_id),
                 "requirement_id": requirement_id,
@@ -76,7 +76,7 @@ class LiveCoveragePlanner:
 
     def session_coverage(self, session_id: UUID, candidate_id: UUID) -> dict[str, Any]:
         return self.http.get(
-            f"/v1/sessions/{session_id}/coverage/{candidate_id}",
+            f"/v1/coverage/{session_id}/{candidate_id}",
             headers=identity_headers(candidate_id),
         ).body
 

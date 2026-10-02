@@ -1,8 +1,12 @@
 {
-  "_source": "Platform_Shell/vite.config.ts — the OWNER table. The shell proxies /v1/<noun> to ONE backend by the first path segment, so a noun two modules serve is a request routed to the wrong service. Copied 2026-09-16; `deps` is the one shared noun and the shell handles it separately.",
+  "_source": "Platform_Shell/vite.config.ts — the OWNER table. The shell proxies /v1/<noun> to ONE backend by the first path segment, so a noun two modules serve is a request routed to the wrong service. Copied 2026-09-16, refreshed 2026-10-02 (M02's five nouns); `deps` is the one shared noun and the shell handles it separately.",
   "owned_by_others": {
     "resumes": "m01",
+    "archetypes": "m02",
+    "coverage": "m02",
+    "doors": "m02",
     "jds": "m02",
+    "performance": "m02",
     "candidates": "m04",
     "concepts": "m04",
     "skill-graph": "m04",
@@ -24,5 +28,7 @@
     "experiences": "m15",
     "submissions": "m15"
   },
-  "shared": ["deps"]
+  "shared": [
+    "deps"
+  ]
 }
