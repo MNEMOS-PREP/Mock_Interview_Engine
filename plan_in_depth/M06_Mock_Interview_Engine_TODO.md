@@ -1,6 +1,6 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 87%** — 20 of 26 functional requirements met, 5 partially. **Days 1–11 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 11 **a session survives the student leaving**: the clock stops while their stage is gone, they come back to "we were on question 2 of Data structures", silence gets a prompt rather than a stare, and the spec's five chaos scenarios pass with nothing done twice. Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
+> **Completion: 87%** — 20 of 26 functional requirements met, 5 partially. **Days 1–12 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 12 **a session degrades instead of breaking**: a failing model is noticed turn by turn, the session wraps up early and then stops asking it, and if everything fails the student gets an apology and an honest record rather than a spinner. The notes now carry M13's own words about each answer — never its numbers. Since day 11 **a session survives the student leaving**: the clock stops while their stage is gone, they come back to "we were on question 2 of Data structures", silence gets a prompt rather than a stare, and the spec's five chaos scenarios pass with nothing done twice. Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
 >
 > Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), segments with a persona each (FR-6.3), the probe ladder and break depths (FR-6.5, 6.6), hints at a published price (FR-6.7), modes as configs (FR-6.8), pause (FR-6.12), reconnect and resume (FR-6.13), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), fixed context (FR-6.16), a report for every session (FR-6.18), re-planning (FR-6.4), Final Boss (FR-6.9), pacing and the reserved closing (FR-6.17), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
@@ -43,10 +43,10 @@ _Nothing scouted for this module yet._
 
 | | |
 |---|---|
-| Status | **Days 1–11 of 15 done.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **352**, no socket opened, no API key |
-| Release gates (`-m gate`) | **71** |
-| Route decorators | **27** on `/v1`, plus `/health` and `/status` |
+| Status | **Days 1–12 of 15 done.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
+| Backend tests passing | **363**, no socket opened, no API key |
+| Release gates (`-m gate`) | **74** |
+| Route decorators | **28** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
 | Measured | strategist p95 **1106 ms**, interviewer first token p95 **919 ms**, a rung ≈ **2.0 s** to first visible token (AC-6.4 wants ≤ 2.5 s) — `Backend/reports/latency-*.json` |
@@ -80,7 +80,7 @@ _Nothing scouted for this module yet._
 | 9 | ✅ | Personas (7) as data, modes (4) as configs, guard on both directions (EC-6.4, 6.6), Practice's retry |
 | 10 | ✅ | Pacing 70/90 and a round's own clock, the closing runs, re-plan from hot-path signals, M05 seeded from M04 |
 | 11 | ✅ | Presence (a disconnect stops the clock, a return restarts it after a grace), `resume-state`, idle prompts, the five chaos scenarios |
-| 12 | ⬜ | Degradation ladder, partial report, report page |
+| 12 | ✅ | The degradation ladder (L0 → panic, from what the session saw), everything-fails with the apology, M13's words in the notes, AC-6.9's number from the log |
 | 13 | ⬜ | UI pass, `routes.tsx`, mobile, ARIA |
 | 14 | ⬜ | Scripted student 20 × 4, manual QA |
 | 15 | ⬜ | Cross-module asks raised, TODO reconciled, human eval prep |
@@ -600,22 +600,91 @@ Seventeen mutations at the call sites, all caught on the first pass — one of t
   *Keep thinking*.
 - A moved-on question reads as one in the notes.
 
-### Next: day 12
+### Day 12 — what landed
 
-1. **The degradation ladder** (§10, EC-6.12). The outage chaos test already
-   completes on templates and rules. The ladder makes it a policy and makes
-   it visible:
-   - `flags.degradation_level` moves L0 → L3 → panic on what the session
-     actually saw;
-   - the circuit stops calling a model that keeps failing;
-   - Practice falls back to the single evaluator (`n1_practice`);
-   - the stage shows the "Wrapping up a little early" badge (§8).
-2. **Everything fails** → `aborted`, a partial report, no score, and the
-   honest apology: *"this one's on us, it doesn't count"*.
-3. **The report page honouring M13's display gate**: qualitative feedback
-   only until calibration says otherwise.
-4. **AC-6.9's number from the log**: `connection.resumed` over
-   `connection.lost`.
+**The degradation ladder** (`degrade.py`). §10 names the rungs and the
+fallback for each failure; it does not say what moves a session between
+them. Now it is what the session saw — model turns failing in a row:
+
+- **L0**: nothing is degraded.
+- **L1**: an upstream is down, covered by its fallback.
+- **L2**: one failed turn, carried by a template or the rule strategist.
+- **L3**: two running. The session **wraps up a little early**: the rounds
+  after this one give way, M02 hears `skipped`, and §8's badge says so. This
+  is one-way.
+- **Panic** (EC-6.12): three running, and the model is not asked again. The
+  circuit is a `NullLLM` the agents already fall back from, so a panic turn
+  makes no call and writes no fake failure to the trace. Once a minute one
+  turn goes through to the real model; when it answers, the session climbs
+  back down. The cut plan stays cut, so the badge stays true.
+
+Three properties hold whatever the rung:
+- The levels are folded from `model.health` events, so they replay like
+  everything else.
+- The guard's outages are not the interview's: it fails open by design
+  (EC-6.6), and it is excluded from the count.
+- **The standard does not move.** An outage's answers go to M13 with the
+  mode's own ensemble (AC-6.17). `n1_practice` stays Practice's and is not a
+  degradation tool, because a templated question is still the same question.
+
+**Everything fails** (§10, EC-6.11). The first crashed step is retried by the
+next request, since the answer is already on the log. The second crash in a
+row ends the session:
+- it is `aborted`, with reason `system_failure`;
+- the apology is said in the transcript: *"This one's on us: it doesn't
+  count"*;
+- evaluations still queued are voided;
+- the notes are framed honestly.
+
+Rows M13 had already scored stand. Those answers were given before anything
+failed, and were scored like any other.
+
+**M13's words in the notes** (its display gate): per dimension, once the
+session is over:
+- the evaluator's reasoning;
+- the key points the answer did not reach;
+- the student's own sentences that counted — verified spans only.
+
+No number is ever copied: M13 owns them and the gate on them. A test fails if
+`raw_score` or `calibrated_score` appears anywhere in the report.
+
+**AC-6.9's number, from the log.** `GET /v1/interviews/reliability`
+(staff only) reports, on the System page:
+- disconnects, returns, and the rate against the 95% target;
+- wrap-ups and panics;
+- crashed steps, and sessions ended by failure.
+
+**Found on the way.** Day 11's outage chaos test asserted "the model is used
+again". With the ladder, three failed turns open the circuit, and a short
+session ends before the one-minute probe — the ladder working, not a defect.
+The test now asserts what §12 asks (the ladder engages, the session
+completes), and the probe has a test of its own.
+
+Sixteen mutations at the call sites, all caught on the first pass.
+
+**Frontend.**
+- §8's badge at L3 and panic.
+- *"That one's on us."* on the end card.
+- *What the evaluator noticed* under each question in the notes.
+- The reliability card on the System page.
+
+### Next: day 13 — the UI pass
+
+1. **Setup**: the mode picker from `GET /v1/interviews/modes`, which serves
+   only true mechanics; and `?jd=` passed through from M02 and M15.
+2. **Plan preview**: who runs each part.
+3. **Stage**:
+   - the round indicator;
+   - the transcript drawer;
+   - the pause dialog;
+   - the `RoundTransition` card;
+   - the end card.
+4. **§7's last three routes**:
+   - `/repeat` — the question verbatim;
+   - `/flag` — ⚑, forwarded to M05;
+   - `/switch-modality` — the contract fixed now, text only.
+5. **Mobile, ARIA**, and a **route-client contract gate**: every `/v1` route
+   has a hook, and every hook has a route.
 
 ---
 
@@ -671,7 +740,7 @@ Spec §13. A **[GATE]** is release-blocking; the rest are tracked.
 | AC-6.6 | ⬜ Break point found | ≥ 80% of sessions |
 | AC-6.7 | ⬜ Coverage of must-have requirements | ≥ 90% |
 | AC-6.8 | ⬜ "Felt like a real interview" | ≥ 4.0 mean |
-| AC-6.9 | ⬜ Reconnect success rate | ≥ 95% |
+| AC-6.9 | 🟡 Reconnect success rate — counted off the log (`GET /v1/interviews/reliability`); no real sessions measured yet | ≥ 95% |
 | AC-6.10 | ⬜ Context tokens per turn variance | < 15% |
 | AC-6.11 | 🟡 Prompt cache-hit ratio — measured: reported on 2 of 16 structured calls, never on a streamed one | ≥ 0.7, or "not measured" |
 | AC-6.12 | ⬜ Sessions where a student felt humiliated | 0 |
@@ -697,8 +766,8 @@ difference between a demo and a product.
 | EC-6.8 | ✅ Browser refresh | Resume from checkpoint; a refresh under 5 s is not a disconnect; a longer one is welcomed back to the same question with the clock right |
 | EC-6.9 | ✅ Session exceeds budget by 25% | Force closing (0% in Final Boss) — a round's own clock, and the closing at 90% of the session's |
 | EC-6.10 | ✅ Student ends at minute 3 | A report framed as a warm-up, not a failure |
-| EC-6.11 | ⬜ All modalities fail | Clean end, apology, no score |
-| EC-6.12 | ⬜ LLM provider outage | Item stems and templates verbatim, rule strategist, eval stays queued, session completes |
+| EC-6.11 | ✅ All modalities fail | Clean end, apology, no score — text is the only modality in Phase 1, so this is §10's "everything fails": two crashed steps running end the session `aborted`, the apology said, queued evaluations voided |
+| EC-6.12 | ✅ LLM provider outage | Item stems and templates verbatim, rule strategist, eval stays queued, session completes — the ladder's panic rung, with a one-minute probe back |
 | EC-6.13 | ✅ Two sessions in parallel | Blocked with an explanation and the id to resume; a unique nullable `occupying_key` enforces it at the database |
 | EC-6.14 | ✅ Pauses and never returns | Auto-close after 30 min; partial report — the sweeper, since the fix inserted before day 9 |
 | EC-6.15 | ⛔ Steelman accepted by a correct student | Blocked with FR-6.20 |
