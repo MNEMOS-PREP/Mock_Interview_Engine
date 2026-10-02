@@ -257,3 +257,17 @@ def test_the_m02_ledger_is_written_under_m02s_own_noun(wire):
     )
     m02.session_coverage(sid, cid)
     assert [r.full_url for r in rec.requests] == [f"http://m02/v1/coverage/{sid}/{cid}"] * 2
+
+
+def test_m13_hears_which_student_an_evaluation_is_for(wire):
+    """M13 checks the student `POST /evaluations` names (its guard since
+    2026-10-02). M06's outbox posted without saying who it was acting for, and
+    every evaluation would have come back 403 — rejected, and a session that
+    moved nothing."""
+    from backend_M06_Mock_Interview_Engine.adapters.live import LiveEvaluator
+
+    rec = wire(body={"status": "complete"})
+    cid = uuid.uuid4()
+    LiveEvaluator("http://m13").evaluate({"turn_id": str(uuid.uuid4()), "candidate_id": str(cid)})
+    assert header(rec.last, "X-Candidate-Id") == str(cid)
+    assert header(rec.last, "X-Role") == "student"

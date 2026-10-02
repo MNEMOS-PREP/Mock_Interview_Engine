@@ -246,7 +246,16 @@ class LiveEvaluator:
         self.http = JSONClient("M13", base_url, timeout_s=self.TIMEOUT_S)
 
     def evaluate(self, request: dict[str, Any]) -> dict[str, Any]:
-        return self.http.post("/v1/evaluations", request).body
+        # M13 checks the student its body names (its Platform_Core v0.11.0
+        # guard, 2026-10-02), so the outbox forwards that student — replayed
+        # later by a worker, the student is still the one asking.
+        return self.http.post(
+            "/v1/evaluations",
+            request,
+            headers=identity_headers(request["candidate_id"])
+            if request.get("candidate_id")
+            else None,
+        ).body
 
     def rubrics(self) -> list[dict[str, Any]]:
         return list((self.http.get("/v1/rubrics", timeout_s=3.0).body or {}).get("rubrics", []))
@@ -254,8 +263,13 @@ class LiveEvaluator:
     def ensembles(self) -> list[dict[str, Any]]:
         return list((self.http.get("/v1/ensembles", timeout_s=3.0).body or {}).get("ensembles", []))
 
-    def evaluation(self, turn_id: UUID) -> dict[str, Any] | None:
-        response = self.http.get(f"/v1/evaluations/{turn_id}", accept=(404,), timeout_s=3.0)
+    def evaluation(self, turn_id: UUID, candidate_id: UUID | None = None) -> dict[str, Any] | None:
+        response = self.http.get(
+            f"/v1/evaluations/{turn_id}",
+            accept=(404,),
+            timeout_s=3.0,
+            headers=identity_headers(candidate_id) if candidate_id else None,
+        )
         return None if response.status == 404 else response.body
 
     def calibration(self) -> dict[str, Any]:
