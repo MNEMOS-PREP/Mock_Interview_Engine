@@ -1,6 +1,6 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 87%** — 20 of 26 functional requirements met, 5 partially. **Days 1–13 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 13 **every route has a screen** — or a named caller — and a gate fails the build the day one does not; the setup offers the four modes and honours a job description handed over, the preview says who runs each part, and §7's last three routes exist. Since day 12 **a session degrades instead of breaking**: a failing model is noticed turn by turn, the session wraps up early and then stops asking it, and if everything fails the student gets an apology and an honest record rather than a spinner. The notes now carry M13's own words about each answer — never its numbers. Since day 11 **a session survives the student leaving**: the clock stops while their stage is gone, they come back to "we were on question 2 of Data structures", silence gets a prompt rather than a stare, and the spec's five chaos scenarios pass with nothing done twice. Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
+> **Completion: 87%** — 20 of 26 functional requirements met, 5 partially. **Days 1–14 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 14 **the full chain runs live with M04's guard on** — five real services, the real model, a student's answers reaching M13 and moving M04's skill graph — and a scripted student drives twenty sessions across the four modes on every run of the suite. Since day 13 **every route has a screen** — or a named caller — and a gate fails the build the day one does not; the setup offers the four modes and honours a job description handed over, the preview says who runs each part, and §7's last three routes exist. Since day 12 **a session degrades instead of breaking**: a failing model is noticed turn by turn, the session wraps up early and then stops asking it, and if everything fails the student gets an apology and an honest record rather than a spinner. The notes now carry M13's own words about each answer — never its numbers. Since day 11 **a session survives the student leaving**: the clock stops while their stage is gone, they come back to "we were on question 2 of Data structures", silence gets a prompt rather than a stare, and the spec's five chaos scenarios pass with nothing done twice. Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
 >
 > Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), segments with a persona each (FR-6.3), the probe ladder and break depths (FR-6.5, 6.6), hints at a published price (FR-6.7), modes as configs (FR-6.8), pause (FR-6.12), reconnect and resume (FR-6.13), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), fixed context (FR-6.16), a report for every session (FR-6.18), re-planning (FR-6.4), Final Boss (FR-6.9), pacing and the reserved closing (FR-6.17), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
@@ -43,12 +43,13 @@ _Nothing scouted for this module yet._
 
 | | |
 |---|---|
-| Status | **Days 1–13 of 15 done.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **373**, no socket opened, no API key |
-| Release gates (`-m gate`) | **78** |
+| Status | **Days 1–14 of 15 done.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
+| Backend tests passing | **375**, no socket opened, no API key |
+| Release gates (`-m gate`) | **79** |
 | Route decorators | **31** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
+| Live chain | **2026-10-02**: M02 → M06 → M05 → M13 → M04, M04's guard on — 4 artifacts, 4 evaluations, 3 ledger rows delivered; hashing, time complexity and hashing internals moved to `emerging`; anonymous and cross-student reads 403, theta without the service secret 401 |
 | Measured | strategist p95 **1106 ms**, interviewer first token p95 **919 ms**, a rung ≈ **2.0 s** to first visible token (AC-6.4 wants ≤ 2.5 s) — `Backend/reports/latency-*.json` |
 | Spec | [Revision 2](M06_Mock_Interview_Engine.md), after [the review](M06_REVIEW.md) |
 | Scope | 26 functional requirements (21 of them P0), 17 acceptance metrics (8 release-blocking), 17 edge cases |
@@ -82,7 +83,7 @@ _Nothing scouted for this module yet._
 | 11 | ✅ | Presence (a disconnect stops the clock, a return restarts it after a grace), `resume-state`, idle prompts, the five chaos scenarios |
 | 12 | ✅ | The degradation ladder (L0 → panic, from what the session saw), everything-fails with the apology, M13's words in the notes, AC-6.9's number from the log |
 | 13 | ✅ | UI pass: mode picker, `?jd=`, who runs each part, round name, pause confirmation, Repeat and ⚑; §7's `/repeat`, `/flag`, `/switch-modality`; the route-client contract gate |
-| 14 | ⬜ | Scripted student 20 × 4, manual QA |
+| 14 | ✅ | The scripted student (20 sessions across the 4 modes), the manual QA script, and the full chain live with M04's guard on |
 | 15 | ⬜ | Cross-module asks raised, TODO reconciled, human eval prep |
 
 ### Day 1 — what landed, and what it found
@@ -718,20 +719,75 @@ phone width.
 
 Four mutations at the new call sites, all caught.
 
-### Next: day 14
+### Day 14 — what landed
 
-1. **The scripted student** (§12's integration test): 20 sessions × 4
-   modes, recorded answers. Assert:
-   - no crashes;
-   - coverage honoured;
-   - break points recorded;
-   - a report for every session;
-   - the trace replays.
-2. **The manual QA script** (§12): 15 minutes, in a document a person can
-   follow.
-3. **A live run of the full chain** — M06 → M05 → M13 → M04 — with M04's
-   guard on. Unit tests assert the headers; only a live run proves the
-   seams.
+**The scripted student** (`test_scripted_student.py`, spec §12). Twenty full
+sessions across the four modes, driven by recorded answers and a seeded
+strategist, so every path is taken somewhere:
+- holds and breaks;
+- Practice retries taken and declined;
+- hints;
+- an injection attempt the guard flags;
+- the closing asked and then declined.
+
+Per session it asserts:
+- the session ends on its own (AC-6.5);
+- a report is built (AC-6.1);
+- the trace replays to the same state (FR-6.19);
+- nothing is done twice (AC-6.16);
+- model calls per answer stay inside §11's budget.
+
+Across the twenty it asserts AC-6.6 (a break found in ≥ 80% of sessions)
+and AC-6.7 (≥ 90% of the plan's requirements asked about). It passed on the
+first run, so it was probed before it was believed: 11–29 answers per
+session, 3–4 round crossings, up to two re-plans — not a vacuous pass.
+
+**The manual QA script** (`plan_in_depth/M06_QA_SCRIPT.md`): §12's 15-minute
+release check, in text-mode form, with the exact copy each step must show.
+It is written; nobody has run it yet.
+
+**The full chain, live** (2026-10-02). M02, M04, M05, M06 and M13 ran as
+five services with a shared service secret, so M04's guard was on, and the
+real model asked the questions. The session:
+1. Consent was recorded in M04, and a real posting was parsed by M02.
+2. The session was planned on that posting.
+3. Four answers were given: probes, a redirect, a graceful exit and a
+   bridge, all from the live model.
+
+Then, by module:
+- **Delivery.** The outbox delivered 4 artifacts to M04, 4 evaluations to
+  M13 and 3 ledger rows to M02.
+- **M13** scored every answer, with `calibrated_score` still `None` — the gate
+  closed, as it should be.
+- **M04's skill graph moved**: hashing (4 direct), time complexity (3),
+  hashing internals (1), and propagation to arrays and control flow. θ was
+  low, correctly — the scripted answers were off the question.
+- **M02's ledger** holds `asked` with M13's scores beside it.
+- **The guard held**: an anonymous read and another student's read were both
+  403, and theta without the service secret was 401.
+- **The notes** carried M13's own words — *"The answer is unrelated to the
+  prompt…"* — and no number.
+
+**Found live, fixed:** M02's first plan for a posting took 4.7 s, and M06
+waited the 3 s a turn's call is allowed. So every session fell back to the
+even split and told the student *"the planner is offline"* while it was
+up. No module's own suite could see it, because each tests against fixtures.
+The plan is built once, behind a spinner, so plan-time M02 calls now get
+20 s (`PLAN_TIMEOUT_S`), pinned by a test.
+
+**Observed, not a defect:** the live strategist judged an explanation of
+hash tables as off-question for *"elaborate on why O(1) given those
+conditions"*. It is a judgment call, logged for the first human-evaluation
+round (§12), which is where a judgment like that gets measured.
+
+### Next: day 15
+
+1. **Raise the cross-module asks** (§7 below) in each module's own TODO.
+2. **Reconcile this TODO**: the completion figure, every row against
+   shipped code, the asks that landed.
+3. **Prepare human evaluation, round 1**: the protocol §12 asks for (ten
+   students, a session each, a five-minute structured interview), the
+   consent form, and what gets recorded.
 
 ---
 
@@ -783,9 +839,9 @@ Spec §13. A **[GATE]** is release-blocking; the rest are tracked.
 | AC-6.13 **[GATE]** | ✅ No provisional θ in persisted state — schema test + a real 30-turn checkpoint scanned | unit test |
 | AC-6.14 **[GATE]** | ✅ No steelman while disabled, any mode | 0 / 10,000 per mode |
 | AC-6.15 **[GATE]** | ✅ `asked` / `answered` ledger rows for every turn, `skipped` for every dropped requirement — all three written with the work that caused them | 100% |
-| AC-6.5 | ⬜ Session completion rate | ≥ 80% |
-| AC-6.6 | ⬜ Break point found | ≥ 80% of sessions |
-| AC-6.7 | ⬜ Coverage of must-have requirements | ≥ 90% |
+| AC-6.5 | 🟡 Session completion rate — 20/20 for the scripted student (`test_scripted_student`); real students pending | ≥ 80% |
+| AC-6.6 | 🟡 Break point found — asserted ≥ 80% over the scripted twenty; real students pending | ≥ 80% of sessions |
+| AC-6.7 | 🟡 Coverage of must-have requirements — asserted ≥ 90% over the scripted twenty; real postings pending | ≥ 90% |
 | AC-6.8 | ⬜ "Felt like a real interview" | ≥ 4.0 mean |
 | AC-6.9 | 🟡 Reconnect success rate — counted off the log (`GET /v1/interviews/reliability`); no real sessions measured yet | ≥ 95% |
 | AC-6.10 | ⬜ Context tokens per turn variance | < 15% |
@@ -867,6 +923,10 @@ the other module's TODO once raised; tick it here when it has been.
 | M13 | read `M04_SERVICE_SECRET`, as M04 and M15 do, not `SERVICE_SECRET` | ✅ landed (`bdf31bb`) |
 | M04 | guard every candidate route — it failed OPEN with no secret configured | ✅ landed (`97daa17`); M06 forwards the student on profile-summary and artifacts (`284634e`) |
 | M02 | docstring: M06 writes `asked`/`answered` | ⬜ |
+| M02 | the first plan for a posting took 4.7 s live (2026-10-02); M06 waits 20 s at plan time now, but a student watches that spinner — precompute on parse, or publish the expected latency | ⬜ new |
+| M02, M15 | link "practise for this role" to `/mock?jd={id}` — M06's setup honours `?jd=` since day 13 | ⬜ new |
+| M05 | `/questions/{id}/flag` takes any caller — no identity guard; and EC-5.9's retraction of observations already sent is still not wired (M06's ⚑ says "won't be picked again", not "undone") | ⬜ new |
+| M13 | M06's notes show `reasoning`, `missing_key_points` and verified quotes to the student (day 12); state in M13's contract that these are student-visible, so their wording is held to that | ⬜ new |
 | Platform_Shell | add `interviews`/`drills`/`agents` to the proxy table and mount `m06Routes` | ✅ landed (`bbd4f69`); on GitHub (MNEMOS-PREP/Platform_Shell, private) since 2026-09-23 |
 | Platform | `modules_meta` M06 → built; `Platform_Shell` journey card | ⬜ (on ship) |
 

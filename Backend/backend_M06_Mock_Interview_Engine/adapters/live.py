@@ -16,6 +16,14 @@ from .http import JSONClient
 
 
 class LiveCoveragePlanner:
+    #: The plan is built once, at plan time, behind the preview's spinner — not
+    #: on a turn. M02's first plan for a posting does real work (mastery from
+    #: M04, availability from M05) and took longer than the 3 s a turn's call
+    #: is allowed: the first live run of the full chain (2026-10-02) planned
+    #: every session on the even split, with "the planner is offline" shown to
+    #: a student whose planner was up. A turn's budget is for turns.
+    PLAN_TIMEOUT_S = 20.0
+
     def __init__(self, base_url: str):
         self.http = JSONClient("M02", base_url)
 
@@ -24,6 +32,7 @@ class LiveCoveragePlanner:
             f"/v1/jds/{jd_id}/plan/{candidate_id}",
             {"minutes": minutes},
             headers=identity_headers(candidate_id),
+            timeout_s=self.PLAN_TIMEOUT_S,
         ).body
 
     def job_description(self, jd_id: UUID) -> dict[str, Any]:
@@ -40,6 +49,7 @@ class LiveCoveragePlanner:
         body = self.http.get(
             f"/v1/jds/{jd_id}/requirements/{candidate_id}",
             headers=identity_headers(candidate_id),
+            timeout_s=self.PLAN_TIMEOUT_S,
         ).body
         return list((body or {}).get("requirements") or [])
 

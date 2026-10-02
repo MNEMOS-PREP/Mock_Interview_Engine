@@ -30,9 +30,11 @@ class Recorder:
         self.body = body if body is not None else {}
         self.error = error
         self.requests: list = []
+        self.timeouts: list = []
 
     def __call__(self, request, timeout=None):
         self.requests.append(request)
+        self.timeouts.append(timeout)
         if self.error is not None:
             raise self.error
         if self.status >= 400:
@@ -84,6 +86,21 @@ def test_m02_plan_forwards_the_students_identity(wire):
     assert json.loads(rec.last.data) == {"minutes": 30}
     assert header(rec.last, "X-Candidate-Id") == str(cid)
     assert header(rec.last, "X-Role") == "student"
+
+
+def test_the_plan_waits_for_m02_longer_than_a_turn_would(wire):
+    """Found live (2026-10-02): M02's first plan for a posting took longer than
+    a turn's 3 s, so every session fell back to the even split and told the
+    student the planner was offline while it was up. The plan is built once,
+    behind a spinner; it gets a plan's budget."""
+    from backend_M06_Mock_Interview_Engine.adapters.http import DEFAULT_TIMEOUT_S
+
+    rec = wire(body={"jd_id": "x", "requirements": []})
+    planner = LiveCoveragePlanner("http://m02")
+    planner.plan(uuid.uuid4(), uuid.uuid4(), 30)
+    planner.requirements(uuid.uuid4(), uuid.uuid4())
+    assert all(t == LiveCoveragePlanner.PLAN_TIMEOUT_S for t in rec.timeouts)
+    assert LiveCoveragePlanner.PLAN_TIMEOUT_S > DEFAULT_TIMEOUT_S
 
 
 def test_m04_service_routes_carry_the_secret_m04_checks(wire, monkeypatch):
