@@ -267,3 +267,26 @@ def test_the_plan_cannot_be_edited_once_the_interview_has_started(client, as_stu
     refused = client.delete(f"/v1/interviews/{sid}/plan/segments/1", headers=as_student)
     assert refused.status_code == 409
     assert "before the interview starts" in refused.json()["detail"]
+
+
+@pytest.mark.gate
+def test_every_route_that_names_a_student_refuses_strangers(client, engine):
+    """FR-6.26, with Platform_Core's own check (v0.11.0). It finds every route
+    whose path or query names a student from the OpenAPI document — so a route
+    added next month is covered by this test — and asks each one as nobody and
+    as another student. An interview whose id is the check's OWNER lets the
+    `{session_id}` routes resolve to a real student."""
+    from ai_core.testing import OWNER, assert_refuses_strangers
+    from sqlmodel import Session
+
+    from backend_M06_Mock_Interview_Engine.app import app
+    from backend_M06_Mock_Interview_Engine.models import InterviewSession
+
+    with Session(engine) as db:
+        db.add(InterviewSession(id=uuid.UUID(OWNER), candidate_id=uuid.UUID(OWNER)))
+        db.commit()
+    checked = assert_refuses_strangers(
+        client, app, params=("candidate_id", "session_id"), expect_at_least=20
+    )
+    assert ("POST", "/v1/interviews/{session_id}/answer") in checked
+    assert ("GET", "/v1/interviews/{session_id}/events") in checked

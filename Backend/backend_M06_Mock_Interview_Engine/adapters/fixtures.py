@@ -76,12 +76,23 @@ class LocalQuestions:
         self.seeded[session_id] = dict(posterior)
         return {"session_id": str(session_id), "seeded_from": snapshot_id}
 
-    def observe(self, session_id: UUID, concept_id: str, outcome: dict[str, Any]) -> float | None:
+    def observe(
+        self,
+        session_id: UUID,
+        concept_id: str,
+        outcome: dict[str, Any],
+        candidate_id: UUID | None = None,
+    ) -> float | None:
         self.observed.append((session_id, concept_id, outcome))
         step = {"below": -0.4, "at": 0.0, "above": 0.4}[outcome["band"]]
         return step
 
-    def close(self, session_id: UUID, posterior: dict[str, float]) -> dict[str, Any]:
+    def close(
+        self,
+        session_id: UUID,
+        posterior: dict[str, float],
+        candidate_id: UUID | None = None,
+    ) -> dict[str, Any]:
         self.seeded.pop(session_id, None)
         return {"session_id": str(session_id), "closed": True}
 

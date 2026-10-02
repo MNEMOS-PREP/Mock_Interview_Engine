@@ -91,10 +91,21 @@ class Questions(Protocol):
     ) -> dict[str, Any]:
         """`POST /v1/sessions/{sid}/theta/seed`."""
 
-    def observe(self, session_id: UUID, concept_id: str, outcome: dict[str, Any]) -> float | None:
+    def observe(
+        self,
+        session_id: UUID,
+        concept_id: str,
+        outcome: dict[str, Any],
+        candidate_id: UUID | None = None,
+    ) -> float | None:
         """`POST /v1/sessions/{sid}/theta/observe` → the provisional θ, in memory only."""
 
-    def close(self, session_id: UUID, posterior: dict[str, float]) -> dict[str, Any]:
+    def close(
+        self,
+        session_id: UUID,
+        posterior: dict[str, float],
+        candidate_id: UUID | None = None,
+    ) -> dict[str, Any]:
         """`POST /v1/sessions/{sid}/close`."""
 
     def flag(self, question_id: UUID, reason: str, note: str, candidate_id: UUID) -> dict[str, Any]:

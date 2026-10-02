@@ -20,7 +20,7 @@ dependencies = [
     # how you get a surprise breakage on a Tuesday. v0.9.x is where
     # `ai_core.identity` landed, and M06 is written against it from day one
     # rather than retrofitted (PLATFORM_TODO §1).
-    "ai-core @ git+https://github.com/MNEMOS-PREP/Platform_Core@v0.9.1#subdirectory=python",
+    "ai-core @ git+https://github.com/MNEMOS-PREP/Platform_Core@v0.11.0#subdirectory=python",
 ]
 
 [project.optional-dependencies]

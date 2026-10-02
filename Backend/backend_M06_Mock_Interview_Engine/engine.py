@@ -859,7 +859,7 @@ class Engine:
         self.thetas.drop(row.id)
         if self.upstreams.available("M05"):
             try:
-                self.upstreams.m05.close(row.id, {})
+                self.upstreams.m05.close(row.id, {}, candidate_id=row.candidate_id)
             except UpstreamUnavailable as exc:
                 log.info("M06: M05 close failed for %s: %s", row.id, exc)
 
@@ -1282,7 +1282,9 @@ class Engine:
         }
         for _attempt in range(2):
             try:
-                value = self.upstreams.m05.observe(row.id, concept_id, outcome)
+                value = self.upstreams.m05.observe(
+                    row.id, concept_id, outcome, candidate_id=row.candidate_id
+                )
             except UpstreamUnavailable as exc:
                 if "not seeded" in str(exc):
                     self._seed_m05(row, {})

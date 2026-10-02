@@ -192,11 +192,21 @@ class LiveQuestions:
             headers=identity_headers(candidate_id),
         ).body
 
-    def observe(self, session_id: UUID, concept_id: str, outcome: dict[str, Any]) -> float | None:
+    def observe(
+        self,
+        session_id: UUID,
+        concept_id: str,
+        outcome: dict[str, Any],
+        candidate_id: UUID | None = None,
+    ) -> float | None:
+        # M05's session routes answer only the session's owner (its
+        # Platform_Core v0.11.0 guard), so the student is forwarded here as it
+        # is on `select` and `seed`.
         response = self.http.post(
             f"/v1/sessions/{session_id}/theta/observe",
             {"concept_id": concept_id, "outcome": outcome},
             accept=(404,),
+            headers=identity_headers(candidate_id) if candidate_id else None,
         )
         if response.status == 404:
             # M05 restarted and lost its in-memory session. The engine
@@ -205,9 +215,17 @@ class LiveQuestions:
         value = (response.body or {}).get("theta_provisional")
         return float(value) if value is not None else None
 
-    def close(self, session_id: UUID, posterior: dict[str, float]) -> dict[str, Any]:
+    def close(
+        self,
+        session_id: UUID,
+        posterior: dict[str, float],
+        candidate_id: UUID | None = None,
+    ) -> dict[str, Any]:
         response = self.http.post(
-            f"/v1/sessions/{session_id}/close", {"posterior": posterior}, accept=(404,)
+            f"/v1/sessions/{session_id}/close",
+            {"posterior": posterior},
+            accept=(404,),
+            headers=identity_headers(candidate_id) if candidate_id else None,
         )
         return response.body if response.status != 404 else {"closed": False}
 
@@ -215,6 +233,8 @@ class LiveQuestions:
         return self.http.post(
             f"/v1/questions/{question_id}/flag",
             {"reason": reason, "note": note, "candidate_id": str(candidate_id)},
+            # M05 refuses an anonymous flag, and one made for somebody else.
+            headers=identity_headers(candidate_id),
         ).body
 
 

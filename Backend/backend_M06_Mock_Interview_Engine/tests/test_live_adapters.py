@@ -227,3 +227,19 @@ def test_a_non_json_body_is_a_failure(wire, monkeypatch):
     )
     with pytest.raises(UpstreamUnavailable, match="not JSON"):
         LiveEvaluator("http://m13").calibration()
+
+
+def test_m05_session_calls_forward_the_student(wire):
+    """M05's guard (Platform_Core v0.11.0) answers a session's routes only for
+    its owner, and refuses an anonymous flag. `select` and `seed` forwarded the
+    student from day 3; `observe`, `close` and the flag did not, and would have
+    been refused the day M05 was guarded."""
+    rec = wire(body={"theta_provisional": 0.4})
+    cid, sid = uuid.uuid4(), uuid.uuid4()
+    m05 = LiveQuestions("http://m05")
+    m05.observe(sid, "concept:hashing", {"turn_id": "t", "band": "at"}, candidate_id=cid)
+    m05.close(sid, {}, candidate_id=cid)
+    m05.flag(uuid.uuid4(), "unclear", "", cid)
+    for request in rec.requests:
+        assert header(request, "X-Candidate-Id") == str(cid), request.full_url
+        assert header(request, "X-Role") == "student"
