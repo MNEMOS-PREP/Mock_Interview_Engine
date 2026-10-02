@@ -28,7 +28,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from . import outbox, store
+from . import outbox, presence, store
 from . import report as report_module
 from .access import enforce_access, require_candidate
 from .adapters import Upstreams, get_upstreams
@@ -51,6 +51,7 @@ from .engine import (
     compiled_step,
     hint_offer,
     speaker,
+    welcome_line,
 )
 from .llm import get_llm
 from .models import LLMCall
@@ -68,6 +69,8 @@ router = APIRouter(
 
 #: FR-6.12.
 PAUSE_LIMIT_S = 5 * 60
+#: §6.8: turns a returning page shows before the full transcript loads.
+RESUME_TAIL = 6
 #: A session shorter than this is not an interview; longer is not a session
 #: anyone finishes. The UI offers 15–60.
 MIN_MINUTES, MAX_MINUTES = 2, 90
@@ -175,6 +178,14 @@ class SessionOut(BaseModel):
     in_closing: bool
     #: §6.9's checkpoints passed (70, 90).
     time_warnings: list[int]
+    #: EC-6.1 for the open line: prompts given for silence, the last one, and
+    #: whether the offer to move on has been made (then `/move-on` takes it).
+    idle_prompts: int
+    idle_line: str | None
+    idle_offered: bool
+    #: §6.8: after more than two reconnects, what the student can do about a
+    #: connection that keeps dropping. None until then.
+    connection_note: str | None
     flags: SessionFlags
     drill_claim: str | None
     created_at: datetime | None
@@ -185,6 +196,37 @@ class SessionOut(BaseModel):
 
 class EndRequest(BaseModel):
     reason: str = Field(default="ended_by_student", max_length=100)
+
+
+class IdleIn(BaseModel):
+    #: The line the student has been quiet on — a prompt for a question that
+    #: has since been answered is refused, not applied to the next one.
+    question_turn_id: uuid.UUID
+    #: The prompt the browser expects next (1, 2, 3). A retried request
+    #: names one already given and changes nothing (AC-6.16).
+    n: int = Field(ge=1, le=3)
+
+
+class ResumeStateOut(BaseModel):
+    """§6.8: what a student coming back needs, in one read."""
+
+    session_id: uuid.UUID
+    status: SessionStatus
+    #: The clock is stopped for a disconnect right now.
+    away: bool
+    #: "Welcome back — we were on question 4 of Data structures." None when
+    #: there is nothing to come back to.
+    welcome: str | None
+    #: The line waiting for an answer, verbatim, or None.
+    open_question: TurnView | None
+    #: The last few turns, so the page can show where things were before
+    #: the full transcript has loaded.
+    transcript_tail: list[TurnView]
+    time_remaining_s: float
+    #: How long the clock waits once the student is back (§6.8).
+    grace_s: float
+    reconnect_count: int
+    connection_note: str | None
 
 
 class TraceOut(BaseModel):
@@ -231,6 +273,10 @@ def session_out(state: SessionState, now: datetime | None = None) -> SessionOut:
         plan_notes=[r.live_note for r in state.plan.replans] if state.plan is not None else [],
         in_closing=_in_closing(state),
         time_warnings=list(state.time_warnings),
+        idle_prompts=state.idle_prompts,
+        idle_line=state.idle_line,
+        idle_offered=state.idle_offer,
+        connection_note=presence.suggestion(state),
         flags=state.flags,
         drill_claim=(state.drill or {}).get("claim_text"),
         created_at=state.created_at,
@@ -488,13 +534,53 @@ def take_retry(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> S
 
 @router.post("/interviews/{session_id}/move-on", response_model=SessionOut)
 def move_on(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> SessionOut:
-    """§15.4: decline the retry and carry on with the next question."""
+    """The next question: declining a Practice retry (§15.4), or taking the
+    interviewer's offer after a silence (EC-6.1)."""
     try:
         return session_out(engine.move_on(session_id))
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="No such session.") from exc
     except (InvalidTransition, store.ConcurrentWrite) as exc:
         raise _conflict(exc) from exc
+
+
+@router.post("/interviews/{session_id}/idle", response_model=SessionOut)
+def idle_prompt(
+    session_id: uuid.UUID, body: IdleIn, engine: Engine = Depends(get_engine)
+) -> SessionOut:
+    """EC-6.1: the student has been quiet on the open line. The browser
+    says when (it can see typing); the interviewer decides what to say."""
+    try:
+        return session_out(engine.idle(session_id, body.question_turn_id, body.n))
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
+    except (InvalidTransition, store.ConcurrentWrite) as exc:
+        raise _conflict(exc) from exc
+
+
+@router.get("/interviews/{session_id}/resume-state", response_model=ResumeStateOut)
+def resume_state(session_id: uuid.UUID, db: Session = Depends(get_session)) -> ResumeStateOut:
+    """§6.8, FR-6.13: where the student was, after a disconnect or a refresh.
+
+    A read and nothing else. The return itself is recorded by the stream
+    re-attaching, or by whatever the student does next — so a page that
+    fetches this twice, or a prefetch, never counts a reconnect.
+    """
+    _row_or_404(db, session_id)
+    state = store.load_state(db, session_id)
+    open_turn = state.turn(state.open_turn_id) if state.open_turn_id is not None else None
+    return ResumeStateOut(
+        session_id=state.session_id,
+        status=state.status,
+        away=state.flags.away_since is not None,
+        welcome=welcome_line(state),
+        open_question=open_turn,
+        transcript_tail=state.transcript[-RESUME_TAIL:],
+        time_remaining_s=round(state.time_remaining_s(utcnow()), 1),
+        grace_s=presence.GRACE_S,
+        reconnect_count=state.flags.reconnect_count,
+        connection_note=presence.suggestion(state),
+    )
 
 
 @router.post("/interviews/{session_id}/start", response_model=SessionOut)
@@ -591,6 +677,7 @@ def read_outbox(session_id: uuid.UUID, db: Session = Depends(get_session)) -> di
 @router.post("/interviews/{session_id}/pause", response_model=SessionOut)
 def pause_session(session_id: uuid.UUID, db: Session = Depends(get_session)) -> SessionOut:
     row = _row_or_404(db, session_id)
+    presence.back(db, session_id, utcnow(), grace_s=0.0)
     state = store.load_state(db, session_id)
     if state.flags.pause_used and state.status is not SessionStatus.paused:
         raise HTTPException(
@@ -607,6 +694,7 @@ def pause_session(session_id: uuid.UUID, db: Session = Depends(get_session)) -> 
 @router.post("/interviews/{session_id}/resume", response_model=SessionOut)
 def resume_session(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> SessionOut:
     row = _row_or_404(engine.db, session_id)
+    engine.back(session_id)
     state = store.load_state(engine.db, session_id)
     now = utcnow()
     at = now
@@ -727,12 +815,21 @@ async def session_events(
                 out.append(frame(row.kind, public, row.seq))
         return out, db_cursor, final
 
+    def returned() -> None:
+        # §6.8: a stage re-attaching is the student coming back — the
+        # disconnect it ends (if it was long enough to be one) and the return
+        # are written now, before the first sweep, so this stream carries them.
+        with sessions() as db:
+            presence.back(db, session_id, utcnow())
+
     async def stream() -> AsyncIterator[str]:
         nonlocal cursor
         idle = 0.0
         since_sweep = SSE_SWEEP_S  # sweep once at the start
         final = False
+        presence.presence.attach(session_id)
         try:
+            await asyncio.to_thread(returned)
             yield "retry: 2000\n\n"
             while not await request.is_disconnected():
                 sent = False
@@ -772,6 +869,7 @@ async def session_events(
                     yield ": alive\n\n"
         finally:
             broker.unsubscribe(session_id, tokens)
+            presence.presence.detach(session_id, utcnow())
 
     return StreamingResponse(
         stream(),

@@ -39,6 +39,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import math
+import string
 from pathlib import Path
 
 import yaml
@@ -57,6 +58,20 @@ FALLBACK_PERSONA = "methodical_engineer"
 #: Every line a persona may override. Anything else in `lines:` is a typo, and
 #: a typo'd override is a line that silently never ships.
 LINE_NAMES = frozenset(f.name for f in dataclasses.fields(Lines))
+
+
+def placeholders(text: str) -> frozenset[str]:
+    """The `{names}` a line is formatted with."""
+    return frozenset(name for _, name, _, _ in string.Formatter().parse(text) if name)
+
+
+#: What each line must name, read off the neutral register's own template —
+#: so a new templated line needs no rule here. An override missing one says
+#: less than the line promises ("Next up: ." for a bridge with no {topic});
+#: one naming a field nobody fills raises KeyError mid-session.
+LINE_FIELDS: dict[str, frozenset[str]] = {
+    name: placeholders(getattr(LINES["neutral"], name)) for name in LINE_NAMES
+}
 
 
 class PersonaError(ValueError):
@@ -101,12 +116,11 @@ class Persona(BaseModel):
             verdict = screen(text)
             if not verdict.ok:
                 raise ValueError(f"line {name!r} is refused by the guard: {verdict.reason}")
-        if "bridge_to" in value and "{topic}" not in value["bridge_to"]:
-            raise ValueError("line 'bridge_to' must name the next topic with {topic}")
-        if "pace_focus" in value and not all(
-            part in value["pace_focus"] for part in ("{minutes}", "{topic}")
-        ):
-            raise ValueError("line 'pace_focus' must say {minutes} and {topic}")
+        for name, text in value.items():
+            have, need = placeholders(text), LINE_FIELDS[name]
+            if have != need:
+                said = " and ".join(f"{{{f}}}" for f in sorted(need)) or "no {placeholders}"
+                raise ValueError(f"line {name!r} must say {said}, as the register's does")
         return value
 
     # ── the mechanics the parameters drive ───────────────────────────────

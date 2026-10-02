@@ -22,9 +22,11 @@ import {
   useAnswer,
   useEnd,
   useHint,
+  useIdle,
   useMoveOn,
   usePause,
   useResume,
+  useResumeState,
   useRetry,
   useSession,
   useStart,
@@ -33,6 +35,9 @@ import { useInterviewStream } from "../stream";
 import type { HintOffer, Session, TurnView } from "../types";
 
 const THINKING_AFTER_MS = 800;
+/** A drop shorter than this is a blip: no banner, as the server counts no
+ *  reconnect for it either (presence.LOST_AFTER_S is 5 s). */
+const LOST_BANNER_AFTER_MS = 1500;
 
 function clock(seconds: number): string {
   const total = Math.max(0, Math.round(seconds));
@@ -40,7 +45,13 @@ function clock(seconds: number): string {
 }
 
 /** The timer, announced at 10, 5 and 1 minute (spec §8, accessibility). */
-function TimeRemaining({ session }: { session: Session }) {
+function TimeRemaining({
+  session,
+  running,
+}: {
+  session: Session;
+  running: boolean;
+}) {
   const [left, setLeft] = useState(session.time_remaining_s);
   const announced = useRef<Set<number>>(new Set());
   const [announcement, setAnnouncement] = useState("");
@@ -51,13 +62,14 @@ function TimeRemaining({ session }: { session: Session }) {
   );
 
   useEffect(() => {
-    if (session.status !== "live") return;
+    // §8: "Disconnected — timer paused". The server stops its clock too.
+    if (session.status !== "live" || !running) return;
     const timer = window.setInterval(
       () => setLeft((value) => Math.max(0, value - 1)),
       1000,
     );
     return () => window.clearInterval(timer);
-  }, [session.status]);
+  }, [session.status, running]);
 
   useEffect(() => {
     for (const minutes of [10, 5, 1]) {
@@ -140,7 +152,7 @@ function StatusStrip({
           : `Question ${Math.max(session.questions_asked, 1)}`}
       </span>
       <div className="ml-auto flex items-center gap-2">
-        <TimeRemaining session={session} />
+        <TimeRemaining session={session} running={connected} />
         {!connected && session.status === "live" && (
           <span
             className="text-2xs text-session-degraded"
@@ -254,6 +266,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const hint = useHint(sessionId);
   const retry = useRetry(sessionId);
   const moveOn = useMoveOn(sessionId);
+  const idle = useIdle(sessionId);
+  const resumeState = useResumeState(sessionId);
   const navigate = useNavigate();
 
   const [draft, setDraft] = useState("");
@@ -292,8 +306,86 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [data?.transcript.length, preview, thinking]);
 
+  // §6.8: "Welcome back — we were on question 4". Said when this page joins a
+  // session already under way (a reload) or the feed comes back after a drop
+  // — never on a first start, where there is nothing to come back to.
+  const [welcome, setWelcome] = useState<string | null>(null);
+  const underWayAtLoad = useRef<boolean | null>(null);
+  const everConnected = useRef(false);
+  const dropped = useRef(false);
+  if (data && underWayAtLoad.current === null) {
+    underWayAtLoad.current =
+      data.status === "live" && data.transcript.length > 0;
+  }
+  useEffect(() => {
+    if (!connected) {
+      if (everConnected.current) dropped.current = true;
+      return;
+    }
+    const returning =
+      dropped.current || (!everConnected.current && underWayAtLoad.current);
+    everConnected.current = true;
+    dropped.current = false;
+    if (!returning) return;
+    // After the stream is back, so the return it reports is on the log.
+    resumeState
+      .refetch()
+      .then((result) => setWelcome(result.data?.welcome ?? null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected]);
+  useEffect(() => setWelcome(null), [data?.questions_asked]);
+
+  // §8: "Lost connection — reconnecting…", after a moment, so a blip the
+  // server does not count as a disconnect does not flash a banner either.
+  const [lost, setLost] = useState(false);
+  useEffect(() => {
+    if (connected || data?.status !== "live" || !everConnected.current) {
+      setLost(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setLost(true), LOST_BANNER_AFTER_MS);
+    return () => window.clearTimeout(timer);
+  }, [connected, data?.status]);
+
+  // EC-6.1: the interviewer's patience, counted from the last keystroke —
+  // typing is not silence, which is why the browser says when and the server
+  // only decides what. Each prompt restarts the count for the next; after the
+  // offer to move on there are no more.
+  const [keptThinking, setKeptThinking] = useState(false);
+  useEffect(() => setKeptThinking(false), [data?.open_turn_id]);
+  useEffect(() => {
+    if (
+      !data ||
+      data.status !== "live" ||
+      !data.open_turn_id ||
+      !data.interviewer
+    )
+      return;
+    if (data.idle_offered || !connected) return;
+    const body = {
+      question_turn_id: data.open_turn_id,
+      n: data.idle_prompts + 1,
+    };
+    const timer = window.setTimeout(
+      () => idle.mutate(body, { onError: () => undefined }),
+      data.interviewer.idle_after_s * 1000,
+    );
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    data?.open_turn_id,
+    data?.idle_prompts,
+    data?.idle_offered,
+    data?.status,
+    connected,
+    draft,
+  ]);
+
   const notices = useMemo(
-    () => Object.values(data?.flags.degraded ?? {}),
+    () => [
+      ...Object.values(data?.flags.degraded ?? {}),
+      ...(data?.connection_note ? [data.connection_note] : []),
+    ],
     [data],
   );
 
@@ -358,6 +450,24 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             onEnd={() => end.mutate("ended_by_student")}
           />
 
+          {lost && (
+            <p
+              className="mt-3 rounded-lg border border-line bg-surface-sunken px-3 py-2 text-2xs text-session-degraded"
+              role="status"
+            >
+              Lost connection — reconnecting… The clock is paused until you're
+              back.
+            </p>
+          )}
+          {!lost && welcome && (
+            <p
+              className="mt-3 rounded-lg border border-brand-line bg-brand-soft/40 px-3 py-2 text-sm text-ink"
+              role="status"
+            >
+              {welcome}
+            </p>
+          )}
+
           {data.drill_claim && (
             <p className="mt-3 text-2xs text-ink-faint">
               Defending:{" "}
@@ -396,6 +506,35 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                 <span className="thinking-dot" />
                 <span className="thinking-dot" />
               </p>
+            )}
+
+            {data.status === "live" && data.idle_line && (
+              // EC-6.1: beside the question, not a new one — the answer box
+              // still answers what was asked.
+              <p
+                className="turn-interviewer whitespace-pre-wrap text-ink-soft"
+                role="status"
+              >
+                {data.idle_line}
+              </p>
+            )}
+            {data.status === "live" && data.idle_offered && !keptThinking && (
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  size="sm"
+                  onClick={() => moveOn.mutate()}
+                  disabled={waiting}
+                >
+                  {data.in_closing ? "Wrap up" : "Move on"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setKeptThinking(true)}
+                >
+                  Keep thinking
+                </Button>
+              </div>
             )}
             <div ref={bottom} />
           </div>

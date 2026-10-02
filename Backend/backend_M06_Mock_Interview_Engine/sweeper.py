@@ -31,7 +31,7 @@ from datetime import datetime
 from ai_core.timeutil import utcnow
 from sqlmodel import Session
 
-from . import outbox, store
+from . import outbox, presence, store
 from .adapters import Upstreams
 from .contracts import SessionStatus
 from .engine import Engine, ThetaCache
@@ -109,6 +109,12 @@ def _abandoned(state, now) -> bool:
     if state.status is SessionStatus.paused:
         paused_at = state.flags.paused_at
         return paused_at is not None and (now - paused_at).total_seconds() > ABANDONED_PAUSE_S
+    if state.status is SessionStatus.live and state.flags.away_since is not None:
+        # §8: a disconnect stops the clock, so the check below would never
+        # fire for a student who closed the tab mid-question. Away for as long
+        # as an abandoned pause is abandoned.
+        away_s = (now - state.flags.away_since).total_seconds()
+        return away_s > ABANDONED_PAUSE_S
     if state.status is SessionStatus.live:
         # Its own clock ran out, and then some. Measured on `time_used_s`
         # rather than on what is left, because `time_remaining_s` clamps at
@@ -132,6 +138,9 @@ def sweep_once(
     sweep has to reach the report the same way as one that arrived on a turn.
     """
     total = outbox.Drained()
+    # Disconnects nobody came back from become `connection.lost` first, so
+    # that the abandonment check below sees them on this same pass.
+    presence.sweep(session_factory, utcnow())
     close_abandoned(session_factory, upstreams, llm)
     with session_factory() as db:
         owing = outbox.sessions_owing(db, limit=SESSIONS_PER_SWEEP)

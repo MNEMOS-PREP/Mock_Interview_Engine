@@ -1,8 +1,8 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 85%** — 19 of 26 functional requirements met, 6 partially. **Days 1–10 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
+> **Completion: 87%** — 20 of 26 functional requirements met, 5 partially. **Days 1–11 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 11 **a session survives the student leaving**: the clock stops while their stage is gone, they come back to "we were on question 2 of Data structures", silence gets a prompt rather than a stare, and the spec's five chaos scenarios pass with nothing done twice. Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
 >
-> Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), segments with a persona each (FR-6.3), the probe ladder and break depths (FR-6.5, 6.6), hints at a published price (FR-6.7), modes as configs (FR-6.8), pause (FR-6.12), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), fixed context (FR-6.16), a report for every session (FR-6.18), re-planning (FR-6.4), Final Boss (FR-6.9), pacing and the reserved closing (FR-6.17), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
+> Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), segments with a persona each (FR-6.3), the probe ladder and break depths (FR-6.5, 6.6), hints at a published price (FR-6.7), modes as configs (FR-6.8), pause (FR-6.12), reconnect and resume (FR-6.13), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), fixed context (FR-6.16), a report for every session (FR-6.18), re-planning (FR-6.4), Final Boss (FR-6.9), pacing and the reserved closing (FR-6.17), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
 > Partly: closing questions (FR-6.21 — recorded and shown; scoring them waits on a rubric). Blocked: steelman (FR-6.20).
 >
@@ -43,10 +43,10 @@ _Nothing scouted for this module yet._
 
 | | |
 |---|---|
-| Status | **Days 1–10 of 15 done.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **317**, no socket opened, no API key |
-| Release gates (`-m gate`) | **58** |
-| Route decorators | **25** on `/v1`, plus `/health` and `/status` |
+| Status | **Days 1–11 of 15 done.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
+| Backend tests passing | **352**, no socket opened, no API key |
+| Release gates (`-m gate`) | **71** |
+| Route decorators | **27** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
 | Measured | strategist p95 **1106 ms**, interviewer first token p95 **919 ms**, a rung ≈ **2.0 s** to first visible token (AC-6.4 wants ≤ 2.5 s) — `Backend/reports/latency-*.json` |
@@ -79,7 +79,7 @@ _Nothing scouted for this module yet._
 | 8 | ✅ | Context management: §6.6's rolling round summary, bounded view; AC-6.10's mechanism gated, its number a harness run |
 | 9 | ✅ | Personas (7) as data, modes (4) as configs, guard on both directions (EC-6.4, 6.6), Practice's retry |
 | 10 | ✅ | Pacing 70/90 and a round's own clock, the closing runs, re-plan from hot-path signals, M05 seeded from M04 |
-| 11 | ⬜ | Pause/resume, reconnect, idle prompts, auto-close, chaos tests |
+| 11 | ✅ | Presence (a disconnect stops the clock, a return restarts it after a grace), `resume-state`, idle prompts, the five chaos scenarios |
 | 12 | ⬜ | Degradation ladder, partial report, report page |
 | 13 | ⬜ | UI pass, `routes.tsx`, mobile, ARIA |
 | 14 | ⬜ | Scripted student 20 × 4, manual QA |
@@ -526,18 +526,96 @@ changed* and *Your questions for the interviewer* — the report's own note
 promises both are there. The stage shows the newest plan note, and at the
 closing an "Ask" button, its own placeholder, and no hint button.
 
-### Next: day 11
+### Day 11 — what landed
 
-1. **`GET /resume-state`** and the stage that re-attaches to it — "Welcome
-   back, we were on question N" (FR-6.13, EC-6.8).
-2. **Reconnect** with a 30 s grace; past two reconnects, suggest a break
-   rather than a third (AC-6.9).
-3. **Idle prompts** (EC-6.1) from the persona's `idle_after_s`: a gentle
-   prompt, a second, then the offer to move on — recorded as `idle.moved_on`.
-   `replan.signals()` already counts those for `struggling`; until day 11
-   writes one, that leg of the trigger cannot fire.
-4. **The chaos suite** (AC-6.16): kill mid-step, duplicate POST, two tabs,
-   sweeper racing a live step, the clock jumping a boundary.
+**Presence** (`presence.py`). In text mode a student is in the room while
+their stage's event stream is attached, so the stream is the signal:
+
+- **Gone.** The last stream detaching is noted in memory. Under five seconds
+  it is a refresh or a blip and nothing is written — the student never left.
+  Longer, and it becomes `connection.lost`, **dated when the stream went**,
+  written by whichever comes first: the student's return or the sweeper's
+  next pass. No timers anywhere — plain functions of `now`, so a test drives
+  it without sleeping. The clock stops (§8, "Disconnected — timer paused")
+  and the student's one pause is not spent on it.
+- **Back.** The stream re-attaching writes `connection.resumed`, counts the
+  reconnect, and restarts the clock after §6.8's 30-second grace. Any action
+  — an answer, a hint, a pause, End — is a return with no grace.
+- **Never back.** Away as long as an abandoned pause (30 min) and the sweeper
+  ends it. A stopped clock never runs out, so without this the session
+  would hold the candidate's one slot for ever — the lockout fixed before
+  day 9, back through a side door. Gated.
+- **`GET /resume-state`** (FR-6.13) is a pure read: the welcome line in the
+  interviewer's own register (*"Welcome back — we were on question 2 of
+  Data structures. Ready to keep going?"*, the number being the student's
+  count of new questions in the round), the open question, the tail, time
+  left, reconnects. A prefetch or a second fetch never counts a reconnect.
+- **More than two reconnects** (§6.8's "modality-degradation suggestion"):
+  text is already the floor in Phase 1, so the suggestion is the pause (if
+  unused) or the end, with the notes keeping everything answered.
+
+**Silence** (EC-6.1). The browser says *when* — it can see typing, the server
+cannot — and the interviewer decides *what*: a gentle prompt, a second, then
+the offer to move on, and never a fourth. Prompt *n* needs *n* times the
+persona's patience since the line was asked, a floor so a page cannot talk
+the interviewer into skipping a question early. The prompts are lines beside
+the question, never turns: the answer box still answers what was asked.
+Taking the offer records `idle.moved_on`; M02 hears `asked` and no
+`answered`, M13 hears nothing, and the notes say *"we moved on from this one
+after a pause"*, never a fail. Day 10's `struggling` trigger counts these as
+silences, and that leg could not fire until today — a test now proves it does.
+
+**The chaos suite** (AC-6.16, spec §12's five, in text mode):
+- A worker killed at three points mid-turn: the decision is not re-made, and
+  a fresh process carries on.
+- The stream dropped at turn 15: the clock and the welcome are right.
+- The provider down for 30 seconds: templates and the rule strategist carry
+  it, the model is used again once it is back, and the session completes.
+- Five refreshes: five clean resumes. Five quick refreshes count nothing.
+- A pause at turn 20, resumed four minutes later.
+- A retried answer is one answer.
+
+`nothing_twice()` reads AC-6.16's three straight off the tables: no question
+asked twice, no ledger row written twice, no evaluation queued twice.
+
+**Smarter on the way.** Persona line placeholders are now read off the
+register's own templates. A new templated line needs no validator rule, and
+an override naming a field nothing fills — a `KeyError` mid-session — fails
+the boot.
+
+**Found on the way.** The test of the stream's presence wiring hung: a live
+session's stream never ends, and the test client waits for it. The test now
+drives the endpoint's generator directly.
+
+Seventeen mutations at the call sites, all caught on the first pass — one of them in nine minutes, because the stream test waited on heartbeats. It is bounded by frame order now, and catches the same mutation in twenty seconds.
+
+**Frontend.**
+- The countdown stops while the feed is down.
+- "Lost connection — reconnecting…" shows after 1.5 s, so a blip the server
+  does not count never flashes a banner.
+- The welcome appears only on a reload into a session under way, or on a
+  return after a drop — never at a first start.
+- The idle timer counts from the last keystroke.
+- The idle line sits beside the question, and the offer brings *Move on* /
+  *Keep thinking*.
+- A moved-on question reads as one in the notes.
+
+### Next: day 12
+
+1. **The degradation ladder** (§10, EC-6.12). The outage chaos test already
+   completes on templates and rules. The ladder makes it a policy and makes
+   it visible:
+   - `flags.degradation_level` moves L0 → L3 → panic on what the session
+     actually saw;
+   - the circuit stops calling a model that keeps failing;
+   - Practice falls back to the single evaluator (`n1_practice`);
+   - the stage shows the "Wrapping up a little early" badge (§8).
+2. **Everything fails** → `aborted`, a partial report, no score, and the
+   honest apology: *"this one's on us, it doesn't count"*.
+3. **The report page honouring M13's display gate**: qualitative feedback
+   only until calibration says otherwise.
+4. **AC-6.9's number from the log**: `connection.resumed` over
+   `connection.lost`.
 
 ---
 
@@ -559,7 +637,7 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.10 | 🟡 Text runs; the turn contract carries `modality` | P0 | 1·text · voice ⛔ M11 · coding ⛔ M07 · canvas ⛔ M08 |
 | FR-6.11 | 🟡 Contract fixed and carried; nothing to switch to yet | P0 | 1·text |
 | FR-6.12 | ✅ Pause once ≤ 5 min, resume. The cap is applied on `/resume` for a student who comes back, and by the sweeper (EC-6.14) for one who does not — which used to lock them out of every future interview | P1 | 1 |
-| FR-6.13 | 🟡 Reconnect and resume from checkpoint — checkpoint recovery (stale, unreadable, failed write) is built and tested; `resume-state` and the "welcome back" flow are not (day 11) | P0 | 1 |
+| FR-6.13 | ✅ Reconnect and resume: checkpoint recovery (stale, unreadable, failed write); presence — a disconnect stops the clock, a return restarts it after a 30 s grace; `GET /resume-state` with "welcome back, we were on question N"; the stage re-attaches | P0 | 1 |
 | FR-6.14 | ✅ Evaluation never blocks the hot path — outbox written with the turn, delivered by a background task, an explicit drain, or the sweeper; claimed before sending; a status returns, never a number. Three obligations now: the answer text to M04 (so evidence resolves), the evaluation to M13, the coverage row to M02 — and the artifact goes first | P0 | 1 |
 | FR-6.15 | ✅ Interviewer cannot read scores, band or θ — `InterviewerView` + the type-graph gate | P0 | 1 |
 | FR-6.16 | ✅ Last six turns plus §6.6's rolling note, regenerated every four turns and REPLACING the dropped turns; bounded by construction, so a six-times-longer session is not a six-times-larger context | P0 | 1 |
@@ -598,7 +676,7 @@ Spec §13. A **[GATE]** is release-blocking; the rest are tracked.
 | AC-6.11 | 🟡 Prompt cache-hit ratio — measured: reported on 2 of 16 structured calls, never on a streamed one | ≥ 0.7, or "not measured" |
 | AC-6.12 | ⬜ Sessions where a student felt humiliated | 0 |
 | AC-6.17 **[GATE]** | ✅ The persona never changes the standard — for one answer, M13's payload and the strategist's prompt are identical across every mode, save the declared `ensemble`. **New in Revision 2**: §6.7 made the promise and the report printed it; nothing tested it | ✅ |
-| AC-6.16 | 🟡 Retries never double-ask or double-write — proven for the event key, a crashed step, and now two senders racing over one outbox row; the full chaos suite is day 11 | chaos test |
+| AC-6.16 | ✅ Retries never double-ask or double-write — the event key, a crashed step, two senders over one outbox row, and the spec's five chaos scenarios (`test_chaos.py`), each checked by `nothing_twice()` | chaos test |
 
 ---
 
@@ -609,14 +687,14 @@ difference between a demo and a product.
 
 | EC | | Expected behaviour |
 |---|---|---|
-| EC-6.1 | ⬜ Student says nothing for 45 s | One gentle prompt, then a second, then offer to move on. In text: idle timer from persona `patience` |
+| EC-6.1 | ✅ Student says nothing for 45 s | One gentle prompt, then a second, then offer to move on — never a fourth. In text: the browser's idle timer from persona `patience`, the server's floor of n × patience |
 | EC-6.2 | ✅ Student answers a different question | Redirected once, then judged as given |
 | EC-6.3 | ✅ Student asks the interviewer a question | Brief answer, then the question again |
 | EC-6.4 | ✅ Student is abusive / tests the AI | One neutral redirect, then end politely. Logged — `abusive` in the verdict (model) or the lexicon (fallback) |
 | EC-6.5 | 🟡 Student asks for the answer | A hint while hints last, else a graceful exit; M13's credit table is day 7 |
 | EC-6.6 | ✅ Answer contains prompt injection | Recognised spans stripped before the strategist; the guard model beside it; a flagged answer moves no θ; M13 neutralises before scoring; the report says a passage was set aside |
 | EC-6.7 | ⛔ Mic dies mid-answer | Phase 3 (M11) |
-| EC-6.8 | 🟡 Browser refresh | Resume from checkpoint — state survives; the stage UI that re-attaches does not exist yet |
+| EC-6.8 | ✅ Browser refresh | Resume from checkpoint; a refresh under 5 s is not a disconnect; a longer one is welcomed back to the same question with the clock right |
 | EC-6.9 | ✅ Session exceeds budget by 25% | Force closing (0% in Final Boss) — a round's own clock, and the closing at 90% of the session's |
 | EC-6.10 | ✅ Student ends at minute 3 | A report framed as a warm-up, not a failure |
 | EC-6.11 | ⬜ All modalities fail | Clean end, apology, no score |

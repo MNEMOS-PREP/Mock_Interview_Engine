@@ -27,6 +27,7 @@ export {
   useHint,
   useHistory,
   useModes,
+  useIdle,
   useMoveOn,
   usePause,
   usePersonas,

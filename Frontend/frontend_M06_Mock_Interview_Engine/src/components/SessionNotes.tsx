@@ -20,6 +20,13 @@ import { useReport } from "../api";
 import type { QuestionReport } from "../types";
 
 function depthSentence(question: QuestionReport): string {
+  if (
+    question.moved_on &&
+    !question.exchanges.some((e) => e.role === "candidate")
+  ) {
+    // Not a break and not a fail: the student chose to leave it.
+    return "We moved on from this one after a pause.";
+  }
   if (question.break_depth === 0) {
     return "We stopped at the opening question.";
   }

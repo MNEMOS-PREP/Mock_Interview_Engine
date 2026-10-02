@@ -20,6 +20,7 @@ import type {
   Health,
   ModeOption,
   PersonaCard,
+  ResumeState,
   Session,
   SessionReport,
   SessionSummary,
@@ -32,6 +33,7 @@ export const m06Keys = {
   modes: ["m06", "modes"] as const,
   personas: ["m06", "personas"] as const,
   session: (id: string) => ["m06", "session", id] as const,
+  resume: (id: string) => ["m06", "resume", id] as const,
   report: (id: string) => ["m06", "report", id] as const,
   history: (candidateId: string) => ["m06", "history", candidateId] as const,
 };
@@ -88,6 +90,17 @@ export function useSession(id: string | undefined) {
   });
 }
 
+/** §6.8: where the student was. Fetched on demand — after the stream has
+ *  re-attached, so the return it reports has already been recorded. */
+export function useResumeState(id: string | undefined) {
+  return useQuery({
+    queryKey: m06Keys.resume(id ?? "none"),
+    queryFn: () => api.get<ResumeState>(`/v1/interviews/${id}/resume-state`),
+    enabled: false,
+    staleTime: 0,
+  });
+}
+
 export function useReport(id: string | undefined) {
   return useQuery({
     queryKey: m06Keys.report(id ?? "none"),
@@ -101,7 +114,9 @@ export function useHistory() {
   return useQuery({
     queryKey: m06Keys.history(candidateId),
     queryFn: () =>
-      api.get<SessionSummary[]>(`/v1/interviews/by-candidate/${candidateId}?limit=20`),
+      api.get<SessionSummary[]>(
+        `/v1/interviews/by-candidate/${candidateId}?limit=20`,
+      ),
   });
 }
 
@@ -111,8 +126,11 @@ function useSessionWriter(id: string | undefined) {
   return (session: Session) => {
     client.setQueryData(m06Keys.session(session.id), session);
     client.invalidateQueries({ queryKey: m06Keys.report(session.id) });
-    client.invalidateQueries({ queryKey: m06Keys.history(session.candidate_id) });
-    if (id && id !== session.id) client.invalidateQueries({ queryKey: m06Keys.session(id) });
+    client.invalidateQueries({
+      queryKey: m06Keys.history(session.candidate_id),
+    });
+    if (id && id !== session.id)
+      client.invalidateQueries({ queryKey: m06Keys.session(id) });
   };
 }
 
@@ -192,7 +210,19 @@ export function useRetry(id: string) {
   });
 }
 
-/** §15.4: decline the retry and carry on. */
+/** EC-6.1: the student has been quiet on the open line. `n` is the prompt
+ *  expected next, so a retried request changes nothing (AC-6.16). A 409 means
+ *  "not yet" or "already answered" — both are fine to ignore. */
+export function useIdle(id: string) {
+  const write = useSessionWriter(id);
+  return useMutation({
+    mutationFn: (body: { question_turn_id: string; n: number }) =>
+      api.post<Session>(`/v1/interviews/${id}/idle`, body),
+    onSuccess: write,
+  });
+}
+
+/** §15.4: decline the retry and carry on. EC-6.1: take the offer to move on. */
 export function useMoveOn(id: string) {
   const write = useSessionWriter(id);
   return useMutation({
@@ -204,7 +234,8 @@ export function useMoveOn(id: string) {
 export function useEnd(id: string) {
   const write = useSessionWriter(id);
   return useMutation({
-    mutationFn: (reason: string) => api.post<Session>(`/v1/interviews/${id}/end`, { reason }),
+    mutationFn: (reason: string) =>
+      api.post<Session>(`/v1/interviews/${id}/end`, { reason }),
     onSuccess: write,
   });
 }

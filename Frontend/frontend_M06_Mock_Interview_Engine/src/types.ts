@@ -70,6 +70,8 @@ export interface SessionFlags {
   conduct_warnings: number;
   /** EC-6.6: answers the guard found instructions in. */
   inputs_flagged: number;
+  /** §8 "Disconnected — timer paused": when the stage went away, or null. */
+  away_since: string | null;
 }
 
 export interface PlannedSegment {
@@ -155,6 +157,13 @@ export interface Session {
   in_closing: boolean;
   /** §6.9's checkpoints passed — 70 and 90 (percent of the session). */
   time_warnings: number[];
+  /** EC-6.1 for the open line: silence prompts given (0–3), the last one,
+   *  and whether the interviewer has offered to move on. */
+  idle_prompts: number;
+  idle_line: string | null;
+  idle_offered: boolean;
+  /** §6.8: after more than two reconnects, what the student can do. */
+  connection_note: string | null;
   current_segment: number;
   questions_asked: number;
   /** The interviewer turn the answer box posts to. Null when nothing is open. */
@@ -198,6 +207,8 @@ export interface QuestionReport {
   ceiling: number | null;
   hints_used: number;
   strong_answer_covers: string[];
+  /** EC-6.1: moved on after a silence — nothing was answered, nothing scored. */
+  moved_on: boolean;
 }
 
 export interface SessionReport {
@@ -218,6 +229,22 @@ export interface SessionReport {
   plan_changes: string[];
   notes: string[];
   persona_note: string;
+}
+
+/** §6.8: what a returning page needs (`GET /resume-state`). A read only —
+ *  the return itself is recorded by the stream re-attaching. */
+export interface ResumeState {
+  session_id: string;
+  status: SessionStatus;
+  away: boolean;
+  /** "Welcome back — we were on question 4 of Data structures." */
+  welcome: string | null;
+  open_question: TurnView | null;
+  transcript_tail: TurnView[];
+  time_remaining_s: number;
+  grace_s: number;
+  reconnect_count: number;
+  connection_note: string | null;
 }
 
 /** One frame of the live stream (public.py). */

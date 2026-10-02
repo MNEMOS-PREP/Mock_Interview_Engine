@@ -26,7 +26,7 @@ before anything the interviewer can read is built from this state (FR-6.15).
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from ai_core.timeutil import as_utc
@@ -108,6 +108,12 @@ class SessionState(BaseModel):
     closing_asked: int = 0
     #: FR-6.21: what the student asked, in their words. Recorded, not scored.
     closing_questions: list[str] = Field(default_factory=list)
+    #: EC-6.1, for the line now open: prompts given for silence (1, 2), the
+    #: last one said, and whether the third — the offer to move on — has
+    #: been made. Never a turn: the answer box keeps posting to the question.
+    idle_prompts: int = 0
+    idle_line: str | None = None
+    idle_offer: bool = False
     #: The index the NEXT turn will take.
     next_turn_index: int = 0
     transcript: list[TurnView] = Field(default_factory=list)
@@ -286,6 +292,7 @@ def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
     s.open_turn_id = turn_id
     s.pending_move = None
     s.awaiting_next = False
+    _clear_idle(s)
     # Said with this question, like the bridge, so not owed twice.
     s.pending_pace_line = None
     if p.get("nudged") and s.current_segment not in s.nudged_segments:
@@ -323,7 +330,39 @@ def _answer_received(s: SessionState, p: dict, at: datetime) -> None:
         )
     )
     s.open_turn_id = None
+    _clear_idle(s)
     s.next_turn_index = max(s.next_turn_index, int(p["turn_index"]) + 1)
+
+
+def _clear_idle(s: SessionState) -> None:
+    s.idle_prompts = 0
+    s.idle_line = None
+    s.idle_offer = False
+
+
+def _idle_prompted(s: SessionState, p: dict, _at: datetime) -> None:
+    """EC-6.1: one gentle prompt, a second, then the offer to move on —
+    and never a fourth. The line is shown beside the question, not asked."""
+    _require_open(s, "idle.prompted")
+    if s.open_turn_id is None or str(s.open_turn_id) != str(p.get("for")):
+        raise InvalidTransition("That question has already been answered.")
+    if s.idle_offer:
+        raise InvalidTransition("The offer to move on has already been made.")
+    s.idle_prompts = int(p["n"])
+    s.idle_line = str(p["line"])
+    s.idle_offer = bool(p.get("offer"))
+
+
+def _idle_moved_on(s: SessionState, p: dict, _at: datetime) -> None:
+    """EC-6.1's third step, taken: the question is left unanswered and the
+    next one is owed. §6.4 reads these as silences."""
+    _require_open(s, "idle.moved_on")
+    if not s.idle_offer or s.open_turn_id is None or str(s.open_turn_id) != str(p.get("for")):
+        raise InvalidTransition("There is no offer to move on.")
+    s.open_turn_id = None
+    s.pending_move = None
+    s.awaiting_next = True
+    _clear_idle(s)
 
 
 def _probe_decided(s: SessionState, p: dict, _at: datetime) -> None:
@@ -442,8 +481,28 @@ def _resumed(s: SessionState, _p: dict, at: datetime) -> None:
     s.live_since = at
 
 
-def _reconnected(s: SessionState, _p: dict, _at: datetime) -> None:
+def _connection_lost(s: SessionState, _p: dict, at: datetime) -> None:
+    """§8: "Disconnected — timer paused". Not a pause: the student's one
+    pause (FR-6.12) is theirs to spend, and losing a connection is not
+    spending it."""
+    if s.status is not SessionStatus.live:
+        raise InvalidTransition(f"connection.lost from {s.status.value}")
+    if s.flags.away_since is not None:
+        raise InvalidTransition("connection.lost while already away")
+    _stop_clock(s, at)
+    s.flags.away_since = at
+
+
+def _connection_resumed(s: SessionState, p: dict, at: datetime) -> None:
+    """§6.8: back, and the clock restarts after the grace — "a 30-second
+    grace before the timer restarts". A return that is an action (an
+    answer, a hint) has no grace: the student is already going."""
+    if s.flags.away_since is None:
+        raise InvalidTransition("connection.resumed while not away")
+    s.flags.away_since = None
     s.flags.reconnect_count += 1
+    if s.status is SessionStatus.live:
+        s.live_since = at + timedelta(seconds=float(p.get("grace_s") or 0.0))
 
 
 def _closing_line(s: SessionState, p: dict, at: datetime) -> None:
@@ -469,6 +528,8 @@ def _ended(s: SessionState, p: dict, at: datetime) -> None:
     s.ended_at = at
     s.end_reason = p.get("reason", "completed")
     s.open_turn_id = None
+    s.flags.away_since = None
+    _clear_idle(s)
     _closing_line(s, p, at)
 
 
@@ -480,6 +541,8 @@ def _aborted(s: SessionState, p: dict, at: datetime) -> None:
     s.ended_at = at
     s.end_reason = p.get("reason", "aborted")
     s.open_turn_id = None
+    s.flags.away_since = None
+    _clear_idle(s)
 
 
 def _summary_written(s: SessionState, p: dict, _at: datetime) -> None:
@@ -519,7 +582,10 @@ _REDUCERS = {
     "segment.transition": _segment_transition,
     "session.paused": _paused,
     "session.resumed": _resumed,
-    "session.reconnected": _reconnected,
+    "connection.lost": _connection_lost,
+    "connection.resumed": _connection_resumed,
+    "idle.prompted": _idle_prompted,
+    "idle.moved_on": _idle_moved_on,
     "session.ended": _ended,
     "session.aborted": _aborted,
     "upstream.degraded": _degraded,

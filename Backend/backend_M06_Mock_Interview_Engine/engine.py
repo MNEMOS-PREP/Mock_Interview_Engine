@@ -31,7 +31,7 @@ from ai_core.timeutil import utcnow
 from ai_core.versions import VersionStamp
 from sqlmodel import Session, select
 
-from . import PROMPT_VERSION, outbox, pacing, planner, replan, store
+from . import PROMPT_VERSION, outbox, pacing, planner, presence, replan, store
 from .adapters import Upstreams, UpstreamUnavailable
 from .agents import Interviewer, ProbeStrategist, Summariser, summariser
 from .agents.guard import SafetyGuard
@@ -233,6 +233,42 @@ def bridge_line(
     if arriving.kind == "warmup" or not arriving.title:
         return said.bridge
     return said.bridge_to.format(topic=arriving.title)
+
+
+#: EC-6.1: a gentle prompt, a second, then the offer to move on.
+IDLE_OFFER_AT = 3
+
+
+def welcome_line(state: SessionState) -> str | None:
+    """§6.8's "welcome back — we were on question 4 of the DSA round", in the
+    voice of whoever was asking. None when there is nothing to come back to.
+
+    The number is the question within its round, as the student counted it:
+    new questions only, not the follow-ups that went deeper on one.
+    """
+    if state.status not in (SessionStatus.live, SessionStatus.paused) or not state.transcript:
+        return None
+    said = speaker(state).said()
+    asked = state.open_question_turn()
+    if asked is not None and asked.question_source == "closing":
+        return said.welcome_back_closing
+    if asked is None:
+        return said.welcome_back.format(n=max(state.questions_asked, 1), topic="the interview")
+    segment = (
+        next((s for s in state.plan.segments if s.index == asked.segment_index), None)
+        if state.plan is not None
+        else None
+    )
+    if state.kind == SessionKind.drill.value:
+        topic = "the drill"
+    elif segment is not None and segment.kind == "warmup":
+        topic = "the warm-up"
+    elif segment is None or not segment.title:
+        topic = "the interview"
+    else:
+        topic = segment.title
+    n = state.questions_in_segment(asked.segment_index) if segment is not None else 1
+    return said.welcome_back.format(n=max(n, 1), topic=topic)
 
 
 def hint_offer(state: SessionState) -> HintOffer:
@@ -745,6 +781,7 @@ class Engine:
 
     def answer(self, session_id: uuid.UUID, question_turn_id: uuid.UUID, text: str) -> SessionState:
         row = self.row(session_id)
+        self.back(session_id)
         state = self.state(session_id)
         asked = state.turn(question_turn_id)
         if asked is None or asked.role != "interviewer":
@@ -786,6 +823,7 @@ class Engine:
         path fills it in — and leaving it empty here ended the first live
         session on a repeated question, with the interviewer saying nothing."""
         row = self.row(session_id)
+        self.back(session_id)
         state = self.state(session_id)
         aborted = state.status is SessionStatus.planned
         payload: dict = {"reason": reason}
@@ -973,6 +1011,7 @@ class Engine:
         student should not have to phrase a request to use a feature.
         """
         row = self.row(session_id)
+        self.back(session_id)
         state = self.state(session_id)
         offer = hint_offer(state)
         if not offer.available:
@@ -1249,6 +1288,7 @@ class Engine:
     def retry(self, session_id: uuid.UUID) -> SessionState:
         """Take the offered retry: the same question, a fresh ladder, not scored."""
         row = self.row(session_id)
+        self.back(session_id)
         state = self.state(session_id)
         offer = state.retry_offer
         if offer is None:
@@ -1288,19 +1328,88 @@ class Engine:
         return self.state(session_id)
 
     def move_on(self, session_id: uuid.UUID) -> SessionState:
-        """Decline the retry and carry on with the next question."""
+        """Take the next question: declining a retry (§15.4), or taking the
+        interviewer's offer after a silence (EC-6.1). At the closing, taking
+        that offer ends the session — there is nothing after the closing."""
         row = self.row(session_id)
+        self.back(session_id)
         state = self.state(session_id)
-        if state.retry_offer is None:
-            raise InvalidTransition("There is no retry on offer.")
+        if state.retry_offer is not None:
+            store.record(
+                self.db,
+                row,
+                "retry.declined",
+                step="retry-declined",
+                turn_index=state.next_turn_index,
+            )
+            return self.continue_session(session_id)
+        asked = state.turn(state.open_turn_id) if state.open_turn_id is not None else None
+        if not state.idle_offer or asked is None:
+            raise InvalidTransition("There is nothing to move on from.")
         store.record(
             self.db,
             row,
-            "retry.declined",
-            step="retry-declined",
-            turn_index=state.next_turn_index,
+            "idle.moved_on",
+            step="idle-moved-on",
+            turn_index=asked.turn_index,
+            payload={
+                "for": str(asked.turn_id),
+                # §6.4 counts these per round, as silences.
+                "segment_index": asked.segment_index,
+                "closing": asked.question_source == "closing",
+            },
         )
         return self.continue_session(session_id)
+
+    def idle(self, session_id: uuid.UUID, question_turn_id: uuid.UUID, n: int) -> SessionState:
+        """EC-6.1: the student has gone quiet. One gentle prompt, a second,
+        then the offer to move on — and never a fourth ("never loop forever").
+
+        The browser says when, because it knows about typing and the server
+        does not. The server decides what, and holds a floor: prompt `n`
+        needs `n` times the interviewer's patience since the line was asked,
+        so a page cannot talk the interviewer into skipping a question early.
+        `n` is the prompt the browser expects, which makes a retried request
+        a no-op rather than a second prompt (AC-6.16).
+        """
+        row = self.row(session_id)
+        self.back(session_id)
+        state = self.state(session_id)
+        if state.status is not SessionStatus.live:
+            raise InvalidTransition("The interview isn't running.")
+        if state.open_turn_id is None or state.open_turn_id != question_turn_id:
+            raise InvalidTransition("That question has already been answered.")
+        if n <= state.idle_prompts:
+            return state
+        if n != state.idle_prompts + 1 or state.idle_offer:
+            raise InvalidTransition("That prompt isn't next.")
+        asked = state.turn(state.open_turn_id)
+        who = speaker(state)
+        quiet_s = (self.clock() - asked.at).total_seconds()
+        if quiet_s < who.idle_after_s * n:
+            raise InvalidTransition("Not yet — there's still time on this one.")
+        said = who.said()
+        offer = n >= IDLE_OFFER_AT
+        if not offer:
+            line = said.idle_first if n == 1 else said.idle_second
+        elif asked.question_source == "closing":
+            line = said.idle_offer_closing
+        else:
+            line = said.idle_offer
+        store.record(
+            self.db,
+            row,
+            "idle.prompted",
+            step=f"idle:{n}",
+            turn_index=asked.turn_index,
+            payload={"for": str(asked.turn_id), "n": n, "line": line, "offer": offer},
+        )
+        return self.state(session_id)
+
+    def back(self, session_id: uuid.UUID, *, grace_s: float = 0.0) -> SessionState | None:
+        """The student is here (§6.8). From an action the clock restarts at
+        once; the stream re-attaching passes the 30-second grace instead."""
+        return presence.back(self.db, session_id, self.clock(), grace_s=grace_s)
 
     def _record_calls(
         self, row: InterviewSession, state: SessionState, calls: list[LLMResult]

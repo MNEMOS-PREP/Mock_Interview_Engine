@@ -84,6 +84,19 @@ class Lines:
     closing_more: str
     #: FR-6.21: the student has nothing to ask. Said before the close.
     closing_none: str
+    #: §6.8, after a disconnect: where we were, by number and topic — "we
+    #: were on question 4 of the DSA round".
+    welcome_back: str
+    #: §6.8, when the student was at the closing, asking us.
+    welcome_back_closing: str
+    #: EC-6.1, the first silence: permission, not pressure.
+    idle_first: str
+    #: EC-6.1, the second: a way in, still without a hint.
+    idle_second: str
+    #: EC-6.1, the third and last: the offer to move on. Never a fourth.
+    idle_offer: str
+    #: EC-6.1 at the closing: nothing to ask is a fine answer.
+    idle_offer_closing: str
 
 
 LINES: dict[Register, Lines] = {
@@ -121,6 +134,12 @@ LINES: dict[Register, Lines] = {
         ),
         closing_more="Anything else you'd like to ask?",
         closing_none="No problem at all.",
+        welcome_back="Welcome back — we were on question {n} of {topic}. Ready to keep going?",
+        welcome_back_closing="Welcome back — we were at your questions for me.",
+        idle_first="Take your time — thinking out loud is fine too.",
+        idle_second="No rush. Even a first step is a fine place to start.",
+        idle_offer="Want to leave this one and move on? That's completely fine.",
+        idle_offer_closing="No worries if nothing comes to mind — shall we wrap up?",
     ),
     "neutral": Lines(
         greeting="Hello. Let's begin.",
@@ -154,6 +173,12 @@ LINES: dict[Register, Lines] = {
         closing_ack="That's one to ask the real panel — I've put it in your notes.",
         closing_more="Anything else?",
         closing_none="Okay.",
+        welcome_back="Welcome back. We were on question {n} of {topic}.",
+        welcome_back_closing="Welcome back. We were at your questions for me.",
+        idle_first="Take your time.",
+        idle_second="A first step is a fine place to start.",
+        idle_offer="Shall we move on to the next one?",
+        idle_offer_closing="Shall we wrap up here?",
     ),
     "bar_raiser": Lines(
         greeting="Let's get started.",
@@ -188,6 +213,12 @@ LINES: dict[Register, Lines] = {
         closing_ack="Ask the real panel that one. It's in your notes.",
         closing_more="Anything else?",
         closing_none="Fine.",
+        welcome_back="Back. Question {n} of {topic}.",
+        welcome_back_closing="Back. Your questions.",
+        idle_first="Take a moment if you need it.",
+        idle_second="Start with what you know.",
+        idle_offer="Move on?",
+        idle_offer_closing="Wrap up?",
     ),
 }
 

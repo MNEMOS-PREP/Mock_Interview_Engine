@@ -308,7 +308,13 @@ class SessionFlags(BaseModel):
     camera_on: bool = False
     paused_at: datetime | None = None
     pause_used: bool = False
+    #: §6.8: returns after a disconnect. More than two, and the student is
+    #: offered a way out of a connection that keeps dropping.
     reconnect_count: int = 0
+    #: §8 "Disconnected — timer paused": when the student's stage went away,
+    #: or None while they are here. The clock does not run while it is set,
+    #: and the sweeper ends a session away longer than an abandoned pause.
+    away_since: datetime | None = None
     #: Outbox rows M13 has not accepted yet.
     evaluation_pending: int = 0
     #: Resolved at bootstrap. None is stated in the report, never hidden.

@@ -22,6 +22,9 @@ from .modes import mode_config
 from .personas import persona
 from .state import SessionState
 
+#: EC-6.1: the student moved on after a silence, so there was no answer.
+MOVED_ON = "We moved on from this one after a pause, so there was nothing to score."
+
 NOT_SCORED = {
     "m01_probe": "Practice drill — drills are not scored yet.",
     "local_fallback": (
@@ -70,6 +73,9 @@ class QuestionReport(BaseModel):
     #: §15.4: the student took a Practice retry on this one. The first
     #: attempt is the one scored; the retry is recorded beside it.
     retried: bool = False
+    #: EC-6.1: after a silence, the interviewer offered to move on and the
+    #: student took it. Not a break and not a fail — nothing was answered.
+    moved_on: bool = False
 
 
 class SessionReport(BaseModel):
@@ -201,6 +207,12 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
                 current.ceiling = int(p["ceiling"])
         elif event.kind == "hint.given" and current is not None:
             current.hints_used = int(p.get("level", current.hints_used))
+        elif event.kind == "idle.moved_on" and current is not None and not p.get("closing"):
+            current.moved_on = True
+            if not any(e.role == "candidate" for e in current.exchanges):
+                current.scored = False
+                current.scoring_status = "not_scored"
+                current.not_scored_reason = MOVED_ON
 
     notes = list(dict.fromkeys(state.flags.degraded.values()))
     # A student is told a consequence once. M04 owns consent, so when M04 is

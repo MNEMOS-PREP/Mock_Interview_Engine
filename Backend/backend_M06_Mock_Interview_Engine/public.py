@@ -24,7 +24,12 @@ _KEEP: dict[str, tuple[str, ...]] = {
     "session.started": (),
     "session.paused": (),
     "session.resumed": (),
-    "session.reconnected": (),
+    # §6.8: the stage shows "reconnecting…" and "back" from these.
+    "connection.lost": (),
+    "connection.resumed": ("grace_s",),
+    # EC-6.1: the prompt is said, so it is seen.
+    "idle.prompted": ("for", "n", "line", "offer"),
+    "idle.moved_on": ("for",),
     "session.ended": ("reason", "closing_text", "closing_turn_id", "closing_turn_index"),
     "session.aborted": ("reason",),
     "question.asked": (
