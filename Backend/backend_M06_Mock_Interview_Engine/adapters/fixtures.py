@@ -332,6 +332,8 @@ class FixtureEvaluator:
         self.round_types = round_types
         self.requests: list[dict[str, Any]] = []
         self.fail = False
+        #: With `fail`, the status M13 "answered" with; None is an outage.
+        self.fail_status: int | None = None
         #: M13's published credit table, as JSON delivers it — string keys.
         #: Settable so a test can republish it and check who kept the old one.
         self.hint_penalty: dict[str, float] = {"0": 1.0, "1": 0.85, "2": 0.7, "3": 0.5}
@@ -343,7 +345,9 @@ class FixtureEvaluator:
         from .base import UpstreamUnavailable
 
         if self.fail:
-            raise UpstreamUnavailable("M13", "fixture set to fail")
+            # An outage, or (with `fail_status`) an upstream that answered
+            # with an error — the outbox holds only the second.
+            raise UpstreamUnavailable("M13", "fixture set to fail", status=self.fail_status)
         self.requests.append(request)
         if self.on_request is not None:
             self.on_request(request)

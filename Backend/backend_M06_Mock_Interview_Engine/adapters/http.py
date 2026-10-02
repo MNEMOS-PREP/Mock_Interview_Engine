@@ -86,7 +86,7 @@ class JSONClient:
                 return Response(exc.code, payload)
             detail = payload.get("detail") if isinstance(payload, dict) else payload
             raise UpstreamUnavailable(
-                self.module, f"{method} {path} → {exc.code}: {detail}"
+                self.module, f"{method} {path} → {exc.code}: {detail}", status=exc.code
             ) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise UpstreamUnavailable(self.module, f"{method} {path}: {exc}") from exc

@@ -33,6 +33,7 @@ SERVICE_ONLY: dict[tuple[str, str], str] = {
     ("GET", "/v1/interviews/{}/transcript"): "M19's report, when it exists (§15.7)",
     ("GET", "/v1/interviews/{}/outbox"): "operations: what is still owed upstream",
     ("POST", "/v1/interviews/{}/outbox/drain"): "operations: deliver now",
+    ("POST", "/v1/interviews/{}/outbox/requeue"): "operations: stuck rows back, after a fix",
 }
 
 #: `@ai/core`'s client spells DELETE `del`.

@@ -834,8 +834,14 @@ them is theirs to do.
 **M06's own:**
 - FR-6.19's offline re-run harness and the Langfuse export.
 - AC-6.11 (prompt cache hits) measured on a streamed call.
-- Moving M06's outbox onto Platform_Core v0.10.0's shared `ai_core.outbox`,
-  as M13 did — the second consumer is what proves that library.
+- ~~Moving M06's outbox onto `ai_core.outbox`~~ — **done 2026-10-02**. M06's
+  three tables are `OutboxRow`s and its three destinations are `Channel`s.
+  It is the library's second consumer, after M13. What changed for a student
+  and for an operator:
+  - an M13 outage no longer holds a row;
+  - a 4xx is `rejected` after one try, not five;
+  - stuck rows are listed with their reasons, and staff can requeue them
+    (`POST /outbox/requeue`).
 - The live drill path with M01 running: the full chain on 2026-10-02 ran
   without M01, so the project segment was not exercised live.
 

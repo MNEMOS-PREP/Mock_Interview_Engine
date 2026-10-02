@@ -20,6 +20,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+from ai_core.outbox import OutboxRow
 from ai_core.timeutil import utcnow
 from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, SQLModel
@@ -109,8 +110,13 @@ class TurnRecord(SQLModel, table=True):
     at: datetime = Field(default_factory=utcnow)
 
 
-class EvaluationOutbox(SQLModel, table=True):
-    """One M13 request per answered turn, written with the turn (FR-6.14)."""
+class EvaluationOutbox(OutboxRow, table=True):
+    """One M13 request per answered turn, written with the turn (FR-6.14).
+
+    The delivery columns — state, attempts, failures, the claim, the backoff —
+    are `ai_core.outbox.OutboxRow`'s since 2026-10-02. M06 wrote its own on
+    day 4, and Platform_Core's was later written from them.
+    """
 
     __tablename__ = "m06_eval_outbox"
 
@@ -119,17 +125,9 @@ class EvaluationOutbox(SQLModel, table=True):
     turn_id: uuid.UUID = Field(unique=True)
     session_id: uuid.UUID = Field(index=True)
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    state: str = Field(default="pending", index=True)
-    attempts: int = 0
-    last_error: str | None = None
-    created_at: datetime = Field(default_factory=utcnow)
-    sent_at: datetime | None = None
-    #: When a drain took this row. Set with `sending`, so a row abandoned by a
-    #: crashed process can be told apart from one still in flight.
-    claimed_at: datetime | None = None
 
 
-class ArtifactOutbox(SQLModel, table=True):
+class ArtifactOutbox(OutboxRow, table=True):
     """The answer text M04 resolves M13's evidence against (M04 §5.1).
 
     M13 quotes character spans of the answer and cites `artifact_id =
@@ -150,15 +148,9 @@ class ArtifactOutbox(SQLModel, table=True):
     turn_id: uuid.UUID = Field(unique=True)
     session_id: uuid.UUID = Field(index=True)
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    state: str = Field(default="pending", index=True)
-    attempts: int = 0
-    last_error: str | None = None
-    created_at: datetime = Field(default_factory=utcnow)
-    sent_at: datetime | None = None
-    claimed_at: datetime | None = None
 
 
-class LedgerOutbox(SQLModel, table=True):
+class LedgerOutbox(OutboxRow, table=True):
     """M02 coverage ledger rows M06 owes (FR-6.24)."""
 
     __tablename__ = "m06_ledger_outbox"
@@ -179,12 +171,6 @@ class LedgerOutbox(SQLModel, table=True):
     #: NULLs are distinct in a unique constraint, so those rows are guarded by
     #: the writer instead (store.enqueue_ledger).
     turn_id: uuid.UUID | None = None
-    state: str = Field(default="pending", index=True)
-    attempts: int = 0
-    last_error: str | None = None
-    created_at: datetime = Field(default_factory=utcnow)
-    sent_at: datetime | None = None
-    claimed_at: datetime | None = None
 
 
 class LLMCall(SQLModel, table=True):

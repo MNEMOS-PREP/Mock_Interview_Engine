@@ -36,11 +36,28 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import Any
 
+from ai_core.outbox import (
+    HELD,
+    PENDING,
+    REJECTED,
+    SENDING,
+    SENT,
+    VOID,
+    Channel,
+    Outcome,
+    RetryPolicy,
+    classify_status,
+    deliver,
+    due,
+    summary,
+)
+from ai_core.outbox import requeue as requeue_rows
 from ai_core.timeutil import utcnow
-from sqlalchemy import update as sql_update
 from sqlmodel import Session, select
 
 from .adapters import Upstreams, UpstreamUnavailable
@@ -52,8 +69,9 @@ from .state import SessionState
 
 log = logging.getLogger("uvicorn.error")
 
-#: After this many failed attempts a row stops being retried automatically and
-#: stays visible instead. A row nobody can see is a row nobody fixes.
+#: After this many ANSWERED failures a row is held for a person instead of
+#: retried; it stays visible. An upstream that is down never counts — see
+#: "Delivering" below.
 MAX_ATTEMPTS = 5
 
 #: How many rows one drain moves. A student's own request pays for its own
@@ -65,10 +83,9 @@ DRAIN_LIMIT = 10
 #: from a request that is merely slow.
 STALE_CLAIM_S = 180
 
-PENDING, SENDING, SENT, HELD = "pending", "sending", "sent", "held"
-#: §10 "Everything fails": a row from a session that failed on our side.
-#: Never sent — "this one's on us, it doesn't count".
-VOID = "void"
+# The row states are Platform_Core's (`ai_core.outbox`): pending, sending,
+# sent, void, held, rejected. `void` is also §10's "everything fails" — a row
+# from a session that failed on our side, never sent.
 #: Quotes kept per dimension — the notes are for reading, not an audit.
 FEEDBACK_QUOTES = 3
 
@@ -264,8 +281,38 @@ def _ledger_exists(
 
 
 # ─────────────────────────────────────────────────────────────────────────
-#  Delivering
+#  Delivering — on Platform_Core's `ai_core.outbox` since 2026-10-02
 # ─────────────────────────────────────────────────────────────────────────
+#
+# M06 built this mechanism on day 4: claim before sending, a stale claim taken
+# over, held rows kept visible. Platform_Core's outbox was written from it, and
+# M13 moved onto that one first. M06 now does too, so the mechanism exists
+# once. What M06 keeps is only what it alone knows: what each upstream is
+# owed, that an evaluation waits for its answer text, and that M13's status
+# becomes an event on the session.
+#
+# Three things the shared mechanism adds:
+#   * **an outage is not the row's fault.** A row whose upstream did not answer
+#     is retried and never held; `held` means the upstream answered and still
+#     refused, which needs a person. M06 used to hold a row after five tries
+#     even when M13 was simply down.
+#   * **a 4xx is `rejected`**, not retried five times: the request will not
+#     change on its own.
+#   * **stuck rows are listed with their reasons** (`status()`), and
+#     `requeue()` puts them back once the cause is fixed.
+
+#: Why an evaluation is not sent yet: M04 refuses an observation whose
+#: evidence does not resolve, so an evaluation that overtakes its own artifact
+#: is scored into a rejection two modules downstream.
+WAITING_ON_ARTIFACT = "its answer text has not reached M04 yet"
+
+#: M06 drains a session's rows on the student's own requests (the answer, the
+#: end) and on the sweeper's pass. The pass interval IS the backoff, so a row
+#: carries none of its own: "it goes the moment M13 is back" stays true on
+#: the next request rather than after a timer set during the outage.
+POLICY = RetryPolicy(base_s=0.0, jitter=0.0, max_failures=MAX_ATTEMPTS, stale_claim_s=STALE_CLAIM_S)
+
+MODELS = (ArtifactOutbox, EvaluationOutbox, LedgerOutbox)
 
 
 @dataclass
@@ -275,56 +322,97 @@ class Drained:
     ledger_sent: int = 0
     #: Evaluations held back because M04 has not got the answer text yet.
     waiting_on_artifact: int = 0
+    #: Rows that did not go this time, for whatever reason.
     failed: int = 0
+    #: Rows newly waiting on a person: held (the upstream keeps answering with
+    #: an error) or rejected (it said no).
     held: int = 0
     #: Rows somebody else is sending. Not a failure, and not work left undone
     #: — it is the difference between "nothing owed" and "wait a moment".
     in_flight: int = 0
     #: turn_id -> what M13 said about it. The engine records these as events.
-    outcomes: dict[uuid.UUID, dict] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self.outcomes is None:
-            self.outcomes = {}
+    outcomes: dict[uuid.UUID, dict] = field(default_factory=dict)
+    #: Each channel's pass, as Platform_Core reports it.
+    passes: list[dict] = field(default_factory=list)
 
     @property
     def moved(self) -> int:
         return self.artifacts_sent + self.evaluations_sent + self.ledger_sent
 
 
-def _claim(db: Session, model, row, now: datetime) -> bool:
-    """Take this row for sending. False when another drain got there first.
+def _call(send: Callable[[], Any]) -> Outcome:
+    """An adapter call, as the outcome the shared mechanism settles a row on.
 
-    The UPDATE carries its own WHERE on the state we read, so the database —
-    not this process's memory of it — decides who owns the row. It commits
-    before the call returns, which is what makes the claim visible to the
-    other drain.
+    The adapters raise `UpstreamUnavailable` either way; its `status` says
+    whether anybody answered.
     """
-    statement = sql_update(model).where(model.id == row.id)
-    # The condition is the state we read. A queued row is claimed by its state;
-    # a row whose claim went stale is claimed by that claim's timestamp, so two
-    # drains reclaiming the same abandoned row cannot both win.
-    statement = (
-        statement.where(model.state == PENDING)
-        if row.state == PENDING
-        else statement.where(model.state == SENDING).where(model.claimed_at == row.claimed_at)
-    )
-    result = db.execute(statement.values(state=SENDING, claimed_at=now))
-    if not result.rowcount:
-        db.rollback()
-        return False
-    db.commit()
-    db.refresh(row)
-    return True
+    try:
+        return Outcome.sent(body=send())
+    except UpstreamUnavailable as exc:
+        if exc.status is None:
+            return Outcome.unreachable(exc.detail)
+        return Outcome(classify_status(exc.status).kind, exc.detail)
 
 
-def _fail(row, error: str, now: datetime) -> bool:
-    """Record the failure on the row. True when it has been held."""
-    row.attempts += 1
-    row.last_error = error[:500]
-    row.claimed_at = None
-    row.state = HELD if row.attempts >= MAX_ATTEMPTS else PENDING
-    return row.state == HELD
+def channels(
+    upstreams: Upstreams,
+    outcomes: dict[uuid.UUID, dict],
+    session_id: uuid.UUID | None = None,
+) -> list[tuple[str, Channel]]:
+    """What M06 owes, in the order it must go: an artifact before the
+    evaluation that cites it. Paired with the module each one needs."""
+
+    def artifact(rows: list[ArtifactOutbox]) -> Outcome:
+        return _call(lambda: upstreams.m04.register_artifact(rows[0].payload))
+
+    def evaluation(rows: list[EvaluationOutbox]) -> Outcome:
+        return _call(lambda: upstreams.m13.evaluate(rows[0].payload))
+
+    def ledger(rows: list[LedgerOutbox]) -> Outcome:
+        row = rows[0]
+        return _call(
+            lambda: upstreams.m02.record_coverage(
+                row.session_id,
+                row.candidate_id,
+                jd_id=row.jd_id,
+                requirement_id=row.requirement_id,
+                state=row.ledger_state,
+                turn_id=row.turn_id,
+            )
+        )
+
+    def waits_for_its_artifact(db: Session) -> Callable[[EvaluationOutbox], str | None]:
+        unresolved = _turns_without_an_artifact(db, session_id)
+        return lambda row: WAITING_ON_ARTIFACT if row.turn_id in unresolved else None
+
+    def scored(_db: Session, rows: list[EvaluationOutbox], outcome: Outcome) -> None:
+        if outcome.kind != "sent":
+            return
+        answer = outcome.body if isinstance(outcome.body, dict) else {}
+        for row in rows:
+            # A status, not a number. M13 owns the number and the gate that
+            # says whether anybody may see it.
+            outcomes[row.turn_id] = {
+                "status": str(answer.get("status", "unknown")),
+                "has_number": answer.get("composite") is not None,
+                "feedback": feedback(answer),
+            }
+
+    return [
+        ("M04", Channel("m04.artifacts", ArtifactOutbox, artifact, policy=POLICY)),
+        (
+            "M13",
+            Channel(
+                "m13.evaluations",
+                EvaluationOutbox,
+                evaluation,
+                waits_on=waits_for_its_artifact,
+                after=scored,
+                policy=POLICY,
+            ),
+        ),
+        ("M02", Channel("m02.coverage", LedgerOutbox, ledger, policy=POLICY)),
+    ]
 
 
 def drain(
@@ -334,89 +422,32 @@ def drain(
     session_id: uuid.UUID | None = None,
     limit: int = DRAIN_LIMIT,
 ) -> Drained:
-    """Move what is pending. Never raises: a failure is a row, not an outage."""
+    """Move what is owed — one session's rows, or everybody's. Never raises:
+    a failure is a row, not an outage."""
     out = Drained()
     now = utcnow()
-    # A snapshot, before this drain claims anything of its own.
-    out.in_flight = sum(
-        _sending(db, model, session_id, now)
-        for model in (ArtifactOutbox, EvaluationOutbox, LedgerOutbox)
-    )
-
-    # Artifacts first, and in their own pass: M04 refuses an observation whose
-    # evidence does not resolve, so an evaluation that overtakes its own
-    # artifact is scored into a rejection two modules downstream.
-    for row in _pending(db, ArtifactOutbox, session_id, limit):
-        if not upstreams.available("M04"):
-            out.failed += 1
+    # A snapshot, before this drain claims anything of its own: rows another
+    # sender holds are not due, so the shared pass never sees them.
+    out.in_flight = sum(_sending(db, model, session_id, now) for model in MODELS)
+    sent_into = {
+        ArtifactOutbox: "artifacts_sent",
+        EvaluationOutbox: "evaluations_sent",
+        LedgerOutbox: "ledger_sent",
+    }
+    for module, channel in channels(upstreams, out.outcomes, session_id):
+        model = channel.model
+        where = model.session_id == session_id if session_id is not None else None
+        if not upstreams.available(module):
+            # Known to be down: leave the rows exactly as they are.
+            out.failed += len(due(db, model, now=now, policy=POLICY, limit=limit, where=where))
             continue
-        if not _claim(db, ArtifactOutbox, row, now):
-            continue
-        try:
-            upstreams.m04.register_artifact(row.payload)
-        except UpstreamUnavailable as exc:
-            out.held += int(_fail(row, str(exc), now))
-            out.failed += 1
-            db.commit()
-            continue
-        row.state, row.sent_at, row.last_error, row.claimed_at = SENT, now, None, None
-        out.artifacts_sent += 1
-    db.commit()
-
-    unresolved = _turns_without_an_artifact(db, session_id)
-    for row in _pending(db, EvaluationOutbox, session_id, limit):
-        if row.turn_id in unresolved:
-            # Its artifact has not landed. Next drain, or the sweeper.
-            out.waiting_on_artifact += 1
-            continue
-        if not upstreams.available("M13"):
-            out.failed += 1
-            continue
-        if not _claim(db, EvaluationOutbox, row, now):
-            out.in_flight += 1
-            continue
-        try:
-            answer = upstreams.m13.evaluate(row.payload)
-        except UpstreamUnavailable as exc:
-            out.held += int(_fail(row, str(exc), now))
-            out.failed += 1
-            db.commit()
-            continue
-        row.state, row.sent_at, row.last_error, row.claimed_at = SENT, now, None, None
-        out.evaluations_sent += 1
-        # A status, not a number. M13 owns the number and the gate that says
-        # whether anybody may see it.
-        out.outcomes[row.turn_id] = {
-            "status": str(answer.get("status", "unknown")),
-            "has_number": answer.get("composite") is not None,
-            "feedback": feedback(answer),
-        }
-
-    for row in _pending(db, LedgerOutbox, session_id, limit):
-        if not upstreams.available("M02"):
-            out.failed += 1
-            continue
-        if not _claim(db, LedgerOutbox, row, now):
-            out.in_flight += 1
-            continue
-        try:
-            upstreams.m02.record_coverage(
-                row.session_id,
-                row.candidate_id,
-                jd_id=row.jd_id,
-                requirement_id=row.requirement_id,
-                state=row.ledger_state,
-                turn_id=row.turn_id,
-            )
-        except UpstreamUnavailable as exc:
-            out.held += int(_fail(row, str(exc), now))
-            out.failed += 1
-            db.commit()
-            continue
-        row.state, row.sent_at, row.last_error, row.claimed_at = SENT, now, None, None
-        out.ledger_sent += 1
-
-    db.commit()
+        report = deliver(db, channel, now=now, limit=limit, where=where)
+        setattr(out, sent_into[model], getattr(out, sent_into[model]) + report.sent + report.void)
+        out.waiting_on_artifact += report.waiting.get(WAITING_ON_ARTIFACT, 0)
+        out.failed += report.deferred + report.retried + report.held + report.rejected
+        out.held += report.held + report.rejected
+        out.in_flight += report.in_flight
+        out.passes.append(report.as_dict())
     if out.failed:
         log.info("M06 outbox: %d moved, %d still waiting", out.moved, out.failed)
     return out
@@ -440,6 +471,16 @@ def _sending(db: Session, model, session_id: uuid.UUID | None, now: datetime) ->
     if session_id is not None:
         statement = statement.where(model.session_id == session_id)
     return len(list(db.exec(statement).all()))
+
+
+def requeue(db: Session, session_id: uuid.UUID | None = None) -> int:
+    """Stuck rows back in the queue — after a person fixed what held them."""
+    return sum(
+        requeue_rows(
+            db, model, where=model.session_id == session_id if session_id is not None else None
+        )
+        for model in MODELS
+    )
 
 
 def feedback(answer: dict) -> list[dict]:
@@ -481,7 +522,7 @@ def void_evaluations(db: Session, session_id: uuid.UUID, reason: str) -> int:
     rows = db.exec(
         select(EvaluationOutbox)
         .where(EvaluationOutbox.session_id == session_id)
-        .where(EvaluationOutbox.state.in_((PENDING, HELD)))
+        .where(EvaluationOutbox.state.in_((PENDING, HELD, REJECTED)))
     ).all()
     for row in rows:
         row.state = VOID
@@ -490,53 +531,57 @@ def void_evaluations(db: Session, session_id: uuid.UUID, reason: str) -> int:
     return len(rows)
 
 
-def _pending(db: Session, model, session_id: uuid.UUID | None, limit: int):
-    """Rows nobody is sending: queued, or claimed by a process that is gone."""
-    stale = utcnow() - timedelta(seconds=STALE_CLAIM_S)
-    statement = select(model).where(
-        (model.state == PENDING) | ((model.state == SENDING) & (model.claimed_at < stale))
-    )
-    if session_id is not None:
-        statement = statement.where(model.session_id == session_id)
-    return list(db.exec(statement.order_by(model.created_at).limit(limit)).all())
-
-
 def sessions_owing(db: Session, *, limit: int) -> list[uuid.UUID]:
-    """Sessions with a row nobody is sending — what the sweeper works through.
+    """Sessions with a row that is due — what the sweeper works through.
 
     Oldest row first, so a session that has been waiting longest is retried
     first and a busy session cannot starve a finished one.
     """
     seen: list[uuid.UUID] = []
-    for model in (ArtifactOutbox, EvaluationOutbox, LedgerOutbox):
-        for row in _pending(db, model, None, limit):
+    for model in MODELS:
+        for row in due(db, model, policy=POLICY, limit=limit):
             if row.session_id not in seen:
                 seen.append(row.session_id)
     return seen[:limit]
 
 
 def status(db: Session, session_id: uuid.UUID | None = None) -> dict:
-    """What is queued, and why anything failed — M13's `/v1/outbox`, for M06."""
+    """What is queued, what is stuck and why — M13's `/v1/outbox`, for M06.
 
-    def rows(model) -> list:
-        statement = select(model)
-        if session_id is not None:
-            statement = statement.where(model.session_id == session_id)
-        return list(db.exec(statement).all())
+    Platform_Core's `summary()` per table: counts by state, how long the oldest
+    owed row has waited, and every stuck row with its reason. A row nobody can
+    see is a row nobody fixes.
+    """
 
-    def summarise(items: list) -> dict:
+    def one(model) -> dict:
+        where = model.session_id == session_id if session_id is not None else None
+        s = summary(
+            db,
+            model,
+            where=where,
+            describe=lambda row: {
+                "session_id": str(row.session_id),
+                "turn_id": str(row.turn_id) if row.turn_id else None,
+            },
+        )
         return {
-            "pending": sum(1 for r in items if r.state == PENDING),
-            "sending": sum(1 for r in items if r.state == SENDING),
-            "sent": sum(1 for r in items if r.state == SENT),
-            "held": sum(1 for r in items if r.state == HELD),
-            "errors": sorted({r.last_error for r in items if r.last_error}),
+            "pending": s[PENDING],
+            "sending": s[SENDING],
+            "sent": s[SENT],
+            "held": s[HELD],
+            "rejected": s[REJECTED],
+            "void": s[VOID],
+            "owed": s["owed"],
+            "stuck": s["stuck"],
+            "oldest_owed_s": s["oldest_owed_s"],
+            "errors": [e["error"] for e in s["errors"]],
+            "stuck_rows": s["stuck_rows"],
         }
 
     return {
-        "artifacts": summarise(rows(ArtifactOutbox)),
-        "evaluations": summarise(rows(EvaluationOutbox)),
-        "coverage": summarise(rows(LedgerOutbox)),
+        "artifacts": one(ArtifactOutbox),
+        "evaluations": one(EvaluationOutbox),
+        "coverage": one(LedgerOutbox),
     }
 
 
@@ -556,6 +601,12 @@ def session_of(db: Session, session_id: uuid.UUID) -> InterviewSession | None:
 
 __all__ = [
     "DRAIN_LIMIT",
+    "MODELS",
+    "POLICY",
+    "REJECTED",
+    "WAITING_ON_ARTIFACT",
+    "channels",
+    "requeue",
     "SENDING",
     "STALE_CLAIM_S",
     "ENSEMBLE_BY_MODE",

@@ -229,17 +229,62 @@ def test_m13_being_down_keeps_the_row_and_the_student_is_told(db):
     assert engine.deliver(row.id).evaluations_sent == 1
 
 
-def test_a_row_nobody_can_deliver_is_held_rather_than_retried_for_ever(db):
+def test_an_outage_never_holds_a_row(db):
+    """`ai_core.outbox`: an upstream that does not answer says nothing about the
+    row. M06 used to hold a row after five tries even when M13 was simply
+    down, and then it needed a person to notice M13 had come back."""
+    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine.upstreams.m13.fail = True  # nobody answers
+    row = mock_with_plan(engine)
+    engine.start(row.id)
+    say(engine, row, "Linear.")
+    for _ in range(outbox.MAX_ATTEMPTS + 2):
+        engine.deliver(row.id)
+    waiting = queued(db, row.id)[0]
+    assert waiting.state == outbox.PENDING
+    assert waiting.attempts == outbox.MAX_ATTEMPTS + 2 and waiting.failures == 0
+
+    engine.upstreams.m13.fail = False
+    assert engine.deliver(row.id).evaluations_sent == 1
+
+
+def test_a_row_m13_keeps_refusing_is_held_and_shown_with_its_reason(db):
+    """Answered with an error, again and again: that needs a person. It stops
+    being retried and is listed — with the reason — rather than retried for
+    ever behind a `pending: 1`."""
     engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
     engine.upstreams.m13.fail = True
+    engine.upstreams.m13.fail_status = 500
     row = mock_with_plan(engine)
     engine.start(row.id)
     say(engine, row, "Linear.")
     for _ in range(outbox.MAX_ATTEMPTS):
         engine.deliver(row.id)
     held = queued(db, row.id)[0]
-    assert held.state == outbox.HELD
-    assert outbox.status(db, row.id)["evaluations"]["held"] == 1
+    assert held.state == outbox.HELD and held.failures == outbox.MAX_ATTEMPTS
+    shown = outbox.status(db, row.id)["evaluations"]
+    assert shown["held"] == 1 and shown["stuck"] == 1
+    assert shown["stuck_rows"][0]["turn_id"] == str(held.turn_id)
+    assert "fixture set to fail" in shown["stuck_rows"][0]["last_error"]
+
+    # Fixed, and put back by a person.
+    engine.upstreams.m13.fail = False
+    assert outbox.requeue(db, row.id) == 1
+    assert engine.deliver(row.id).evaluations_sent == 1
+
+
+def test_a_request_m13_will_never_take_is_rejected_not_retried(db):
+    """A 4xx will not change on its own: one try, then `rejected`."""
+    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine.upstreams.m13.fail = True
+    engine.upstreams.m13.fail_status = 422
+    row = mock_with_plan(engine)
+    engine.start(row.id)
+    say(engine, row, "Linear.")
+    engine.deliver(row.id)
+    engine.deliver(row.id)
+    rejected = queued(db, row.id)[0]
+    assert rejected.state == outbox.REJECTED and rejected.attempts == 1
 
 
 @pytest.mark.gate
@@ -519,11 +564,12 @@ def test_the_sweeper_retries_what_nobody_is_left_to_retry(engine_db):
 
 
 def test_the_sweeper_leaves_a_held_row_alone(engine_db):
-    """A row past MAX_ATTEMPTS is a row for a person to look at. Sweeping it
-    for ever would hide the problem and keep M13 busy with it."""
+    """A row M13 refused MAX_ATTEMPTS times is a row for a person to look at.
+    Sweeping it for ever would hide the problem and keep M13 busy with it."""
     db, session_factory = engine_db
     engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
     engine.upstreams.m13.fail = True
+    engine.upstreams.m13.fail_status = 500  # answered, and refused: a person's
     row = mock_with_plan(engine)
     engine.start(row.id)
     say(engine, row, "Linear.")
@@ -535,3 +581,14 @@ def test_the_sweeper_leaves_a_held_row_alone(engine_db):
     engine.upstreams.m13.fail = False
     assert sweeper.sweep_once(session_factory, engine.upstreams, NullLLM()).moved == 0
     assert outbox.sessions_owing(db, limit=5) == []
+
+
+def test_requeue_over_http_is_for_staff(client, as_student):
+    from .conftest import admin
+
+    sid = client.post("/v1/interviews", json={"minutes": 30}, headers=as_student).json()["id"]
+    assert (
+        client.post(f"/v1/interviews/{sid}/outbox/requeue", headers=as_student).status_code == 403
+    )
+    staff = client.post(f"/v1/interviews/{sid}/outbox/requeue", headers=admin())
+    assert staff.status_code == 200 and staff.json()["requeued"] == 0

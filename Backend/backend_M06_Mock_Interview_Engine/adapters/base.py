@@ -22,9 +22,13 @@ from uuid import UUID
 class UpstreamUnavailable(Exception):
     """The module could not be reached, or answered with something unusable."""
 
-    def __init__(self, module: str, detail: str):
+    def __init__(self, module: str, detail: str, status: int | None = None):
         self.module = module
         self.detail = detail
+        #: The HTTP status when the upstream ANSWERED with an error; None when
+        #: nobody answered. The outbox treats the two differently: an outage
+        #: is not the row's fault and never holds it (`ai_core.outbox`).
+        self.status = status
         super().__init__(f"{module}: {detail}")
 
 

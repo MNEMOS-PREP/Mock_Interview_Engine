@@ -800,6 +800,24 @@ def drain_outbox(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) ->
     }
 
 
+@router.post("/interviews/{session_id}/outbox/requeue")
+def requeue_outbox(
+    session_id: uuid.UUID,
+    principal: Principal | None = Depends(enforce_access),
+    engine: Engine = Depends(get_engine),
+) -> dict:
+    """Put this session's stuck rows back, after a person fixed what held them
+    (a rejected or held row is listed with its reason on `/outbox`). Staff
+    only: a student retrying a rejected request at will is a way to keep M13
+    busy, and fixing the cause is not theirs to do."""
+    if principal is None or principal.role is not Role.admin:
+        raise HTTPException(status_code=403, detail="Staff only.")
+    _row_or_404(engine.db, session_id)
+    requeued = outbox.requeue(engine.db, session_id)
+    drained = engine.deliver(session_id)
+    return {"requeued": requeued, "sent": drained.moved, **outbox.status(engine.db, session_id)}
+
+
 @router.get("/interviews/{session_id}/outbox")
 def read_outbox(session_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
     """What is queued for this session, and why anything failed."""
