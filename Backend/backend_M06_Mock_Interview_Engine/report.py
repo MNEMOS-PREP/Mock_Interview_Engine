@@ -22,6 +22,8 @@ from .modes import mode_config
 from .personas import persona
 from .state import SessionState
 
+#: §10 "Everything fails": what was still queued when the session failed.
+VOIDED = "Not scored — the session failed on our side, so it doesn't count."
 #: EC-6.1: the student moved on after a silence, so there was no answer.
 MOVED_ON = "We moved on from this one after a pause, so there was nothing to score."
 
@@ -47,6 +49,18 @@ class Exchange(BaseModel):
     depth: int = 0
     #: §15.4: part of a Practice retry — shown, and never the scored attempt.
     retry: bool = False
+
+
+class Feedback(BaseModel):
+    """M13's words about an answer, per dimension — never its numbers (§2.2;
+    M13's display gate holds those until they agree with human raters)."""
+
+    dimension: str
+    reasoning: str = ""
+    #: Key points the answer did not reach.
+    missing: list[str] = Field(default_factory=list)
+    #: The student's own sentences that counted, verified against the text.
+    quotes: list[str] = Field(default_factory=list)
 
 
 class QuestionReport(BaseModel):
@@ -76,6 +90,9 @@ class QuestionReport(BaseModel):
     #: EC-6.1: after a silence, the interviewer offered to move on and the
     #: student took it. Not a break and not a fail — nothing was answered.
     moved_on: bool = False
+    #: What M13 said about the answer, once it has scored it and the session
+    #: is over. Mid-session it would be a live verdict (§2.2).
+    feedback: list[Feedback] = Field(default_factory=list)
 
 
 class SessionReport(BaseModel):
@@ -114,6 +131,12 @@ class SessionReport(BaseModel):
 def _framing(state: SessionState, now: datetime) -> str:
     used = state.time_used_s(now)
     planned = state.requested_minutes * 60
+    if state.end_reason == "system_failure":
+        # §10 "Everything fails": the honest version, said once.
+        return (
+            "This one's on us — something on our side stopped working, so this session "
+            "doesn't count. Here's what we got through before it did."
+        )
     if state.status is SessionStatus.aborted:
         return "This session didn't get going, so there is nothing to review yet."
     if state.end_reason == "conduct":
@@ -144,8 +167,14 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
     current: QuestionReport | None = None
     final = state.is_final
 
+    by_turn: dict[str, QuestionReport] = {}
     for event in sorted(events, key=lambda e: e.seq):
         p = event.payload
+        if event.kind == "evaluation.completed":
+            entry = by_turn.get(str(p.get("turn_id")))
+            if entry is not None and final:
+                entry.feedback.extend(Feedback.model_validate(f) for f in p.get("feedback") or [])
+            continue
         if event.kind == "question.asked" and p.get("question_source") == "closing":
             # FR-6.21: the closing is not one of our questions. Its answers
             # are the student's own, and are listed on their own below.
@@ -190,6 +219,7 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
             )
             current.depth_reached = max(current.depth_reached, int(p.get("probe_depth") or 0))
         elif event.kind == "answer.received" and current is not None:
+            by_turn[str(p.get("turn_id"))] = current
             retry_turn = state.turn_retry(p.get("turn_id"))
             current.exchanges.append(
                 Exchange(role="candidate", text=p.get("text", ""), retry=retry_turn)
@@ -214,6 +244,12 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
                 current.scoring_status = "not_scored"
                 current.not_scored_reason = MOVED_ON
 
+    if state.end_reason == "system_failure":
+        for question in questions:
+            if question.scoring_status != "scored":
+                question.scored = False
+                question.scoring_status = "not_scored"
+                question.not_scored_reason = VOIDED
     notes = list(dict.fromkeys(state.flags.degraded.values()))
     # A student is told a consequence once. M04 owns consent, so when M04 is
     # absent its degradation sentence is already the whole story; adding this

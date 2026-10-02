@@ -20,6 +20,7 @@ import type {
   Health,
   ModeOption,
   PersonaCard,
+  Reliability,
   ResumeState,
   Session,
   SessionReport,
@@ -30,6 +31,7 @@ export const m06Keys = {
   health: ["m06", "health"] as const,
   deps: ["m06", "deps"] as const,
   agents: ["m06", "agents"] as const,
+  reliability: ["m06", "reliability"] as const,
   modes: ["m06", "modes"] as const,
   personas: ["m06", "personas"] as const,
   session: (id: string) => ["m06", "session", id] as const,
@@ -58,6 +60,16 @@ export function useAgents() {
   return useQuery({
     queryKey: m06Keys.agents,
     queryFn: () => api.get<AgentsResponse>("/v1/agents"),
+    retry: false,
+  });
+}
+
+/** AC-6.9 and §10's ladder, across every session. A student gets a 403,
+ *  and the System page simply leaves the card out. */
+export function useReliability() {
+  return useQuery({
+    queryKey: m06Keys.reliability,
+    queryFn: () => api.get<Reliability>("/v1/interviews/reliability"),
     retry: false,
   });
 }

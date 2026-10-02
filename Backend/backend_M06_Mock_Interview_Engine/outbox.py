@@ -66,6 +66,11 @@ DRAIN_LIMIT = 10
 STALE_CLAIM_S = 180
 
 PENDING, SENDING, SENT, HELD = "pending", "sending", "sent", "held"
+#: §10 "Everything fails": a row from a session that failed on our side.
+#: Never sent — "this one's on us, it doesn't count".
+VOID = "void"
+#: Quotes kept per dimension — the notes are for reading, not an audit.
+FEEDBACK_QUOTES = 3
 
 #: M13's ensemble configs, per mode — `modes.py` is the one table, and this
 #: name is kept because the fairness gate and the contract tests read it.
@@ -384,6 +389,7 @@ def drain(
         out.outcomes[row.turn_id] = {
             "status": str(answer.get("status", "unknown")),
             "has_number": answer.get("composite") is not None,
+            "feedback": feedback(answer),
         }
 
     for row in _pending(db, LedgerOutbox, session_id, limit):
@@ -434,6 +440,54 @@ def _sending(db: Session, model, session_id: uuid.UUID | None, now: datetime) ->
     if session_id is not None:
         statement = statement.where(model.session_id == session_id)
     return len(list(db.exec(statement).all()))
+
+
+def feedback(answer: dict) -> list[dict]:
+    """M13's words about one answer, without its numbers.
+
+    Per dimension: the evaluator's reasoning, the key points not reached, and
+    the student's own sentences that counted — verified spans only, because an
+    unverified quote captioned "what you said" is the one failure M13 exists
+    to prevent. This is what M13's evidence drawer shows a student while its
+    display gate holds the numbers back (M13 §6.7). No number is copied: M13
+    owns them and the gate on them, and a copy here would be the one that
+    went stale (Rule 3).
+    """
+    out: list[dict] = []
+    for score in answer.get("aggregated") or []:
+        quotes = [
+            str(span["quote"])
+            for ref in score.get("evidence") or []
+            if (span := ref.get("span") or {}).get("verified") and span.get("quote")
+        ]
+        item = {
+            "dimension": str(score.get("dimension_key") or ""),
+            "reasoning": str(score.get("reasoning") or "").strip(),
+            "missing": [str(m) for m in score.get("missing_key_points") or []],
+            "quotes": quotes[:FEEDBACK_QUOTES],
+        }
+        if item["reasoning"] or item["missing"] or item["quotes"]:
+            out.append(item)
+    return out
+
+
+def void_evaluations(db: Session, session_id: uuid.UUID, reason: str) -> int:
+    """§10 "Everything fails": nothing still queued for this session is sent.
+
+    Rows M13 already scored stand — they were answers given before anything
+    failed, scored like any other. What is voided is what the failure would
+    otherwise have sent on afterwards.
+    """
+    rows = db.exec(
+        select(EvaluationOutbox)
+        .where(EvaluationOutbox.session_id == session_id)
+        .where(EvaluationOutbox.state.in_((PENDING, HELD)))
+    ).all()
+    for row in rows:
+        row.state = VOID
+        row.last_error = reason[:500]
+    db.commit()
+    return len(rows)
 
 
 def _pending(db: Session, model, session_id: uuid.UUID | None, limit: int):
@@ -510,6 +564,7 @@ __all__ = [
     "MAX_ATTEMPTS",
     "PENDING",
     "SENT",
+    "VOID",
     "Drained",
     "drain",
     "artifact_request",
@@ -521,4 +576,6 @@ __all__ = [
     "sessions_owing",
     "scoreable",
     "status",
+    "void_evaluations",
+    "feedback",
 ]

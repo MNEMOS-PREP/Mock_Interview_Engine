@@ -29,6 +29,7 @@ export {
   useModes,
   useIdle,
   useMoveOn,
+  useReliability,
   usePause,
   usePersonas,
   usePlan,

@@ -157,7 +157,9 @@ class ProbeStrategist:
         if not self.enabled:
             return Decision(verdict=rule, fallback_reason="strategist disabled (ablation)")
         if not self.llm.available:
-            return Decision(verdict=rule, fallback_reason="no model configured")
+            return Decision(
+                verdict=rule, fallback_reason=getattr(self.llm, "reason", "no model configured")
+            )
 
         call = self.llm.structured(
             job=JOB_STRATEGIST,

@@ -32,6 +32,7 @@ from uuid import UUID
 from ai_core.timeutil import as_utc
 from pydantic import BaseModel, Field
 
+from . import degrade
 from .contracts import (
     DEPTH_CAP,
     InterviewPlan,
@@ -292,6 +293,7 @@ def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
     s.open_turn_id = turn_id
     s.pending_move = None
     s.awaiting_next = False
+    s.flags.step_failures = 0
     _clear_idle(s)
     # Said with this question, like the bridge, so not owed twice.
     s.pending_pace_line = None
@@ -445,6 +447,7 @@ def _plan_changed(s: SessionState, p: dict, _at: datetime) -> None:
     """FR-6.4: the new plan, with its `Replan` appended — the before stays."""
     _require_open(s, "plan.changed")
     s.plan = InterviewPlan.model_validate(p["plan"])
+    _relevel(s)
 
 
 def _time_warning(s: SessionState, p: dict, _at: datetime) -> None:
@@ -543,6 +546,7 @@ def _aborted(s: SessionState, p: dict, at: datetime) -> None:
     s.open_turn_id = None
     s.flags.away_since = None
     _clear_idle(s)
+    _closing_line(s, p, at)
 
 
 def _summary_written(s: SessionState, p: dict, _at: datetime) -> None:
@@ -552,6 +556,29 @@ def _summary_written(s: SessionState, p: dict, _at: datetime) -> None:
 
 def _degraded(s: SessionState, p: dict, _at: datetime) -> None:
     s.flags.degraded[p["module"]] = p["sentence"]
+    _relevel(s)
+
+
+def _relevel(s: SessionState) -> None:
+    """§10's rung, from what the session has seen (`degrade.level`)."""
+    wrapped = s.plan is not None and any(r.trigger == "degraded" for r in s.plan.replans)
+    s.flags.degradation_level = degrade.level(
+        model_failures=s.flags.model_failures,
+        upstream_degraded=bool(s.flags.degraded),
+        wrapped=wrapped,
+    )
+
+
+def _model_health(s: SessionState, p: dict, at: datetime) -> None:
+    """One turn's model calls, as one fact: they worked, or one failed."""
+    s.flags.model_tried_at = at
+    s.flags.model_failures = 0 if p.get("ok") else s.flags.model_failures + 1
+    _relevel(s)
+
+
+def _step_failed(s: SessionState, _p: dict, _at: datetime) -> None:
+    _require_open(s, "step.failed")
+    s.flags.step_failures += 1
 
 
 def _consent(s: SessionState, p: dict, _at: datetime) -> None:
@@ -589,6 +616,8 @@ _REDUCERS = {
     "session.ended": _ended,
     "session.aborted": _aborted,
     "upstream.degraded": _degraded,
+    "model.health": _model_health,
+    "step.failed": _step_failed,
     "consent.resolved": _consent,
     "evaluation.queued": _evaluation,
     "evaluation.completed": _evaluated,

@@ -70,6 +70,36 @@ function QuestionBlock({
         </p>
       )}
 
+      {question.feedback.length > 0 && (
+        // M13's words, never its numbers: the display gate holds those until
+        // they agree with human raters.
+        <div className="mt-4 space-y-3 rounded-lg border border-line p-3">
+          <p className="text-2xs uppercase tracking-wide text-ink-faint">
+            What the evaluator noticed
+          </p>
+          {question.feedback.map((item) => (
+            <div key={item.dimension} className="space-y-1">
+              <p className="text-2xs font-medium text-ink-soft">
+                {item.dimension}
+              </p>
+              {item.reasoning && (
+                <p className="text-sm text-ink">{item.reasoning}</p>
+              )}
+              {item.quotes.map((quote) => (
+                <p key={quote} className="turn-candidate text-sm">
+                  “{quote}”
+                </p>
+              ))}
+              {item.missing.length > 0 && (
+                <p className="text-2xs text-ink-faint">
+                  Not reached: {item.missing.join(" · ")}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {!question.scored && question.not_scored_reason && (
         <p className="mt-2 text-2xs text-ink-faint">
           {question.not_scored_reason}

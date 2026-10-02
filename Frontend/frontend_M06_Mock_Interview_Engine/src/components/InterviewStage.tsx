@@ -151,6 +151,15 @@ function StatusStrip({
           ? "Defend drill · not scored"
           : `Question ${Math.max(session.questions_asked, 1)}`}
       </span>
+      {(session.flags.degradation_level === "L3" ||
+        session.flags.degradation_level === "panic") &&
+        session.status === "live" && (
+          // §8: a subtle badge, and the only sign of it. The questions keep
+          // coming; they are simply not being phrased by a model.
+          <span className="text-2xs text-session-degraded" role="status">
+            Wrapping up a little early
+          </span>
+        )}
       <div className="ml-auto flex items-center gap-2">
         <TimeRemaining session={session} running={connected} />
         {!connected && session.status === "live" && (
@@ -641,7 +650,11 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
           ) : (
             <section className="mt-8 rounded-xl border border-line bg-surface p-5">
               <h2 className="text-sm font-semibold text-ink">
-                {data.kind === "drill" ? "That's the drill." : "That's time."}
+                {data.end_reason === "system_failure"
+                  ? "That one's on us."
+                  : data.kind === "drill"
+                    ? "That's the drill."
+                    : "That's time."}
               </h2>
               <p className="mt-1 text-sm text-ink-soft">
                 Your notes are ready — what was asked, how far each question

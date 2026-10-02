@@ -72,6 +72,11 @@ export interface SessionFlags {
   inputs_flagged: number;
   /** §8 "Disconnected — timer paused": when the stage went away, or null. */
   away_since: string | null;
+  /** §10's ladder: model turns failed running, and when it was last tried. */
+  model_failures: number;
+  model_tried_at: string | null;
+  /** §10 "Everything fails": steps that crashed running. */
+  step_failures: number;
 }
 
 export interface PlannedSegment {
@@ -96,7 +101,8 @@ export type ReplanTrigger =
   | "ceiling_hit"
   | "struggling"
   | "time_overrun"
-  | "modality_lost";
+  | "modality_lost"
+  | "degraded";
 
 /** §6.4: one change to the plan at a segment boundary, at most two a session.
  *  Mid-session the backend sends none of these — only `Session.plan_notes` —
@@ -196,6 +202,16 @@ export interface Exchange {
   depth: number;
 }
 
+/** M13's words about an answer, per dimension. Never its numbers. */
+export interface Feedback {
+  dimension: string;
+  reasoning: string;
+  /** Key points the answer did not reach. */
+  missing: string[];
+  /** The student's own sentences that counted, verified against the text. */
+  quotes: string[];
+}
+
 export interface QuestionReport {
   question: string;
   source: string;
@@ -209,6 +225,8 @@ export interface QuestionReport {
   strong_answer_covers: string[];
   /** EC-6.1: moved on after a silence — nothing was answered, nothing scored. */
   moved_on: boolean;
+  /** Once M13 has scored the answer and the session is over. */
+  feedback: Feedback[];
 }
 
 export interface SessionReport {
@@ -280,6 +298,20 @@ export interface AgentsResponse {
   agents: AgentRow[];
   model_on: boolean;
   step_graph: string;
+}
+
+/** AC-6.9 and §10, counted off the event log. Staff only. */
+export interface Reliability {
+  sessions: number;
+  disconnects: number;
+  returns: number;
+  /** Returns over disconnects; null until anyone has disconnected. */
+  reconnect_rate: number | null;
+  reconnect_target: number;
+  wrapped_early: number;
+  reached_panic: number;
+  crashed_steps: number;
+  ended_by_failure: number;
 }
 
 export interface Health {

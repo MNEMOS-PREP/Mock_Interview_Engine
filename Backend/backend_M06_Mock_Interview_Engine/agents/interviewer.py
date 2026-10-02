@@ -110,7 +110,10 @@ class Interviewer:
             )
         if not self.llm.available:
             return Utterance(
-                template, "template", fallback_reason="no model configured", question=template
+                template,
+                "template",
+                fallback_reason=getattr(self.llm, "reason", "no model configured"),
+                question=template,
             )
 
         system = SYSTEM.format(

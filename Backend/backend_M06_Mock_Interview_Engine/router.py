@@ -28,7 +28,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from . import outbox, presence, store
+from . import degrade, outbox, presence, store
 from . import report as report_module
 from .access import enforce_access, require_candidate
 from .adapters import Upstreams, get_upstreams
@@ -54,7 +54,7 @@ from .engine import (
     welcome_line,
 )
 from .llm import get_llm
-from .models import LLMCall
+from .models import InterviewSession, LLMCall, SessionEvent
 from .modes import MODES, mode_config
 from .orchestration import mermaid, snapshot
 from .personas import personas
@@ -205,6 +205,25 @@ class IdleIn(BaseModel):
     #: The prompt the browser expects next (1, 2, 3). A retried request
     #: names one already given and changes nothing (AC-6.16).
     n: int = Field(ge=1, le=3)
+
+
+class ReliabilityOut(BaseModel):
+    """AC-6.9 and §10, counted off the event log — not sampled, not estimated."""
+
+    sessions: int
+    #: `connection.lost` — disconnects long enough to be one (presence.py).
+    disconnects: int
+    #: `connection.resumed` — students who came back.
+    returns: int
+    #: AC-6.9: returns over disconnects. None until anyone has disconnected.
+    reconnect_rate: float | None
+    reconnect_target: float = 0.95
+    #: §10's ladder: sessions that wrapped up early (L3) and that reached panic.
+    wrapped_early: int
+    reached_panic: int
+    #: §10 "Everything fails": crashed steps, and the sessions they ended.
+    crashed_steps: int
+    ended_by_failure: int
 
 
 class ResumeStateOut(BaseModel):
@@ -360,6 +379,64 @@ def agents() -> dict:
         "model_on": get_llm().available,
         "step_graph": mermaid(compiled_step(get_llm())),
     }
+
+
+@router.get("/interviews/reliability", response_model=ReliabilityOut, tags=["meta"])
+def reliability(
+    principal: Principal | None = Depends(enforce_access),
+    db: Session = Depends(get_session),
+) -> ReliabilityOut:
+    """AC-6.9's reconnect rate and §10's ladder, across every session — staff
+    only, because it counts other students' sessions.
+
+    Declared before `/interviews/{session_id}`: a path parameter declared
+    first would claim "reliability" as an id and 422 on it.
+    """
+    if principal is None or principal.role is not Role.admin:
+        raise HTTPException(status_code=403, detail="Staff only.")
+    kinds = (
+        "connection.lost",
+        "connection.resumed",
+        "plan.changed",
+        "model.health",
+        "step.failed",
+        "session.aborted",
+    )
+    rows = db.exec(
+        select(SessionEvent)
+        .where(SessionEvent.kind.in_(kinds))
+        .order_by(SessionEvent.session_id, SessionEvent.seq)
+    ).all()
+    count = {kind: 0 for kind in kinds}
+    wrapped: set = set()
+    panicked: set = set()
+    streak: dict = {}
+    failed: set = set()
+    for row in rows:
+        count[row.kind] += 1
+        p = row.payload or {}
+        if row.kind == "plan.changed":
+            replans = (p.get("plan") or {}).get("replans") or []
+            if replans and replans[-1].get("trigger") == "degraded":
+                wrapped.add(row.session_id)
+        elif row.kind == "model.health":
+            streak[row.session_id] = 0 if p.get("ok") else streak.get(row.session_id, 0) + 1
+            if streak[row.session_id] >= degrade.PANIC_AFTER:
+                panicked.add(row.session_id)
+        elif row.kind == "session.aborted" and p.get("reason") == "system_failure":
+            failed.add(row.session_id)
+    sessions = len(db.exec(select(InterviewSession.id)).all())
+    lost, back = count["connection.lost"], count["connection.resumed"]
+    return ReliabilityOut(
+        sessions=sessions,
+        disconnects=lost,
+        returns=back,
+        reconnect_rate=round(back / lost, 3) if lost else None,
+        wrapped_early=len(wrapped),
+        reached_panic=len(panicked),
+        crashed_steps=count["step.failed"],
+        ended_by_failure=len(failed),
+    )
 
 
 @router.get("/interviews/modes", tags=["meta"])

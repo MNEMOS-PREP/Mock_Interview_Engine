@@ -31,7 +31,7 @@ from ai_core.timeutil import utcnow
 from ai_core.versions import VersionStamp
 from sqlmodel import Session, select
 
-from . import PROMPT_VERSION, outbox, pacing, planner, presence, replan, store
+from . import PROMPT_VERSION, degrade, outbox, pacing, planner, presence, replan, store
 from .adapters import Upstreams, UpstreamUnavailable
 from .agents import Interviewer, ProbeStrategist, Summariser, summariser
 from .agents.guard import SafetyGuard
@@ -924,12 +924,23 @@ class Engine:
             recorded=recorded,
             select=self._selector(row),
         )
-        result = run_step(
-            compiled_step(self.llm),
-            inp,
-            on_token=lambda token: self.tokens.publish(row.id, {"token": token}),
-        )
+        # §10, EC-6.12: in panic the model is not asked, except for one turn
+        # a minute to see whether it is back.
+        llm = self.llm
+        if degrade.circuit_open(state.flags.model_failures, state.flags.model_tried_at, now):
+            llm = degrade.CIRCUIT_OPEN
+        try:
+            result = run_step(
+                compiled_step(llm),
+                inp,
+                on_token=lambda token: self.tokens.publish(row.id, {"token": token}),
+            )
+        except Exception as exc:
+            if self._step_crashed(row, state, exc):
+                return  # §10 "Everything fails": ended, with the apology
+            raise
         self._record_calls(row, state, result.calls)
+        self._model_health(row, state, result.calls)
         for module, sentence in result.degraded.items():
             store.record(
                 self.db,
@@ -967,6 +978,97 @@ class Engine:
                 payload={"level": result.hint_level},
             )
         self._say(row, result)
+
+    # ── the degradation ladder (§10, EC-6.12) ────────────────────────────
+
+    def _model_health(self, row: InterviewSession, state: SessionState, calls) -> None:
+        """Record whether this turn's model calls worked, and act on the rung
+        it puts the session on: at L3, wrap up a little early."""
+        ok = degrade.model_turn(calls)
+        if ok is None:
+            return
+        recorded = store.record(
+            self.db,
+            row,
+            "model.health",
+            step=f"model:{state.last_seq}",
+            payload={"ok": ok},
+        )
+        after = recorded.state
+        wrapped = after.plan is not None and any(
+            r.trigger == "degraded" for r in after.plan.replans
+        )
+        if not ok and not wrapped and degrade.at_least(after.flags.degradation_level, "L3"):
+            self._wrap_up(row, after)
+
+    def _wrap_up(self, row: InterviewSession, state: SessionState) -> None:
+        """§8's "wrapping up a little early": the round in progress finishes
+        and the closing stays; the rounds after it give way, and M02 hears
+        `skipped` for them. Outside the two-re-plan cap — this is the session
+        protecting the student, not the plan wandering."""
+        from .contracts import Replan
+
+        segment = current_segment(state)
+        if state.plan is None or segment is None:
+            return
+        live = planner.live_segments(state.plan)
+        position = next((i for i, s in enumerate(live) if s.index == segment.index), 0)
+        later = {s.index for s in live[position + 1 :] if s.kind != "closing"}
+        before = [s.model_copy(deep=True) for s in state.plan.segments]
+        after = [s.model_copy(deep=True) for s in state.plan.segments]
+        for s in after:
+            if s.index in later:
+                s.dropped_reason = (
+                    "Left out to wrap up early — the interviewer's model was failing."
+                )
+        change = Replan(
+            at_segment=segment.index,
+            trigger="degraded",
+            signals={"model_failures": float(state.flags.model_failures)},
+            before=before,
+            after=after,
+            student_sentence=(
+                "The interviewer's model kept failing, so I wrapped up early rather than run "
+                "the rest of the plan on templates. The answers you gave are scored as usual."
+            ),
+            live_note=f"{degrade.BADGE}.",
+        )
+        self._record_plan_change(row, state, change)
+
+    def _step_crashed(self, row: InterviewSession, state: SessionState, exc: Exception) -> bool:
+        """§10 "Everything fails". The first crash is the caller's to retry —
+        the answer is on the log and the next request finishes the step. The
+        `ABORT_AFTER`th in a row ends the session honestly instead of leaving
+        the student watching a spinner: aborted, the apology said, nothing
+        still queued sent to be scored. True when it ended the session."""
+        log.warning("M06: step crashed for %s: %r", row.id, exc)
+        failures = state.flags.step_failures + 1
+        recorded = store.record(
+            self.db,
+            row,
+            "step.failed",
+            step=f"crash:{state.last_seq}:{failures}",
+            payload={"error": type(exc).__name__, "detail": str(exc)[:200]},
+        )
+        if recorded.state.flags.step_failures < degrade.ABORT_AFTER:
+            return False
+        state = recorded.state
+        closing_index = state.next_turn_index
+        store.record(
+            self.db,
+            row,
+            "session.aborted",
+            step="end",
+            payload={
+                "reason": "system_failure",
+                "closing_text": degrade.APOLOGY,
+                "closing_turn_id": str(_turn_id(row.id, closing_index)),
+                "closing_turn_index": closing_index,
+            },
+        )
+        outbox.void_evaluations(self.db, row.id, "the session failed on our side")
+        self._close_m05(row, self.state(row.id))
+        return True
 
     # ── the rolling summary (FR-6.16, spec §6.6) ─────────────────────────
 

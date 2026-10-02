@@ -145,7 +145,7 @@ class RoundTransition(BaseModel):
 
 
 ReplanTrigger = Literal[
-    "gap_discovered", "ceiling_hit", "struggling", "time_overrun", "modality_lost"
+    "gap_discovered", "ceiling_hit", "struggling", "time_overrun", "modality_lost", "degraded"
 ]
 
 
@@ -315,6 +315,14 @@ class SessionFlags(BaseModel):
     #: or None while they are here. The clock does not run while it is set,
     #: and the sweeper ends a session away longer than an abandoned pause.
     away_since: datetime | None = None
+    #: §10's ladder (`degrade.py`): the interviewer's model turns failed
+    #: running — a turn that made no model call says nothing either way — and
+    #: when the model was last tried, which is what the panic circuit's probe
+    #: is timed from.
+    model_failures: int = 0
+    model_tried_at: datetime | None = None
+    #: §10 "Everything fails": steps that crashed running.
+    step_failures: int = 0
     #: Outbox rows M13 has not accepted yet.
     evaluation_pending: int = 0
     #: Resolved at bootstrap. None is stated in the report, never hidden.

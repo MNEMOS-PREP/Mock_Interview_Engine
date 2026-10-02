@@ -160,24 +160,28 @@ class OutageLLM(StubLLM):
 
 @pytest.mark.gate
 def test_a_provider_down_for_thirty_seconds_does_not_stop_the_session(db):
-    """Templates and the rule strategist carry the outage (§6.2: structural
-    copy is never generated); when the provider is back, the model is used
-    again. The session completes and its report is whole.
+    """§12: "Provider 500s for 30 s → degradation ladder engages, session
+    completes". Thirty seconds at twenty a turn is two failed model turns:
+    templates and the rule strategist carry them (§6.2), the ladder reaches
+    L3 and wraps up early, and when the provider is back the model is used
+    again. (Three running would be panic — `test_degrade` covers that rung
+    and its one-minute probe.)
 
     The answers have substance on purpose: "I don't know" is decided by rule
     and never reaches the model, so it would test nothing here.
     """
+    from backend_M06_Mock_Interview_Engine import degrade
     from backend_M06_Mock_Interview_Engine.models import LLMCall
 
     clock = Clock()
     llm = OutageLLM(clock, seconds=30)
-    engine = make(db, plan=rounds_plan(("r1", 2, 6.0)), m05=deep_bank(), clock=clock, llm=llm)
-    row = session(engine, minutes=30)
-    for step in range(60):
+    engine = make(db, plan=rounds_plan(("r1", 8, 28.0)), m05=deep_bank(), clock=clock, llm=llm)
+    row = session(engine, minutes=45)
+    for step in range(80):
         state = engine.state(row.id)
         if state.is_final:
             break
-        clock.at(step * 10.0)  # ten seconds a turn: three turns inside the outage
+        clock.at(step * 20.0)  # twenty seconds a turn: the outage spans three
         if state.retry_offer is not None:
             engine.move_on(row.id)
         elif state.open_turn_id is None:
@@ -189,9 +193,13 @@ def test_a_provider_down_for_thirty_seconds_does_not_stop_the_session(db):
     state = engine.state(row.id)
     assert state.status is SessionStatus.ended
 
+    health = [e["ok"] for e in events(engine, row, "model.health")]
+    assert health[: degrade.WRAP_AFTER] == [False] * degrade.WRAP_AFTER, "no failed model turns"
+    triggers = [p["plan"]["replans"][-1]["trigger"] for p in events(engine, row, "plan.changed")]
+    assert "degraded" in triggers, "the ladder never engaged"
+    assert True in health, "the model was not used again once it was back"
     calls = db.exec(select(LLMCall).where(LLMCall.session_id == row.id)).all()
-    assert any(not c.ok for c in calls), "the outage never reached the session"
-    assert any(c.ok for c in calls), "the model was not used again once it was back"
+    assert any(not c.ok for c in calls) and any(c.ok for c in calls)
     built = report.build(state, store.events_for(db, row.id), clock())
     assert built.questions
     nothing_twice(db, engine, row)
