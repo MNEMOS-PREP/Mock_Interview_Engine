@@ -26,8 +26,14 @@ import { useNavigate } from "react-router-dom";
 
 import { Button, Card, ErrorNote, Spinner } from "@ai/core";
 
-import { useDropSegment, usePlan, useSession, useStart } from "../api";
-import type { PlannedSegment } from "../types";
+import {
+  useDropSegment,
+  usePersonas,
+  usePlan,
+  useSession,
+  useStart,
+} from "../api";
+import type { PersonaCard, PlannedSegment } from "../types";
 
 const KIND_LABEL: Record<string, string> = {
   warmup: "Warm-up",
@@ -45,10 +51,13 @@ function SegmentRow({
   segment,
   onDrop,
   busy,
+  who,
 }: {
   segment: PlannedSegment;
   onDrop: () => void;
   busy: boolean;
+  /** FR-6.3: a mock is a panel, so the preview says who runs each part. */
+  who?: PersonaCard;
 }) {
   const dropped = segment.dropped_reason !== null;
   return (
@@ -69,6 +78,7 @@ function SegmentRow({
           </span>
         </p>
         <p className="mt-0.5 text-2xs text-ink-faint">
+          {who && !dropped && `with ${who.name}, ${who.title} · `}
           {minutes(segment.minutes)}
           {segment.question_budget > 0 &&
             ` · ${segment.question_budget} question${segment.question_budget === 1 ? "" : "s"}`}
@@ -98,6 +108,8 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
   const plan = usePlan(sessionId);
   const drop = useDropSegment(sessionId);
   const start = useStart(sessionId);
+  const personas = usePersonas();
+  const byId = new Map((personas.data ?? []).map((card) => [card.id, card]));
   const navigate = useNavigate();
 
   const built = session.data?.plan;
@@ -112,7 +124,8 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
 
   useEffect(() => {
     // Somebody else started it, or this tab refreshed after starting.
-    if (session.data && !planned) navigate(`/mock/${sessionId}`, { replace: true });
+    if (session.data && !planned)
+      navigate(`/mock/${sessionId}`, { replace: true });
   }, [session.data, planned, navigate, sessionId]);
 
   if (session.isPending || (!built && plan.isPending)) {
@@ -129,7 +142,9 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-2xl font-semibold tracking-tight">Here is the plan</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">
+        Here is the plan
+      </h1>
       <p className="mt-2 max-w-prose text-sm leading-relaxed text-ink-soft">
         {built?.jd_id
           ? "Built from the job description you added, so the questions follow what the posting asks for."
@@ -140,13 +155,15 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
         <Card>
           {segments.length === 0 ? (
             <p className="text-sm text-ink-soft">
-              There is nothing to ask yet — the question bank had nothing for this session.
+              There is nothing to ask yet — the question bank had nothing for
+              this session.
             </p>
           ) : (
             <ul>
               {segments.map((segment) => (
                 <SegmentRow
                   key={segment.index}
+                  who={byId.get(segment.persona_id)}
                   segment={segment}
                   busy={drop.isPending}
                   onDrop={() => drop.mutate(segment.index)}
@@ -158,14 +175,15 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
       </div>
 
       <p className="mt-3 text-2xs text-ink-faint">
-        {minutes(totalMinutes)} · {totalQuestions} question{totalQuestions === 1 ? "" : "s"}
+        {minutes(totalMinutes)} · {totalQuestions} question
+        {totalQuestions === 1 ? "" : "s"}
         {" · you can pause once, for five minutes"}
       </p>
 
       {(built?.uncovered.length ?? 0) > 0 && (
         <p className="mt-4 max-w-prose text-2xs leading-relaxed text-ink-soft">
-          Not covered this time: {built?.uncovered.join(", ")}. There was not enough time for
-          everything the posting asks for.
+          Not covered this time: {built?.uncovered.join(", ")}. There was not
+          enough time for everything the posting asks for.
         </p>
       )}
 
@@ -173,7 +191,9 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
         <div className="mt-4">
           <ErrorNote
             message="That part could not be removed."
-            detail={drop.error instanceof Error ? drop.error.message : undefined}
+            detail={
+              drop.error instanceof Error ? drop.error.message : undefined
+            }
             onRetry={() => drop.reset()}
           />
         </div>
@@ -182,13 +202,19 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <Button
           onClick={() =>
-            start.mutate(undefined, { onSuccess: () => navigate(`/mock/${sessionId}`) })
+            start.mutate(undefined, {
+              onSuccess: () => navigate(`/mock/${sessionId}`),
+            })
           }
           disabled={start.isPending || drop.isPending}
         >
           {start.isPending ? "Starting…" : "Start the interview"}
         </Button>
-        <Button variant="ghost" onClick={() => navigate("/mock")} disabled={start.isPending}>
+        <Button
+          variant="ghost"
+          onClick={() => navigate("/mock")}
+          disabled={start.isPending}
+        >
           Not now
         </Button>
       </div>
@@ -197,7 +223,9 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
         <div className="mt-4">
           <ErrorNote
             message="That didn't start."
-            detail={start.error instanceof Error ? start.error.message : undefined}
+            detail={
+              start.error instanceof Error ? start.error.message : undefined
+            }
             onRetry={() => start.reset()}
           />
         </div>

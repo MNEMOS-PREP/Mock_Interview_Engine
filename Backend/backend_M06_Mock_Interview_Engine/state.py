@@ -576,6 +576,10 @@ def _model_health(s: SessionState, p: dict, at: datetime) -> None:
     _relevel(s)
 
 
+def _noted(s: SessionState, _p: dict, _at: datetime) -> None:
+    _require_open(s, "a note on the log")
+
+
 def _step_failed(s: SessionState, _p: dict, _at: datetime) -> None:
     _require_open(s, "step.failed")
     s.flags.step_failures += 1
@@ -618,6 +622,10 @@ _REDUCERS = {
     "upstream.degraded": _degraded,
     "model.health": _model_health,
     "step.failed": _step_failed,
+    # §7's repeat and ⚑ are on the log for the trace; neither changes the
+    # interview, so neither has anything to fold.
+    "question.repeated": _noted,
+    "question.flagged": _noted,
     "consent.resolved": _consent,
     "evaluation.queued": _evaluation,
     "evaluation.completed": _evaluated,

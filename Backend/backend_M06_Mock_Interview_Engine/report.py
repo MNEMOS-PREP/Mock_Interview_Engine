@@ -16,7 +16,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from .contracts import SessionStatus
+from .contracts import M05_OWNED, SessionStatus
 from .models import SessionEvent
 from .modes import mode_config
 from .personas import persona
@@ -192,7 +192,7 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
             if p.get("new_question", p.get("probe_move") is None) or current is None:
                 item = p.get("item") or {}
                 source = p.get("question_source") or "template"
-                scored = bool(p.get("rubric_round_type")) and source in ("m05_bank", "m05_fallback")
+                scored = bool(p.get("rubric_round_type")) and source in M05_OWNED
                 current = QuestionReport(
                     question=item.get("stem") or p.get("text", ""),
                     source=source,

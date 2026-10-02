@@ -21,10 +21,12 @@ import { Button, ErrorNote, Spinner } from "@ai/core";
 import {
   useAnswer,
   useEnd,
+  useFlag,
   useHint,
   useIdle,
   useMoveOn,
   usePause,
+  useRepeat,
   useResume,
   useResumeState,
   useRetry,
@@ -150,6 +152,9 @@ function StatusStrip({
         {session.kind === "drill"
           ? "Defend drill · not scored"
           : `Question ${Math.max(session.questions_asked, 1)}`}
+        {session.kind !== "drill" &&
+          roundTitle(session) &&
+          ` · ${roundTitle(session)}`}
       </span>
       {(session.flags.degradation_level === "L3" ||
         session.flags.degradation_level === "panic") &&
@@ -171,9 +176,7 @@ function StatusStrip({
           </span>
         )}
         {session.status === "live" && !session.flags.pause_used && (
-          <Button size="sm" variant="ghost" onClick={onPause} disabled={busy}>
-            Pause
-          </Button>
+          <PauseButton onPause={onPause} busy={busy} />
         )}
         {session.status === "paused" && (
           <Button size="sm" onClick={onResume} disabled={busy}>
@@ -265,6 +268,67 @@ function HintButton({
   );
 }
 
+/** The round the student is in, by M02's name for it — "Data structures",
+ *  not "segment 2". None for the warm-up and the closing, which say so. */
+function roundTitle(session: Session): string | null {
+  const segment = session.plan?.segments.find(
+    (s) => s.index === session.current_segment,
+  );
+  if (!segment || segment.kind === "warmup" || segment.kind === "closing")
+    return null;
+  return segment.title || null;
+}
+
+/** FR-6.12: one pause, five minutes. Spending it is a choice, so it asks. */
+function PauseButton({
+  onPause,
+  busy,
+}: {
+  onPause: () => void;
+  busy: boolean;
+}) {
+  const [asking, setAsking] = useState(false);
+  if (!asking) {
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => setAsking(true)}
+        disabled={busy}
+      >
+        Pause
+      </Button>
+    );
+  }
+  return (
+    <span
+      className="flex items-center gap-2"
+      role="group"
+      aria-label="Pause the interview"
+    >
+      <span className="text-2xs text-ink-soft">
+        Once, up to 5 min — the clock stops.
+      </span>
+      <Button
+        size="sm"
+        onClick={() => {
+          setAsking(false);
+          onPause();
+        }}
+        disabled={busy}
+      >
+        Pause now
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => setAsking(false)}>
+        Not yet
+      </Button>
+    </span>
+  );
+}
+
+/** §7's ⚑: a question that is broken goes back to the bank's owner (M05). */
+const FLAG_REASONS = ["Unclear", "Wrong or broken", "Not relevant to the role"];
+
 export function InterviewStage({ sessionId }: { sessionId: string }) {
   const session = useSession(sessionId);
   const start = useStart(sessionId);
@@ -276,6 +340,11 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const retry = useRetry(sessionId);
   const moveOn = useMoveOn(sessionId);
   const idle = useIdle(sessionId);
+  const repeat = useRepeat(sessionId);
+  const flag = useFlag(sessionId);
+  const [repeated, setRepeated] = useState<string | null>(null);
+  const [flagging, setFlagging] = useState(false);
+  const [flagged, setFlagged] = useState<string | null>(null);
   const resumeState = useResumeState(sessionId);
   const navigate = useNavigate();
 
@@ -362,6 +431,11 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   // offer to move on there are no more.
   const [keptThinking, setKeptThinking] = useState(false);
   useEffect(() => setKeptThinking(false), [data?.open_turn_id]);
+  useEffect(() => {
+    setRepeated(null);
+    setFlagged(null);
+    setFlagging(false);
+  }, [data?.questions_asked]);
   useEffect(() => {
     if (
       !data ||
@@ -628,11 +702,87 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     onTake={() => hint.mutate()}
                   />
                 )}
+                {!data.in_closing && canAnswer && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      repeat.mutate(undefined, {
+                        onSuccess: (turn) => setRepeated(turn.text),
+                      })
+                    }
+                    disabled={repeat.isPending}
+                  >
+                    Repeat the question
+                  </Button>
+                )}
+                {!data.in_closing && canAnswer && !flagged && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setFlagging((v) => !v)}
+                  >
+                    ⚑ Flag
+                  </Button>
+                )}
                 <span className="text-2xs text-ink-faint">
                   Ctrl or ⌘ + Enter sends. There is no score on this screen —
                   the notes come at the end.
                 </span>
               </div>
+              {repeated && (
+                // §7: verbatim — the words that were asked, nearest the box.
+                <p
+                  className="mt-3 turn-interviewer whitespace-pre-wrap text-ink-soft"
+                  role="status"
+                >
+                  {repeated}
+                </p>
+              )}
+              {flagging && data.open_turn_id && (
+                <div
+                  className="mt-3 flex flex-wrap items-center gap-2"
+                  role="group"
+                  aria-label="Why flag it"
+                >
+                  {FLAG_REASONS.map((reason) => (
+                    <Button
+                      key={reason}
+                      size="sm"
+                      variant="secondary"
+                      disabled={flag.isPending}
+                      onClick={() =>
+                        flag.mutate(
+                          { question_turn_id: data.open_turn_id!, reason },
+                          {
+                            onSuccess: (out) => {
+                              setFlagging(false);
+                              setFlagged(
+                                out.forwarded
+                                  ? "Thanks — flagged. It won't be picked for anyone again until it's fixed."
+                                  : "Recorded here — the question bank was unreachable, so it hasn't been excluded yet.",
+                              );
+                            },
+                            onError: () => {
+                              setFlagging(false);
+                              setFlagged(
+                                "This one comes from the backup set, so there's no bank entry to flag.",
+                              );
+                            },
+                          },
+                        )
+                      }
+                    >
+                      {reason}
+                    </Button>
+                  ))}
+                </div>
+              )}
+              {flagged && (
+                <p className="mt-2 text-2xs text-ink-faint" role="status">
+                  {flagged}
+                </p>
+              )}
               {answer.isError && (
                 <div className="mt-3">
                   <ErrorNote

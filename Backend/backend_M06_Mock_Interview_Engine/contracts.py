@@ -38,6 +38,9 @@ QuestionSource = Literal[
     # FR-6.21: the closing asks the student to ask.
     "closing",
 ]
+#: Sources whose items M05 owns: what M13 can resolve a package for, and what
+#: the ⚑ can ask M05 to exclude. `local_fallback` is M06's own backup set.
+M05_OWNED: frozenset[str] = frozenset({"m05_bank", "m05_fallback"})
 CompletionReason = Literal["submit", "timeout", "interrupted", "endpoint", "barge_in"]
 
 

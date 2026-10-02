@@ -30,6 +30,8 @@ _KEEP: dict[str, tuple[str, ...]] = {
     # EC-6.1: the prompt is said, so it is seen.
     "idle.prompted": ("for", "n", "line", "offer"),
     "idle.moved_on": ("for",),
+    "question.repeated": ("for",),
+    "question.flagged": ("question_id", "forwarded"),
     "session.ended": ("reason", "closing_text", "closing_turn_id", "closing_turn_index"),
     "session.aborted": ("reason",),
     "question.asked": (

@@ -38,12 +38,15 @@ from .agents.guard import SafetyGuard
 from .broker import TokenBroker, broker
 from .contracts import (
     DEPTH_CAP,
+    M05_OWNED,
+    PHASE1_MODALITIES,
     HintOffer,
     InterviewPlan,
     Move,
     PlannedSegment,
     SessionKind,
     SessionStatus,
+    TurnView,
 )
 from .items import Item, from_dict, from_drill, from_m05, to_dict
 from .ladder import LadderConfig, Outcome
@@ -1507,6 +1510,81 @@ class Engine:
             payload={"for": str(asked.turn_id), "n": n, "line": line, "offer": offer},
         )
         return self.state(session_id)
+
+    def repeat(self, session_id: uuid.UUID) -> TurnView:
+        """§7 "say that again": the open question, verbatim — never a new
+        phrasing, which could change what is being asked, and never a turn,
+        so the answer box still answers the question it was asked.
+
+        Recorded once per question for the trace; asking again returns the
+        same words without writing anything.
+        """
+        row = self.row(session_id)
+        self.back(session_id)
+        state = self.state(session_id)
+        asked = state.open_question_turn() if state.open_turn_id is not None else None
+        if state.status is not SessionStatus.live or asked is None:
+            raise InvalidTransition("There's no question open to repeat.")
+        store.record(
+            self.db,
+            row,
+            "question.repeated",
+            step=f"repeat:{asked.turn_index}",
+            turn_index=asked.turn_index,
+            payload={"for": str(asked.turn_id)},
+        )
+        return asked
+
+    def flag(
+        self, session_id: uuid.UUID, question_turn_id: uuid.UUID, reason: str, note: str
+    ) -> dict[str, Any]:
+        """§7's ⚑: the student says a question is broken. Forwarded to M05,
+        which owns the item and excludes it from selection (FR-5.19); recorded
+        here either way, so a flag M05 never heard about is still on the log
+        and the student is told which of the two happened."""
+        row = self.row(session_id)
+        state = self.state(session_id)
+        asked = state.turn(question_turn_id)
+        if (
+            asked is None
+            or asked.role != "interviewer"
+            or asked.question_id is None
+            or asked.question_source not in M05_OWNED
+        ):
+            raise InvalidTransition("Only a question from the bank can be flagged.")
+        forwarded = False
+        if self.upstreams.available("M05"):
+            try:
+                self.upstreams.m05.flag(asked.question_id, reason, note, row.candidate_id)
+                forwarded = True
+            except UpstreamUnavailable as exc:
+                log.info("M06: M05 flag failed for %s: %s", asked.question_id, exc)
+        store.record(
+            self.db,
+            row,
+            "question.flagged",
+            step=f"flag:{asked.question_id}",
+            turn_index=asked.turn_index,
+            payload={
+                "question_id": str(asked.question_id),
+                "reason": reason,
+                "forwarded": forwarded,
+            },
+        )
+        return {"question_id": str(asked.question_id), "forwarded": forwarded}
+
+    def switch_modality(self, session_id: uuid.UUID, to: str) -> SessionState:
+        """FR-6.11: the contract is fixed now; Phase 1 has one modality. A
+        switch to it is a no-op, and a switch to anything else says which
+        module it is waiting on, rather than pretending."""
+        self.row(session_id)
+        state = self.state(session_id)
+        if to not in {m.value for m in PHASE1_MODALITIES}:
+            waiting = {"coding": "the code editor (M07)", "design": "the design canvas (M08)"}
+            raise InvalidTransition(
+                f"Only typed answers for now — {waiting.get(to, to)} isn't built yet."
+            )
+        return state
 
     def back(self, session_id: uuid.UUID, *, grace_s: float = 0.0) -> SessionState | None:
         """The student is here (§6.8). From an action the clock restarts at

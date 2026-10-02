@@ -226,6 +226,24 @@ class ReliabilityOut(BaseModel):
     ended_by_failure: int
 
 
+class FlagIn(BaseModel):
+    question_turn_id: uuid.UUID
+    #: M05 takes any reason; the stage offers a short fixed list.
+    reason: str = Field(min_length=1, max_length=100)
+    note: str = Field(default="", max_length=1000)
+
+
+class FlagOut(BaseModel):
+    question_id: uuid.UUID
+    #: False when M05 was unreachable: the flag is on M06's log, and the item
+    #: has not been excluded from selection yet.
+    forwarded: bool
+
+
+class ModalityIn(BaseModel):
+    to: str = Field(min_length=1, max_length=20)
+
+
 class ResumeStateOut(BaseModel):
     """§6.8: what a student coming back needs, in one read."""
 
@@ -632,6 +650,44 @@ def idle_prompt(
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="No such session.") from exc
     except (InvalidTransition, store.ConcurrentWrite) as exc:
+        raise _conflict(exc) from exc
+
+
+@router.post("/interviews/{session_id}/repeat", response_model=TurnView)
+def repeat_question(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> TurnView:
+    """§7: "say that again" — the open question, verbatim."""
+    try:
+        return engine.repeat(session_id)
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
+    except (InvalidTransition, store.ConcurrentWrite) as exc:
+        raise _conflict(exc) from exc
+
+
+@router.post("/interviews/{session_id}/flag", response_model=FlagOut)
+def flag_question(
+    session_id: uuid.UUID, body: FlagIn, engine: Engine = Depends(get_engine)
+) -> FlagOut:
+    """§7's ⚑ — forwarded to M05's `/questions/{qid}/flag`."""
+    try:
+        out = engine.flag(session_id, body.question_turn_id, body.reason, body.note)
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
+    except (InvalidTransition, store.ConcurrentWrite) as exc:
+        raise _conflict(exc) from exc
+    return FlagOut(question_id=uuid.UUID(out["question_id"]), forwarded=out["forwarded"])
+
+
+@router.post("/interviews/{session_id}/switch-modality", response_model=SessionOut)
+def switch_modality(
+    session_id: uuid.UUID, body: ModalityIn, engine: Engine = Depends(get_engine)
+) -> SessionOut:
+    """FR-6.11: the contract, fixed in Phase 1 — typed answers only."""
+    try:
+        return session_out(engine.switch_modality(session_id, body.to))
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
+    except InvalidTransition as exc:
         raise _conflict(exc) from exc
 
 

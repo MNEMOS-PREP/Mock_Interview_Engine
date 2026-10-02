@@ -25,6 +25,7 @@ import type {
   Session,
   SessionReport,
   SessionSummary,
+  TurnView,
 } from "./types";
 
 export const m06Keys = {
@@ -230,6 +231,39 @@ export function useIdle(id: string) {
   return useMutation({
     mutationFn: (body: { question_turn_id: string; n: number }) =>
       api.post<Session>(`/v1/interviews/${id}/idle`, body),
+    onSuccess: write,
+  });
+}
+
+/** §7 "say that again": the open question, verbatim. */
+export function useRepeat(id: string) {
+  return useMutation({
+    mutationFn: () => api.post<TurnView>(`/v1/interviews/${id}/repeat`),
+  });
+}
+
+/** §7's ⚑ — forwarded to M05, which stops selecting the item. */
+export function useFlag(id: string) {
+  return useMutation({
+    mutationFn: (body: {
+      question_turn_id: string;
+      reason: string;
+      note?: string;
+    }) =>
+      api.post<{ question_id: string; forwarded: boolean }>(
+        `/v1/interviews/${id}/flag`,
+        body,
+      ),
+  });
+}
+
+/** FR-6.11: the modality contract. Phase 1 has one, so nothing calls this
+ *  with anything else yet — the hook exists so the contract has a client. */
+export function useSwitchModality(id: string) {
+  const write = useSessionWriter(id);
+  return useMutation({
+    mutationFn: (to: string) =>
+      api.post<Session>(`/v1/interviews/${id}/switch-modality`, { to }),
     onSuccess: write,
   });
 }
