@@ -29,7 +29,15 @@ from pydantic import BaseModel, Field
 
 Mode = Literal["practice", "mock", "real_drive", "final_boss"]
 SegmentKind = Literal["warmup", "technical", "project", "behavioural", "closing"]
-QuestionSource = Literal["m05_bank", "m05_fallback", "m01_probe", "local_fallback", "template"]
+QuestionSource = Literal[
+    "m05_bank",
+    "m05_fallback",
+    "m01_probe",
+    "local_fallback",
+    "template",
+    # FR-6.21: the closing asks the student to ask.
+    "closing",
+]
 CompletionReason = Literal["submit", "timeout", "interrupted", "endpoint", "barge_in"]
 
 
@@ -148,7 +156,13 @@ class Replan(BaseModel):
     signals: dict[str, float] = Field(default_factory=dict)
     before: list[PlannedSegment]
     after: list[PlannedSegment]
+    #: The report's sentence — why, fully (§6.4's "I changed the plan here
+    #: because…").
     student_sentence: str
+    #: The live toast — what, neutrally (§8: "Adjusting — I want to check
+    #: recursion first"). Never a description of the student, which
+    #: mid-session would be a live score by another name (§2.2).
+    live_note: str = ""
 
 
 class InterviewPlan(BaseModel):

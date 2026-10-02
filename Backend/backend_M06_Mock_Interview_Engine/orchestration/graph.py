@@ -39,6 +39,7 @@ the engine can forward them to SSE while the step is still running.
 from __future__ import annotations
 
 import operator
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -75,10 +76,16 @@ class Selected:
     #: The persona of the segment the item belongs to — also read before the
     #: crossing, so it travels with the item for the same reason.
     persona: Persona | None = None
+    #: §2.3's pace line, recorded during this selection — after the step's
+    #: state was read, so it travels with the item like the bridge does.
+    pace_line: str | None = None
 
 
 #: The QuestionPlanner's tool. Lives in the engine, which owns the adapters.
-Selector = Callable[[SessionState, datetime], Selected]
+#: The third argument is this step's own decision — the answer that ended a
+#: round has not been written to the log when the next question is selected,
+#: and §6.4 decides the boundary on it (see `pending_decision`).
+Selector = Callable[[SessionState, datetime, dict | None], Selected]
 
 
 @dataclass(frozen=True)
@@ -112,6 +119,8 @@ class StepResult:
     offer_retry: bool = False
     #: §6.7: the step said "let's keep it moving" for an over-long answer.
     nudged: bool = False
+    #: FR-6.21: the answer was a question for the interviewer, to record.
+    closing_question: bool = False
 
 
 def _merge(a: dict, b: dict) -> dict:
@@ -132,8 +141,10 @@ class StepState(TypedDict, total=False):
     finish: str
     bridge: str | None
     persona: Persona | None
+    pace_line: str | None
     offer_retry: bool
     nudged: bool
+    closing_question: bool
     calls: Annotated[list[LLMResult], operator.add]
     degraded: Annotated[dict[str, str], _merge]
 
@@ -147,6 +158,38 @@ NUDGEABLE = frozenset({"rung", "redirect_once", "answer_briefly"})
 
 #: Leave room for a real answer. Below this a new question is not asked.
 MIN_SECONDS_FOR_A_QUESTION = 60
+
+#: FR-6.21: how many questions the closing takes before it closes.
+MAX_CLOSING_QUESTIONS = 2
+
+#: FR-6.21: the whole answer says "nothing to ask". Only the whole answer —
+#: "no, I wanted to ask about the team" is a question.
+#: The phrases that, strung together with nothing else, mean "nothing to ask".
+#: "I don't know" is one of them at the closing: recording it as a question
+#: would put it in the student's notes as their ask for the panel.
+_NOTHING = (
+    r"no+",
+    r"nope",
+    r"nah",
+    r"nothing( else)?",
+    r"none",
+    r"not really",
+    r"no questions?( for (you|now))?",
+    r"i'?m good",
+    r"i am good",
+    r"that'?s (all|it)",
+    r"that is (all|it)",
+    r"all good",
+    r"thanks?( you)?",
+    r"i\s*(do\s*n[o']?t|dont)\s*know",
+    r"not sure",
+    r"no idea",
+    r"can'?t think of (any|anything)( right now)?",
+)
+NO_QUESTIONS = re.compile(
+    r"^\s*(?:(?:" + "|".join(_NOTHING) + r")[\s.,!]*)+$",
+    re.I,
+)
 
 
 @dataclass
@@ -182,6 +225,33 @@ def _question_to_repeat(state: SessionState) -> str:
     return turn.question_text or turn.text
 
 
+def pending_decision(s: StepState) -> dict | None:
+    """This step's decision, shaped like the `probe.decided` it will become.
+
+    The engine writes the decision AFTER the step, and the step selects the
+    next question INSIDE it — so a boundary that re-plans on the round's
+    answers would miss the last one. Found by the day-10 tests: three
+    failures read as two, and "struggling" fired as "gap".
+    """
+    outcome = s.get("outcome")
+    verdict = s.get("verdict")
+    inp = s["inp"]
+    if outcome is None or verdict is None or inp.recorded is not None:
+        return None
+    answer = next((t for t in reversed(inp.state.transcript) if t.role == "candidate"), None)
+    if answer is None:
+        return None
+    return {
+        "turn_index": answer.turn_index,
+        "payload": {
+            "move": outcome.move.model_dump(mode="json"),
+            "break_depth": outcome.break_depth,
+            "ceiling": outcome.ceiling,
+            "verdict": verdict.model_dump(mode="json"),
+        },
+    }
+
+
 def _emit(text: str) -> None:
     try:
         get_stream_writer()({"token": text})
@@ -202,6 +272,9 @@ def build(deps: Deps):
         inp = s["inp"]
         if inp.recorded is not None:
             return "replay_decision"
+        if inp.answer is not None and inp.item is not None and inp.item.source == "closing":
+            # FR-6.21: the student's question for us is not an answer to judge.
+            return "closing_reply"
         if inp.answer is not None:
             # Fan out: the strategist judges while the guard screens.
             return ["strategist", "guard"]
@@ -369,13 +442,17 @@ def build(deps: Deps):
             if state.questions_asked == 0 and inp.item is not None:
                 return {"item": inp.item, "new_question": True}
             return {"finish": "drill_complete"}
-        if state.questions_asked >= deps.question_budget(state):
-            return {"finish": "plan_complete"}
-        if state.time_remaining_s(inp.now) < MIN_SECONDS_FOR_A_QUESTION:
-            return {"finish": "time"}
+        if state.plan is None:
+            # No plan, so no closing to reserve: the old arithmetic stands.
+            if state.questions_asked >= deps.question_budget(state):
+                return {"finish": "plan_complete"}
+            if state.time_remaining_s(inp.now) < MIN_SECONDS_FOR_A_QUESTION:
+                return {"finish": "time"}
+        # With a plan, the selector decides — it is the one that knows a
+        # round is spent, a clock is out, and the closing is still owed.
         if inp.select is None:
             return {"finish": "no_question_source"}
-        found = inp.select(state, inp.now)
+        found = inp.select(state, inp.now, pending_decision(s))
         if found.item is None:
             return {"finish": found.empty_reason or "bank_exhausted", "degraded": found.degraded}
         return {
@@ -385,6 +462,7 @@ def build(deps: Deps):
             "degraded": found.degraded,
             "bridge": found.bridge,
             "persona": found.persona,
+            "pace_line": found.pace_line,
         }
 
     def after_select(s: StepState) -> str:
@@ -409,6 +487,11 @@ def build(deps: Deps):
             return f"{opening} {said_arriving.first_question_lead}".strip(), False
         graceful = outcome is not None and outcome.move.graceful
         nudge = not graceful and _nudge_due(inp.state, leaving, inp.answer)
+        # §2.3's pace line rides with the next question, like a bridge — but
+        # not into the closing, which supersedes whatever it promised.
+        next_item = s.get("item")
+        closing_next = next_item is not None and next_item.source == "closing"
+        pace = "" if closing_next else (s.get("pace_line") or inp.state.pending_pace_line or "")
         if outcome is None:
             exit_line = ""
         elif nudge:
@@ -427,12 +510,17 @@ def build(deps: Deps):
                 # Realism only (§6.7): it says nothing about the answer, and
                 # never follows a break, where it would read as a verdict.
                 exit_line = f"{said_leaving.note_taking} {exit_line}"
+        exit_line = f"{exit_line} {pace}".strip()
         bridge = s.get("bridge") or inp.state.pending_bridge
         if bridge:
             # A new round starts. The bridge replaces "next question", because
             # saying both ("Okay, let's leave that there. Next question. Let's
             # move to the next part: SQL.") is three transitions for one.
             return f"{exit_line} {bridge}".strip(), nudge
+        item = s.get("item")
+        if item is not None and item.source == "closing":
+            # The closing without a bridge (a crash replayed): it still asks.
+            return f"{exit_line} {said_arriving.bridge_to_closing}".strip(), nudge
         return f"{exit_line} {said_arriving.next_question_lead}".strip(), nudge
 
     def phrase(s: StepState) -> dict[str, Any]:
@@ -442,6 +530,40 @@ def build(deps: Deps):
         utterance = deps.interviewer.open_question(item, lead=lead)
         _emit(utterance.text)
         return {"utterance": utterance, "nudged": nudged}
+
+    def closing_reply(s: StepState) -> dict[str, Any]:
+        """FR-6.21: acknowledge, record, and either ask once more or close.
+
+        M06 cannot speak for a company's panel, so it does not pretend to
+        answer — it says so, and the question goes in the notes, where the
+        company guide (M15) can answer it properly.
+        """
+        inp = s["inp"]
+        lines = deps.persona_for(inp.state).said()
+        answer = inp.answer or ""
+        if rule_screen(answer).abusive:
+            _emit(lines.conduct_close)
+            return {"finish": "conduct", "utterance": Utterance(lines.conduct_close, "template")}
+        nothing = bool(NO_QUESTIONS.match(answer))
+        out: dict[str, Any] = {"closing_question": not nothing}
+        if (
+            nothing
+            or inp.state.closing_asked >= MAX_CLOSING_QUESTIONS
+            or inp.state.time_remaining_s(inp.now) <= 0
+        ):
+            opener = lines.closing_none if nothing else lines.closing_ack
+            text = f"{opener} {lines.session_close}"
+            _emit(text)
+            out |= {"finish": "plan_complete", "utterance": Utterance(text, "template")}
+            return out
+        text = f"{lines.closing_ack} {lines.closing_more}"
+        _emit(text)
+        out |= {
+            "utterance": Utterance(text, "template", question=lines.closing_more),
+            "item": inp.item,
+            "new_question": False,
+        }
+        return out
 
     def finish(s: StepState) -> dict[str, Any]:
         inp = s["inp"]
@@ -477,11 +599,13 @@ def build(deps: Deps):
     graph.add_node("select", select)
     graph.add_node("phrase", phrase)
     graph.add_node("finish", finish)
+    graph.add_node("closing_reply", closing_reply)
     graph.add_conditional_edges(
         START,
         entry,
-        ["strategist", "guard", "replay_decision", "select"],
+        ["strategist", "guard", "replay_decision", "select", "closing_reply"],
     )
+    graph.add_edge("closing_reply", END)
     # The join: decide runs once, after BOTH the strategist and the guard.
     graph.add_edge(["strategist", "guard"], "decide")
     for node in ("decide", "replay_decision"):
@@ -528,6 +652,7 @@ def run_step(compiled, inp: StepInput, on_token: Callable[[str], None] | None = 
         screen=final.get("screen"),
         offer_retry=bool(final.get("offer_retry")),
         nudged=bool(final.get("nudged")),
+        closing_question=bool(final.get("closing_question")),
     )
 
 

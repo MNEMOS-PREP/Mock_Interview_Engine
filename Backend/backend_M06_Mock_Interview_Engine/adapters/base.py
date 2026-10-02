@@ -63,7 +63,14 @@ class Memory(Protocol):
         """`GET /v1/skill-graph/theta` reduced to `{concept_id: theta}`, measured only."""
 
     def consent(self, candidate_id: UUID, purpose: str) -> UUID | None:
-        """No such route exists in M04 yet (M06_REVIEW 1.3). None is the honest answer."""
+        """`GET /v1/candidates/{cid}/consent?purpose=` — the active consent id, or None."""
+
+    def concept(self, concept_id: str) -> dict[str, Any] | None:
+        """`GET /v1/concepts/{id}` — name and one hop of `prerequisites`.
+
+        Public ontology, no student in it. §6.4's gap trigger asks it which
+        prerequisite two broken concepts share. None for an unknown concept.
+        """
 
 
 class Questions(Protocol):

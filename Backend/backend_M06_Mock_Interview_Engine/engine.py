@@ -24,18 +24,20 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Any
 
 from ai_core.timeutil import utcnow
 from ai_core.versions import VersionStamp
 from sqlmodel import Session, select
 
-from . import PROMPT_VERSION, outbox, planner, store
+from . import PROMPT_VERSION, outbox, pacing, planner, replan, store
 from .adapters import Upstreams, UpstreamUnavailable
 from .agents import Interviewer, ProbeStrategist, Summariser, summariser
 from .agents.guard import SafetyGuard
 from .broker import TokenBroker, broker
 from .contracts import (
+    DEPTH_CAP,
     HintOffer,
     InterviewPlan,
     Move,
@@ -49,6 +51,7 @@ from .llm import LLM, LLMResult, get_llm
 from .models import InterviewSession, LLMCall, SessionEvent
 from .modes import mode_config
 from .orchestration import Deps, Selected, StepInput, StepResult, build, enabled, run_step
+from .orchestration.graph import MIN_SECONDS_FOR_A_QUESTION
 from .personas import Persona, persona
 from .state import InvalidTransition, SessionState
 
@@ -167,11 +170,16 @@ def ladder_config(state: SessionState) -> LadderConfig:
     if state.kind == SessionKind.drill.value:
         return LadderConfig(hints_available=False)
     who = speaker(state)
+    # §6.9: ahead of schedule at 70%, one follow-up deeper from then on. Not
+    # for that round only: the check runs before the step's crossing, so a
+    # 70% step that also ends a round granted the depth to the round it left.
+    ahead = state.extra_depth_segment is not None
+    extra = 1 if ahead and state.current_segment >= state.extra_depth_segment else 0
     return LadderConfig(
         steelman_enabled=mode.steelman_enabled,
         steelman_rate=mode.steelman_rate,
         hints_available=mode.hints and who.hints_available,
-        max_depth=who.max_depth,
+        max_depth=min(who.max_depth + extra, DEPTH_CAP),
         max_generic_rungs=who.max_generic_rungs,
     )
 
@@ -195,7 +203,12 @@ def introduced(state: SessionState) -> frozenset[str]:
     return frozenset(s.persona_id for s in state.plan.segments if s.index in spoke)
 
 
-def bridge_line(arriving: PlannedSegment, introduced: frozenset[str] | None = None) -> str:
+def bridge_line(
+    arriving: PlannedSegment,
+    introduced: frozenset[str] | None = None,
+    *,
+    forced_by_time: bool = False,
+) -> str:
     """§3.2.3 — what is said between two rounds.
 
     Authored, never generated: it is on the hot path, and it is one of the
@@ -214,6 +227,8 @@ def bridge_line(arriving: PlannedSegment, introduced: frozenset[str] | None = No
     if introduced is not None and arriving.kind != "closing" and who.id not in introduced:
         return said.greeting
     if arriving.kind == "closing":
+        if forced_by_time:
+            return said.bridge_to_closing_early
         return said.bridge_to_closing
     if arriving.kind == "warmup" or not arriving.title:
         return said.bridge
@@ -341,6 +356,8 @@ class Engine:
     tokens: TokenBroker = field(default_factory=lambda: broker)
     thetas: ThetaCache = field(default_factory=lambda: theta_cache)
     clock: Callable[[], datetime] = utcnow
+    #: One plan change per step (§6.4, Trap 4). Reset by `_step`.
+    _changed_this_step: bool = field(default=False, init=False, repr=False)
 
     # ── lookups ──────────────────────────────────────────────────────────
 
@@ -423,7 +440,6 @@ class Engine:
         already_planned = state.plan is not None
         up = self.upstreams
         prefix = ""
-        posterior: dict[str, float] = {}
         consent: uuid.UUID | None = None
         if up.available("M04"):
             try:
@@ -442,11 +458,16 @@ class Engine:
             step="consent",
             payload={"consent_id": str(consent) if consent else None},
         )
-        self._seed_m05(row, posterior)
         if not already_planned:
-            # The preview built it already; rebuilding would throw away the
-            # student's edits and ask M02 to price the same session twice.
+            # `_plan` seeds M05 from M04's posterior on its way (§6.1 steps
+            # 3–4), before it probes availability against the session.
             self._plan(row, self.state(row.id))
+        else:
+            # The preview built the plan — in this process, or before a
+            # restart that dropped the in-memory θ. Seed if it is not.
+            planned = self.state(row.id).plan
+            concepts = [c for s in (planned.segments if planned else []) for c in s.concept_ids]
+            self._seed_for(row, concepts)
         return prefix
 
     # ── the plan (FR-6.1, FR-6.2, spec §6.1 steps 5–6) ───────────────────
@@ -518,6 +539,11 @@ class Engine:
         type that can serve them might answer 409.
         """
         coverage, requirements = self._coverage(row, state)
+        # §6.1 steps 3–4: M04's posterior for what this posting asks about,
+        # handed to M05 BEFORE the availability probe selects against it.
+        # Until 2026-09-30 nothing fetched it, so every session's CAT started
+        # at the prior — "adaptive" from a standing start, every time.
+        self._seed_for(row, [c for r in requirements for c in (r.get("concept_ids") or [])])
         rubrics = self._rubrics()
         scoreable = tuple(str(r["round_type"]) for r in rubrics) or (DEFAULT_ROUND_TYPE,)
         round_types = self._available_round_types(row, state, scoreable)
@@ -678,6 +704,23 @@ class Engine:
                 continue
         return out
 
+    def _seed_for(self, row: InterviewSession, concepts: list[str]) -> None:
+        """Seed M05 once per process, from M04's posterior for `concepts`.
+
+        A concept M04 has measured nothing on comes back absent, never 0.0
+        (M04 AC-4.2), and M05 seeds it at the prior — the honest belief.
+        """
+        if self.thetas.seeded(row.id):
+            return
+        posterior: dict[str, float] = {}
+        wanted = sorted({c for c in concepts if c})
+        if wanted and self.upstreams.available("M04"):
+            try:
+                posterior = self.upstreams.m04.posterior(row.candidate_id, wanted)
+            except UpstreamUnavailable as exc:
+                log.info("M06: M04 posterior unavailable for %s: %s", row.id, exc)
+        self._seed_m05(row, posterior)
+
     def _seed_m05(self, row: InterviewSession, posterior: dict[str, float]) -> None:
         self.thetas.seed(row.id, posterior)
         if not self.upstreams.available("M05"):
@@ -833,6 +876,7 @@ class Engine:
         recorded: Outcome | None = None,
     ) -> None:
         now = self.clock()
+        self._changed_this_step = False
         item = self._current_item(state)
         inp = StepInput(
             state=state,
@@ -863,6 +907,17 @@ class Engine:
         if result.offer_retry:
             self._offer_retry(row, result)
             return
+        if result.closing_question and answer_turn is not None:
+            # FR-6.21: in the student's own words, recorded; scoring them
+            # waits on a rubric.
+            store.record(
+                self.db,
+                row,
+                "closing.question",
+                step="closing-question",
+                turn_index=answer_turn.turn_index,
+                payload={"turn_id": str(answer_turn.turn_id), "text": answer_turn.text},
+            )
 
         if result.hint_level is not None and answer_turn is not None:
             store.record(
@@ -1122,7 +1177,7 @@ class Engine:
         depth = (
             move.depth
             if (move and move.depth is not None)
-            else (0 if result.new_question else ladder_depth)
+            else (0 if result.new_question or item.source == "closing" else ladder_depth)
         )
         index = state.next_turn_index
         segment = (
@@ -1275,8 +1330,8 @@ class Engine:
     # ── the QuestionPlanner's tool ───────────────────────────────────────
 
     def _selector(self, row: InterviewSession):
-        def select_next(state: SessionState, now: datetime) -> Selected:
-            return self._select(row, state, now)
+        def select_next(state: SessionState, now: datetime, pending=None) -> Selected:
+            return self._select(row, state, now, pending)
 
         return select_next
 
@@ -1285,42 +1340,317 @@ class Engine:
         return current_segment(state)
 
     def _advance_segment(
-        self, row: InterviewSession, state: SessionState, now: datetime
+        self,
+        row: InterviewSession,
+        state: SessionState,
+        now: datetime,
+        pending: dict | None = None,
     ) -> tuple[SessionState, str | None]:
-        """Move on once this segment has had the questions M02 priced for it.
+        """Move on when a round is done — by its questions, or by its clock.
 
-        This is the whole of sequencing that day 5 needs: without it the plan
-        is a screen, because the session stays on the warm-up for ever and
-        never asks the requirements it promised to cover. Day 6 adds the
-        bridge line and the honest 409 ending; the arithmetic is here.
+        Three reasons to leave a round, checked at a question boundary and
+        never mid-ladder (§6.9: no hard cut):
+
+          * it has had the questions M02 priced for it (day 5);
+          * its own clock is over by the mode's allowance — 25%, 0% in Final
+            Boss (EC-6.9, FR-6.9's hard clock);
+          * the session's clock says the closing is due (§6.9's 90%), in
+            which case everything between here and the closing gives way to
+            it, and M02 hears `skipped` for what will not be asked.
+
+        At each ordinary boundary §6.4 gets its one chance to re-plan.
         """
-        live = planner.live_segments(state.plan) if state.plan is not None else []
-        if not live:
+        if state.plan is None or not planner.live_segments(state.plan):
             return state, None
         bridge: str | None = None
-        position = next((i for i, s in enumerate(live) if s.index == state.current_segment), 0)
-        while (
-            position + 1 < len(live)
-            and state.questions_in_segment(live[position].index) >= live[position].question_budget
-        ):
-            leaving, arriving = live[position], live[position + 1]
-            store.record(
-                self.db,
-                row,
-                "segment.transition",
-                step=f"segment:{arriving.index}",
-                payload={
-                    "from": leaving.index,
-                    "to": arriving.index,
-                    "from_title": leaving.title,
-                    "to_title": arriving.title,
-                    "line": bridge_line(arriving, introduced(state)),
-                },
+        allowance = mode_config(state.mode).overrun_allowance
+        for _ in range(_MAX_SEGMENT_SKIPS):
+            live = planner.live_segments(state.plan)
+            position = next((i for i, s in enumerate(live) if s.index == state.current_segment), 0)
+            if position + 1 >= len(live):
+                break
+            leaving = live[position]
+            if leaving.kind == "closing":
+                break
+            closing = pacing.closing_segment(state)
+            if closing is not None and pacing.read(state, now).closing_due:
+                state, bridge = self._jump_to_closing(row, state, now, leaving, closing)
+                break
+            exhausted = state.questions_in_segment(leaving.index) >= leaving.question_budget
+            timed_out = pacing.over_time(state, leaving, now, allowance)
+            if not (exhausted or timed_out):
+                break
+            state = self._replan_at(row, state, leaving, now, pending)
+            live = planner.live_segments(state.plan)
+            position = next((i for i, s in enumerate(live) if s.index == leaving.index), None)
+            if position is None or position + 1 >= len(live):
+                break
+            arriving = live[position + 1]
+            state = self._record_transition(
+                row, state, now, leaving, arriving, reason="time" if timed_out else "budget"
             )
-            state = self.state(row.id)
             bridge = state.pending_bridge
-            position += 1
         return state, bridge
+
+    def _record_transition(
+        self,
+        row: InterviewSession,
+        state: SessionState,
+        now: datetime,
+        leaving: PlannedSegment,
+        arriving: PlannedSegment,
+        *,
+        reason: str,
+        forced_by_time: bool = False,
+    ) -> SessionState:
+        store.record(
+            self.db,
+            row,
+            "segment.transition",
+            step=f"segment:{arriving.index}",
+            payload={
+                "from": leaving.index,
+                "to": arriving.index,
+                "from_title": leaving.title,
+                "to_title": arriving.title,
+                "line": bridge_line(arriving, introduced(state), forced_by_time=forced_by_time),
+                "reason": reason,
+                # The round's own clock starts here (EC-6.9). The writer
+                # supplies it: the fold has no clock.
+                "used_s": round(state.time_used_s(now), 1),
+            },
+        )
+        return self.state(row.id)
+
+    def _jump_to_closing(
+        self,
+        row: InterviewSession,
+        state: SessionState,
+        now: datetime,
+        leaving: PlannedSegment,
+        closing: PlannedSegment,
+    ) -> tuple[SessionState, str | None]:
+        """§6.9's 90%: the closing is reserved, so whatever is left gives way.
+
+        The rounds skipped are not dropped from the plan — they were planned,
+        and the report says so — but M02's ledger hears `skipped` for their
+        requirements, because nothing will ask about them now.
+        """
+        live = planner.live_segments(state.plan)
+        position = next((i for i, s in enumerate(live) if s.index == leaving.index), 0)
+        skipped = [
+            r for s in live[position + 1 :] if s.kind != "closing" for r in s.requirement_ids
+        ]
+        state = self._record_transition(
+            row, state, now, leaving, closing, reason="closing_due", forced_by_time=True
+        )
+        if skipped:
+            outbox.enqueue_ledger(
+                self.db, state, requirement_ids=skipped, ledger_state="skipped", turn_id=None
+            )
+            self.db.commit()
+        return state, state.pending_bridge
+
+    def _replan_at(
+        self,
+        row: InterviewSession,
+        state: SessionState,
+        leaving: PlannedSegment,
+        now: datetime,
+        pending: dict | None = None,
+    ) -> SessionState:
+        """§6.4 at a boundary: at most one change, from hot-path signals only.
+
+        And at most one per step. A 70% narrowing in this same step has
+        already changed the plan for the clock, and the clock is what a
+        boundary answers first anyway (`replan.evaluate` checks
+        `time_overrun` before anything else). Two changes at one crossing is
+        two live notes at once and a plan that wanders (Trap 4).
+        """
+        if self._changed_this_step:
+            return state
+        found = replan.evaluate(
+            state, self._log_with(row, pending), leaving, now, self._concept_lookup()
+        )
+        if found is None:
+            return state
+        return self._record_plan_change(row, state, found)
+
+    def _log_with(self, row: InterviewSession, pending: dict | None) -> list:
+        """The log, plus this step's decision as the event it is about to be."""
+        log_ = list(store.events_for(self.db, row.id))
+        if pending is not None:
+            last = log_[-1].seq if log_ else 0
+            log_.append(
+                SimpleNamespace(
+                    seq=last + 1,
+                    kind="probe.decided",
+                    turn_index=pending["turn_index"],
+                    payload=pending["payload"],
+                )
+            )
+        return log_
+
+    def _record_plan_change(
+        self, row: InterviewSession, state: SessionState, change
+    ) -> SessionState:
+        self._changed_this_step = True
+        plan = state.plan.model_copy(deep=True)
+        plan.segments = [s.model_copy(deep=True) for s in change.after]
+        plan.replans = [*plan.replans, change]
+        store.record(
+            self.db,
+            row,
+            "plan.changed",
+            step=f"replan:{len(plan.replans)}",
+            payload={"plan": plan.model_dump(mode="json"), "live_note": change.live_note},
+        )
+        state = self.state(row.id)
+        dropped_before = {s.index for s in change.before if s.dropped_reason is not None}
+        dropped = [
+            r
+            for s in change.after
+            if s.dropped_reason is not None and s.index not in dropped_before
+            for r in s.requirement_ids
+        ]
+        if dropped:
+            # FR-6.24: planned, then dropped by a re-plan — M02 hears it.
+            outbox.enqueue_ledger(
+                self.db, state, requirement_ids=dropped, ledger_state="skipped", turn_id=None
+            )
+            self.db.commit()
+        return state
+
+    def _concept_lookup(self):
+        """M04's ontology, one call per concept per step, and nothing if M04
+        is not there — the gap trigger then simply does not fire."""
+        cache: dict[str, dict | None] = {}
+
+        def lookup(concept_id: str) -> dict | None:
+            if concept_id not in cache:
+                found = None
+                if self.upstreams.available("M04"):
+                    try:
+                        found = self.upstreams.m04.concept(concept_id)
+                    except (UpstreamUnavailable, AttributeError):
+                        found = None
+                cache[concept_id] = found
+            return cache[concept_id]
+
+        return lookup
+
+    # ── pacing (FR-6.17, §6.9, §2.3) ─────────────────────────────────────
+
+    def _pace(self, row: InterviewSession, state: SessionState, now: datetime) -> SessionState:
+        """§6.9's checkpoints: announced once each, and acted on at 70%.
+
+        Not acted on when the closing is already due: a focus line about a
+        round that is about to give way to the closing would be the
+        interviewer contradicting itself in one breath.
+        """
+        closing_due = pacing.read(state, now).closing_due
+        for mark in pacing.warnings_due(state, now):
+            payload: dict = {"at": mark}
+            if mark == pacing.WARN_AT[0] and not closing_due:
+                state, extra = self._at_seventy(row, state, now)
+                payload |= extra
+            store.record(self.db, row, "time.warning", step=f"time:{mark}", payload=payload)
+            state = self.state(row.id)
+        return state
+
+    def _at_seventy(
+        self, row: InterviewSession, state: SessionState, now: datetime
+    ) -> tuple[SessionState, dict]:
+        """§2.3's pace check: more planned than time → narrow, and say so.
+
+        Practice OFFERS and forces nothing (§6.1's table), so it only says
+        how long is left. Ahead of schedule, the round may go one follow-up
+        deeper (§6.9).
+        """
+        reading = pacing.read(state, now)
+        minutes = max(1, round(reading.time_for_questions_s / 60))
+        said = speaker(state).said()
+        segment = current_segment(state)
+        if reading.coverage_debt and segment is not None:
+            if not mode_config(state.mode).pacing_enforced:
+                return state, {"line": said.pace_note.format(minutes=minutes)}
+            state, focus = self._narrow(row, state, reading, segment)
+            return state, {
+                "line": said.pace_focus.format(minutes=minutes, topic=focus.title),
+                "focus": focus.index,
+            }
+        if reading.ahead_by >= 1:
+            return state, {"extra_depth": True}
+        return state, {}
+
+    def _narrow(self, row, state: SessionState, reading, segment: PlannedSegment):
+        """Keep what fits, by M02's priority; drop the rest out loud."""
+        from .contracts import Replan
+
+        plan = state.plan
+        remaining = pacing.remaining_segments(state)
+        future = [s for s in remaining if s.index != segment.index]
+        owed_now = max(segment.question_budget - state.questions_in_segment(segment.index), 0)
+        available = (
+            reading.time_for_questions_s - owed_now * planner.MINUTES_PER_VERBAL_QUESTION * 60
+        )
+        priority = _priorities(plan)
+        per_question_s = planner.MINUTES_PER_VERBAL_QUESTION * 60
+        kept, dropped = [], []
+        trimmed: dict[int, int] = {}
+        for candidate in sorted(future, key=lambda s: -priority.get(s.index, 0.0)):
+            cost = candidate.question_budget * per_question_s
+            if cost <= available:
+                kept.append(candidate)
+                available -= cost
+            elif not kept and not owed_now and available >= MIN_SECONDS_FOR_A_QUESTION:
+                # Nothing fits whole: the most important round is trimmed to
+                # what does, rather than every round dropped and the student
+                # sent straight to the closing — found by the day-10 tests.
+                trimmed[candidate.index] = max(1, int(available // per_question_s))
+                kept.append(candidate)
+                available = 0.0
+            else:
+                dropped.append(candidate)
+        focus = segment if owed_now or not kept else kept[0]
+        if (not dropped and not trimmed) or len(plan.replans) >= replan.MAX_REPLANS:
+            return state, focus
+        before = [s.model_copy(deep=True) for s in plan.segments]
+        after = [s.model_copy(deep=True) for s in plan.segments]
+        gone = {s.index for s in dropped}
+        for s in after:
+            if s.index in gone:
+                s.dropped_reason = "Left out at the 70% mark to fit the time that was left."
+            if s.index in trimmed:
+                s.question_budget = trimmed[s.index]
+                s.minutes = round(trimmed[s.index] * planner.MINUTES_PER_VERBAL_QUESTION, 1)
+        titles = ", ".join(f"“{s.title}”" for s in dropped) or "part of the plan"
+        change = Replan(
+            at_segment=segment.index,
+            trigger="time_overrun",
+            signals={
+                "fraction_used": round(reading.fraction, 3),
+                "questions_owed": float(reading.questions_owed),
+                "minutes_left": round(reading.time_for_questions_s / 60, 1),
+            },
+            before=before,
+            after=after,
+            student_sentence=(
+                f"At the 70% mark there was more planned than time, so I left out {titles} to "
+                f"finish “{focus.title}” properly and keep your time at the end."
+            ),
+            live_note=f"Adjusting — focusing on {focus.title} with the time left.",
+        )
+        return self._record_plan_change(row, state, change), focus
+
+    # ── FR-6.21: the closing ─────────────────────────────────────────────
+
+    def _closing_item(self, state: SessionState, bridge: str | None) -> Selected:
+        """The closing asks the student to ask. Once; the reply node does the rest."""
+        if state.closing_asked > 0:
+            return Selected(None, empty_reason="plan_complete", bridge=bridge)
+        item = Item(stem="", source="closing", concept_id="closing", label="Your questions")
+        return Selected(item, {"reason": "closing"}, bridge=bridge, persona=speaker(state))
 
     def _round_type(self, state: SessionState) -> str:
         """The plan's answer, because the plan already asked M05 at plan time.
@@ -1334,7 +1664,13 @@ class Engine:
             return segment.rubric_round_types[0]
         return self._rubric_round_types()[0]
 
-    def _select(self, row: InterviewSession, state: SessionState, now: datetime) -> Selected:
+    def _select(
+        self,
+        row: InterviewSession,
+        state: SessionState,
+        now: datetime,
+        pending: dict | None = None,
+    ) -> Selected:
         """The next question, or why there is none — and a 409 ends a SEGMENT.
 
         M05 answering "nothing left for this round type" is a known state with
@@ -1345,13 +1681,37 @@ class Engine:
         behind it, which is how a thin corner of the bank becomes a short
         interview about nothing.
         """
-        state, bridge = self._advance_segment(row, state, now)
+        state = self._pace(row, state, now)
+        state, bridge = self._advance_segment(row, state, now, pending)
+        segment = self.segment(state)
+        if segment is not None and segment.kind == "closing":
+            return self._closing_item(state, bridge)
+        if segment is not None and state.time_remaining_s(now) < MIN_SECONDS_FOR_A_QUESTION:
+            # No time for a real answer: the closing is reserved, so it runs
+            # anyway (FR-6.17) — "at 100%: wrap-up utterance, no hard cut".
+            closing = pacing.closing_segment(state)
+            if closing is None:
+                return Selected(None, empty_reason="time", bridge=bridge)
+            state, bridge = self._jump_to_closing(row, state, now, segment, closing)
+            return self._closing_item(state, bridge)
+        if (
+            segment is not None
+            and state.questions_in_segment(segment.index) >= segment.question_budget
+        ):
+            # The last round is spent and there is no closing after it — the
+            # plan is done. (Every plan has a closing today; an old one may not.)
+            return Selected(None, empty_reason="plan_complete", bridge=bridge)
         for _ in range(_MAX_SEGMENT_SKIPS):
             found = self._select_from_bank(row, state, now)
             if found.item is not None:
                 # Whoever runs the segment the item belongs to asks it — read
                 # here because the step's own state predates the crossing.
-                return replace(found, bridge=bridge or found.bridge, persona=speaker(state))
+                return replace(
+                    found,
+                    bridge=bridge or found.bridge,
+                    persona=speaker(state),
+                    pace_line=state.pending_pace_line,
+                )
             moved, state, next_bridge = self._abandon_segment(row, state, found.empty_reason)
             if not moved:
                 # Nothing left to move to. The session ends, and `empty_reason`
@@ -1395,21 +1755,9 @@ class Engine:
         if position is None or position + 1 >= len(live):
             return False, state, None
         leaving, arriving = live[position], live[position + 1]
-        store.record(
-            self.db,
-            row,
-            "segment.transition",
-            step=f"segment:{arriving.index}",
-            payload={
-                "from": leaving.index,
-                "to": arriving.index,
-                "from_title": leaving.title,
-                "to_title": arriving.title,
-                "line": bridge_line(arriving, introduced(state)),
-                "reason": reason or "bank_exhausted",
-            },
+        state = self._record_transition(
+            row, state, self.clock(), leaving, arriving, reason=reason or "bank_exhausted"
         )
-        state = self.state(row.id)
         if leaving.requirement_ids:
             outbox.enqueue_ledger(
                 self.db,
@@ -1428,6 +1776,8 @@ class Engine:
         self, row: InterviewSession, state: SessionState, now: datetime
     ) -> Selected:
         segment = self.segment(state)
+        if segment is not None and segment.kind == "closing":
+            return self._closing_item(state, None)
         if segment is not None and segment.kind == "project":
             return self._select_a_claim(state)
         up = self.upstreams
@@ -1493,3 +1843,26 @@ __all__ = [
     "question_budget",
     "theta_cache",
 ]
+
+
+def _priorities(plan: InterviewPlan) -> dict[int, float]:
+    """segment index -> M02's highest priority among its requirements.
+
+    M02 priced the rounds; its priorities are what a narrowing keeps by. A
+    segment M02 did not price (warm-up, project) keeps its place by order.
+    """
+    by_requirement: dict[str, float] = {}
+    for allocation in (plan.coverage_plan or {}).get("allocations") or []:
+        rid = str(allocation.get("requirement_id") or "")
+        try:
+            by_requirement[rid] = max(
+                by_requirement.get(rid, 0.0), float(allocation.get("priority") or 0.0)
+            )
+        except (TypeError, ValueError):
+            continue
+    out: dict[int, float] = {}
+    for position, segment in enumerate(plan.segments):
+        values = [by_requirement.get(r, 0.0) for r in segment.requirement_ids]
+        # Earlier segments win a tie: M02 ordered its rounds by priority too.
+        out[segment.index] = (max(values) if values else 0.0) - position * 1e-6
+    return out

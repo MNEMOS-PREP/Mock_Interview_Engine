@@ -51,6 +51,9 @@ class Lines:
     #: The bridge into the part where the student asks. There is no next
     #: topic to name, so it gets its own line.
     bridge_to_closing: str
+    #: The same, when the clock forced it (§6.9's 90%): "that's everything I
+    #: wanted to ask" would not be true.
+    bridge_to_closing_early: str
     #: EC-6.4, the first time: one neutral redirect, then the question again.
     #: Neutral means it names no behaviour — "keep to the interview", never
     #: "that was inappropriate", which is a verdict on the student.
@@ -69,6 +72,18 @@ class Lines:
     retry_offer: str
     #: The question again, when the student takes the offer.
     retry_lead: str
+    #: §2.3's pace check at 70%, when there is more planned than time.
+    #: Names the minutes and the part it will focus on.
+    pace_focus: str
+    #: §6.9 at 70% in Practice, which offers and forces nothing.
+    pace_note: str
+    #: FR-6.21: after a question from the student. M06 cannot speak for a
+    #: company's panel, so it says so and records the question.
+    closing_ack: str
+    #: FR-6.21: one more chance to ask, at most once.
+    closing_more: str
+    #: FR-6.21: the student has nothing to ask. Said before the close.
+    closing_none: str
 
 
 LINES: dict[Register, Lines] = {
@@ -90,12 +105,22 @@ LINES: dict[Register, Lines] = {
         bridge="Alright — let's switch gears.",
         bridge_to="Alright — let's switch gears. Next up: {topic}.",
         bridge_to_closing="That's everything I wanted to ask. Anything you'd like to ask me?",
+        bridge_to_closing_early=(
+            "We're close to time, so let's stop there. Anything you'd like to ask me?"
+        ),
         redirect_conduct="Let's keep this about the interview. Here's the question again:",
         conduct_close="I'm going to stop the interview here. Your notes cover what we got through.",
         keep_moving="Thanks — let's keep things moving.",
         note_taking="Let me jot that down.",
         retry_offer="Want another go at that one, or shall we move on?",
         retry_lead="Sure — take it from the top:",
+        pace_focus="We've got about {minutes} minutes left, so I'll focus on {topic}.",
+        pace_note="We've got about {minutes} minutes left — no rush.",
+        closing_ack=(
+            "That's worth asking the real panel — I can't speak for them, but it's in your notes."
+        ),
+        closing_more="Anything else you'd like to ask?",
+        closing_none="No problem at all.",
     ),
     "neutral": Lines(
         greeting="Hello. Let's begin.",
@@ -115,12 +140,20 @@ LINES: dict[Register, Lines] = {
         bridge="Let's move to the next part.",
         bridge_to="Let's move to the next part: {topic}.",
         bridge_to_closing="That's my questions. Do you have any for me?",
+        bridge_to_closing_early=(
+            "We're close to time, so I'll stop there. Do you have any questions for me?"
+        ),
         redirect_conduct="Let's keep to the interview. The question again:",
         conduct_close="I'll stop the interview here. Your notes cover what we got through.",
         keep_moving="Let's keep it moving.",
         note_taking="Let me note that down.",
         retry_offer="Would you like to try that one again, or move on?",
         retry_lead="Okay. Again:",
+        pace_focus="We have about {minutes} minutes left, so I'll focus on {topic}.",
+        pace_note="We have about {minutes} minutes left.",
+        closing_ack="That's one to ask the real panel — I've put it in your notes.",
+        closing_more="Anything else?",
+        closing_none="Okay.",
     ),
     "bar_raiser": Lines(
         greeting="Let's get started.",
@@ -143,12 +176,18 @@ LINES: dict[Register, Lines] = {
         bridge="Moving on.",
         bridge_to="Moving on. {topic}.",
         bridge_to_closing="That's my questions. Yours?",
+        bridge_to_closing_early="Close to time. Your questions?",
         redirect_conduct="Let's stay on the interview. Again:",
         conduct_close="I'll stop here. Your notes cover what we got through.",
         keep_moving="Keep it moving.",
         note_taking="Noted.",
         retry_offer="Again, or move on?",
         retry_lead="Again:",
+        pace_focus="About {minutes} minutes left. Focusing on {topic}.",
+        pace_note="About {minutes} minutes left.",
+        closing_ack="Ask the real panel that one. It's in your notes.",
+        closing_more="Anything else?",
+        closing_none="Fine.",
     ),
 }
 

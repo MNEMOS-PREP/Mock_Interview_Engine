@@ -39,21 +39,34 @@ function depthSentence(question: QuestionReport): string {
   }.`;
 }
 
-function QuestionBlock({ question, index }: { question: QuestionReport; index: number }) {
+function QuestionBlock({
+  question,
+  index,
+}: {
+  question: QuestionReport;
+  index: number;
+}) {
   return (
     <section className="border-b border-line py-6 last:border-0">
-      <p className="text-2xs uppercase tracking-wide text-ink-faint">Question {index + 1}</p>
-      <h2 className="mt-1 text-base font-semibold leading-snug text-ink">{question.question}</h2>
+      <p className="text-2xs uppercase tracking-wide text-ink-faint">
+        Question {index + 1}
+      </p>
+      <h2 className="mt-1 text-base font-semibold leading-snug text-ink">
+        {question.question}
+      </h2>
       <p className="mt-2 text-sm text-ink-soft">{depthSentence(question)}</p>
 
       {question.hints_used > 0 && (
         <p className="mt-1 text-2xs text-ink-faint">
-          You took {question.hints_used} hint{question.hints_used === 1 ? "" : "s"} here.
+          You took {question.hints_used} hint
+          {question.hints_used === 1 ? "" : "s"} here.
         </p>
       )}
 
       {!question.scored && question.not_scored_reason && (
-        <p className="mt-2 text-2xs text-ink-faint">{question.not_scored_reason}</p>
+        <p className="mt-2 text-2xs text-ink-faint">
+          {question.not_scored_reason}
+        </p>
       )}
 
       {question.strong_answer_covers.length > 0 && (
@@ -100,7 +113,9 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
     return (
       <ErrorNote
         message="Those notes could not be loaded."
-        detail={report.error instanceof Error ? report.error.message : undefined}
+        detail={
+          report.error instanceof Error ? report.error.message : undefined
+        }
         onRetry={() => report.refetch()}
       />
     );
@@ -115,8 +130,12 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
           {data.kind === "drill" ? "Defend drill" : `${data.mode} interview`} ·{" "}
           {data.minutes_used} of {data.minutes_planned} min
         </p>
-        <h1 className="mt-1 text-xl font-semibold tracking-tight">Your notes</h1>
-        <p className="mt-2 text-sm leading-relaxed text-ink-soft">{data.framing}</p>
+        <h1 className="mt-1 text-xl font-semibold tracking-tight">
+          Your notes
+        </h1>
+        <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+          {data.framing}
+        </p>
       </header>
 
       {data.notes.length > 0 && (
@@ -133,8 +152,8 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
         {data.questions.length === 0 ? (
           <div className="mt-6">
             <EmptyState title="No questions were asked" icon="clock">
-              Nothing was asked before this session ended, so there is nothing to look back at.
-              Starting another takes a few seconds.
+              Nothing was asked before this session ended, so there is nothing
+              to look back at. Starting another takes a few seconds.
             </EmptyState>
           </div>
         ) : (
@@ -144,13 +163,55 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
         )}
       </div>
 
+      {data.plan_changes.length > 0 && (
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold text-ink">
+            How the plan changed
+          </h2>
+          <p className="mt-1 text-2xs text-ink-faint">
+            During the session you saw only what changed. This is why.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {data.plan_changes.map((change) => (
+              <li
+                key={change}
+                className="text-sm leading-relaxed text-ink-soft"
+              >
+                {change}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {data.your_questions.length > 0 && (
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold text-ink">
+            Your questions for the interviewer
+          </h2>
+          <ul className="mt-3 space-y-2">
+            {data.your_questions.map((asked, position) => (
+              <li
+                key={`${position}-${asked.slice(0, 12)}`}
+                className="turn-candidate whitespace-pre-wrap"
+              >
+                {asked}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <footer className="mt-8 space-y-3">
         <Card title="About these notes">
-          <p className="text-sm leading-relaxed text-ink-soft">{data.persona_note}</p>
+          <p className="text-sm leading-relaxed text-ink-soft">
+            {data.persona_note}
+          </p>
           <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-            Scores are not shown anywhere yet. The evaluator is a separate module that never sees
-            who you are, and its numbers stay hidden until they agree with human raters — so what
-            you get today is what was asked and how far it went.
+            Scores are not shown anywhere yet. The evaluator is a separate
+            module that never sees who you are, and its numbers stay hidden
+            until they agree with human raters — so what you get today is what
+            was asked and how far it went.
           </p>
         </Card>
         <Link

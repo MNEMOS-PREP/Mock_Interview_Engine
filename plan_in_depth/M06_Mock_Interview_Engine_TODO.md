@@ -1,10 +1,10 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 75%** — 16 of 26 functional requirements met, 7 partially. **Days 1–9 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
+> **Completion: 85%** — 19 of 26 functional requirements met, 6 partially. **Days 1–10 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
 >
-> Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), segments with a persona each (FR-6.3), the probe ladder and break depths (FR-6.5, 6.6), hints at a published price (FR-6.7), modes as configs (FR-6.8), pause (FR-6.12), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), fixed context (FR-6.16), a report for every session (FR-6.18), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
+> Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), segments with a persona each (FR-6.3), the probe ladder and break depths (FR-6.5, 6.6), hints at a published price (FR-6.7), modes as configs (FR-6.8), pause (FR-6.12), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), fixed context (FR-6.16), a report for every session (FR-6.18), re-planning (FR-6.4), Final Boss (FR-6.9), pacing and the reserved closing (FR-6.17), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
-> Partly: Final Boss (FR-6.9 — its hard clock is day 10). Not started: re-planning (FR-6.4), closing questions (FR-6.21). Blocked: steelman (FR-6.20).
+> Partly: closing questions (FR-6.21 — recorded and shown; scoring them waits on a rubric). Blocked: steelman (FR-6.20).
 >
 > _Day 6 moved no requirement across a line, and the number is right not to move: it deepened FR-6.3 (rounds now end, begin and say so) without completing it, because per-segment personas wait on day 9. The measure counts requirements, not work — which is the point of having one._
 >
@@ -43,9 +43,9 @@ _Nothing scouted for this module yet._
 
 | | |
 |---|---|
-| Status | **Days 1–9 of 15 done.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **283**, no socket opened, no API key |
-| Release gates (`-m gate`) | **45** |
+| Status | **Days 1–10 of 15 done.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
+| Backend tests passing | **317**, no socket opened, no API key |
+| Release gates (`-m gate`) | **58** |
 | Route decorators | **25** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
@@ -78,7 +78,7 @@ _Nothing scouted for this module yet._
 | 7 | ✅ | Hint ladder (M05), M13 credit table shown before the hint is taken |
 | 8 | ✅ | Context management: §6.6's rolling round summary, bounded view; AC-6.10's mechanism gated, its number a harness run |
 | 9 | ✅ | Personas (7) as data, modes (4) as configs, guard on both directions (EC-6.4, 6.6), Practice's retry |
-| 10 | ⬜ | Pacing, re-plan from hot-path signals |
+| 10 | ✅ | Pacing 70/90 and a round's own clock, the closing runs, re-plan from hot-path signals, M05 seeded from M04 |
 | 11 | ⬜ | Pause/resume, reconnect, idle prompts, auto-close, chaos tests |
 | 12 | ⬜ | Degradation ladder, partial report, report page |
 | 13 | ⬜ | UI pass, `routes.tsx`, mobile, ARIA |
@@ -435,17 +435,109 @@ a strategist at 732–941 ms — no added latency; turns 0.97–1.9 s.
 
 Thirteen mutations at the call sites, each caught.
 
-### Next: day 10
+### Day 10 — what landed
 
-1. **Pacing 70/90/100** (FR-6.17): the 70% focus offer when coverage debt is
-   high, the forced move to the closing at 90%, the wrap-up at 100% — and
-   Final Boss's 0% overrun (EC-6.9), which completes FR-6.9.
-2. **The closing runs** (FR-6.21): it has had `question_budget = 0` since day
-   5, so "Anything you'd like to ask me?" was said and the session ended. The
-   student's questions are recorded; scoring them waits on a rubric.
-3. **Re-planning** (FR-6.4) from hot-path signals only, ≤ 2, `plan.changed`.
-4. M04's posterior is never fetched at bootstrap, so M05 is always seeded
-   cold (§6.1 steps 3–4) — fix with the plan's concept ids.
+**Pacing is a scheduler, not an alarm** (`pacing.py`). One reading of the
+clock — used, budget, the closing's reserve, what is still owed — and three
+places that act on it, each at a question boundary, never mid-ladder.
+
+- **70%** (§2.3): announced once. In the enforced modes, if more is planned
+  than fits, the rounds are kept by M02's priority and the rest dropped —
+  owed to M02 as `skipped` — and the interviewer says so with the next
+  question: *"We have about 9 minutes left, so I'll focus on Stacks."* Practice
+  says how long is left and changes nothing. Ahead of schedule, the ladder
+  goes one rung deeper **from then on** (§6.9) — not for one round, because
+  the check runs before the step's crossing and a per-round grant went to
+  the round being left.
+- **90%**: the closing takes over whatever is left of the plan (FR-6.17's
+  "must always reserve the closing round"), and the rounds it skipped are
+  owed to M02.
+- **A round's own clock** (EC-6.9): 25% over in a mock, **0% in Final Boss**,
+  which completes FR-6.9. The warm-up and the closing are exempt — one is a
+  single question by construction, the other is the student's.
+
+**The closing runs** (FR-6.21). It had `question_budget = 0` since day 5, so
+"Anything you'd like to ask me?" was said and the session ended on it. Now
+the student asks, the interviewer acknowledges and offers one more (two at
+most), and "no, that's all" ends it. The questions are `closing.question`
+events and the report's `your_questions`; they are never sent to M13 (there is
+no rubric for a question — scoring stays ⛔) and never registered with M04.
+
+**Re-planning** (FR-6.4, `replan.py`): at a segment boundary only, at most
+twice, from `question.asked`, `probe.decided` and `idle.moved_on` — never an
+M13 field, and a gate feeds it an evaluation saying the opposite to prove it.
+Four triggers, in order:
+- `time_overrun` — the next round is compressed; the closing is never touched.
+- `struggling` — three failures at depth ≤ 1 in one round: the last round is
+  dropped, the closing extended, and the rest handed to the gentlest persona.
+- `gap_discovered` — two shallow breaks on ideas that share a prerequisite in
+  **M04's graph** (`GET /v1/concepts/{id}`): the next round checks it first.
+  No M04, no trigger: it never guesses a prerequisite.
+- `ceiling_hit` — a stretch item answered above: one more question in each
+  part that is left.
+
+While the student is in the room they see only **what** changed, neutrally —
+*"Adjusting — I want to check Arrays first."* The reason describes the
+student, so it waits for the report (`plan_changes`); `GET /session` strips
+the re-plans while live, and a gate pins it.
+
+**M05 is seeded from M04's posterior** (§6.1 steps 3–4) at plan time, before
+the availability probe — the posting's concepts only, and absent rather than
+0.0 where M04 has measured nothing. Every CAT used to start at the prior.
+
+**Found by the day's own tests, fixed:**
+- **The boundary decided on a log one answer short.** The step selects the
+  next question before its own decision is written, so three failures read as
+  two and `struggling` fired as `gap`. The step's pending decision now goes
+  to the selector with the state.
+- **"I don't know" recorded as the student's question for the panel**, and
+  "No, that's all." too. The nothing-to-ask matcher is a sequence of phrases
+  now, not one.
+- **Narrowing dropped every round** when no whole round fitted; it trims the
+  top-priority round to one question instead.
+- **The 70% focus line said in the same breath as the jump to the closing.**
+- **The warm-up's own overrun fired a re-plan.**
+- **Two plan changes in one step** (the 70% narrowing, then the boundary).
+- **A docstring the code did not keep.** `enqueue_artifact` said "queued on
+  the same condition as the evaluation" from day 4 and never checked it:
+  every drill and retry answer was registered with M04 for nothing to cite.
+
+**The mutation sweep missed six of sixteen on its first pass** — every miss
+a test that could not fail, not a defect in the code:
+- the drill and backup-set tests checked the evaluation queue and never the
+  artifact queue, so the `enqueue_artifact` fix above was untested;
+- the extra-depth test used a mock's interviewer, already at the cap of five,
+  so "+1, capped" equalled the base;
+- the 90% test checked the 70% line was not *said*, and not that the 70%
+  narrowing did not *happen* — it would still have reached the report;
+- nothing crossed 70% and a boundary in the same step, so the
+  one-change-per-step guard was never exercised;
+- the closing's own `scoreable` reason sat behind the backup-set check, and
+  the warm-up's clock exemption behind its one-question budget.
+
+Each is pinned, with a seventeenth for the extra depth's new semantics:
+**seventeen of seventeen caught**. A fixture finding on the way: the
+fallback playlist runs dry after four questions, so `day10.deep_bank()`
+clones it with fresh ids for any test that needs a session to get through
+twelve.
+
+**Frontend.** Types for everything above; the notes render *How the plan
+changed* and *Your questions for the interviewer* — the report's own note
+promises both are there. The stage shows the newest plan note, and at the
+closing an "Ask" button, its own placeholder, and no hint button.
+
+### Next: day 11
+
+1. **`GET /resume-state`** and the stage that re-attaches to it — "Welcome
+   back, we were on question N" (FR-6.13, EC-6.8).
+2. **Reconnect** with a 30 s grace; past two reconnects, suggest a break
+   rather than a third (AC-6.9).
+3. **Idle prompts** (EC-6.1) from the persona's `idle_after_s`: a gentle
+   prompt, a second, then the offer to move on — recorded as `idle.moved_on`.
+   `replan.signals()` already counts those for `struggling`; until day 11
+   writes one, that leg of the trigger cannot fire.
+4. **The chaos suite** (AC-6.16): kill mid-step, duplicate POST, two tabs,
+   sweeper racing a live step, the clock jumping a boundary.
 
 ---
 
@@ -458,12 +550,12 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.1 | ✅ `InterviewPlan` from M02's plan + M05 availability + budget + mode, assembled by `planner.py` with no model call; M04's profile is the pinned prefix, not a plan input | P0 | 1 |
 | FR-6.2 | ✅ `POST /plan` previews without starting; `DELETE /plan/segments/{i}` drops one, only while `planned`; `PlanPreview` shows minutes, questions, M02's rationale, what was dropped and M02's `uncovered` | P1 | 1 |
 | FR-6.3 | ✅ Segments run in sequence, advance on their budget, and say so crossing over (§3.2.3); each has the persona its mode assigns its kind, and a new voice introduces itself; the rubric comes from M05's selection | P0 | 1 |
-| FR-6.4 | ⬜ Re-plan at boundaries, ≤ 2, hot-path signals only | P1 | 1 |
+| FR-6.4 | ✅ Re-plan at segment boundaries, ≤ 2, from `question.asked`/`probe.decided`/`idle.moved_on` only — four triggers, a neutral live note, the reason in the report, `skipped` owed to M02 | P1 | 1 |
 | FR-6.5 | ✅ Probe ladder, cap 5, graceful exit, derived rungs — pure function, 14 tests, steelman unreachable | P0 | 1 |
 | FR-6.6 | ✅ `break_depth` per concept per session — recorded by the fold, kept at the shallowest break | P0 | 1 |
 | FR-6.7 | ✅ M05's ladder served, `POST /hint` takes one, M13's published factor shown BEFORE it is taken and frozen at plan time, `hint_level_used` carried to M13 | P0 | 1 |
 | FR-6.8 | ✅ Four modes as one table (`modes.py`): personas per segment kind, hints, ensemble, overrun allowance, retry, steelman flag; `GET /v1/interviews/modes` serves only true mechanics | P0 | 1 |
-| FR-6.9 | 🟡 No hints, the deepest ladder, the shortest patience, and a `RUDE` screen on every line; the hard clock (0% overrun) is day 10 | P0 | 1 |
+| FR-6.9 | ✅ No hints, the deepest ladder, the shortest patience, a `RUDE` screen on every line, and the hard clock — 0% overrun, enforced at the next question boundary | P0 | 1 |
 | FR-6.10 | 🟡 Text runs; the turn contract carries `modality` | P0 | 1·text · voice ⛔ M11 · coding ⛔ M07 · canvas ⛔ M08 |
 | FR-6.11 | 🟡 Contract fixed and carried; nothing to switch to yet | P0 | 1·text |
 | FR-6.12 | ✅ Pause once ≤ 5 min, resume. The cap is applied on `/resume` for a student who comes back, and by the sweeper (EC-6.14) for one who does not — which used to lock them out of every future interview | P1 | 1 |
@@ -471,11 +563,11 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.14 | ✅ Evaluation never blocks the hot path — outbox written with the turn, delivered by a background task, an explicit drain, or the sweeper; claimed before sending; a status returns, never a number. Three obligations now: the answer text to M04 (so evidence resolves), the evaluation to M13, the coverage row to M02 — and the artifact goes first | P0 | 1 |
 | FR-6.15 | ✅ Interviewer cannot read scores, band or θ — `InterviewerView` + the type-graph gate | P0 | 1 |
 | FR-6.16 | ✅ Last six turns plus §6.6's rolling note, regenerated every four turns and REPLACING the dropped turns; bounded by construction, so a six-times-longer session is not a six-times-larger context | P0 | 1 |
-| FR-6.17 | 🟡 A question is not asked without time for an answer, and the clock can end a session; the 70% checkpoint and the reserved closing are day 10 | P0 | 1 |
+| FR-6.17 | ✅ 70%: announced, and in the enforced modes the plan narrows by M02 priority and says so; 90%: the closing takes over; a question is never asked without time to answer it; ahead of schedule, one rung deeper | P0 | 1 |
 | FR-6.18 | ✅ A report for every session — ended, aborted, or crashed half-way; built from the log | P0 | 1 |
 | FR-6.19 | 🟡 `/trace` serves the log, every model call, and a replay equality check; an offline re-run harness and the Langfuse export are not built | P0 | 1 |
 | FR-6.20 | ⛔ Steelman probes, dispatched against `push_back` | P1 | blocked — M13 rubric |
-| FR-6.21 | ⬜ Record closing questions · ⛔ score them | P1 | 1 · scoring blocked — rubric |
+| FR-6.21 | 🟡 ✅ The closing runs and records the student's questions (two at most), shown in the notes · ⛔ scoring them | P1 | 1 · scoring blocked — rubric |
 | FR-6.22 | 🟡 Text measured at ≈ 2.0 s p95 to first visible token, inside the gate | P0 | 1·text · voice ⛔ M11 |
 | FR-6.23 | ✅ Defend drill — M01's contract, end to end, on the live model | P0 | 1 |
 | FR-6.24 | ✅ M02 ledger: `asked` and `answered` with the turn, and `skipped` for every requirement behind a segment the plan dropped or the student removed | P0 | 1 |
@@ -525,12 +617,12 @@ difference between a demo and a product.
 | EC-6.6 | ✅ Answer contains prompt injection | Recognised spans stripped before the strategist; the guard model beside it; a flagged answer moves no θ; M13 neutralises before scoring; the report says a passage was set aside |
 | EC-6.7 | ⛔ Mic dies mid-answer | Phase 3 (M11) |
 | EC-6.8 | 🟡 Browser refresh | Resume from checkpoint — state survives; the stage UI that re-attaches does not exist yet |
-| EC-6.9 | ⬜ Session exceeds budget by 25% | Force closing (0% in Final Boss) |
+| EC-6.9 | ✅ Session exceeds budget by 25% | Force closing (0% in Final Boss) — a round's own clock, and the closing at 90% of the session's |
 | EC-6.10 | ✅ Student ends at minute 3 | A report framed as a warm-up, not a failure |
 | EC-6.11 | ⬜ All modalities fail | Clean end, apology, no score |
 | EC-6.12 | ⬜ LLM provider outage | Item stems and templates verbatim, rule strategist, eval stays queued, session completes |
 | EC-6.13 | ✅ Two sessions in parallel | Blocked with an explanation and the id to resume; a unique nullable `occupying_key` enforces it at the database |
-| EC-6.14 | ⬜ Pauses and never returns | Auto-close after 30 min; partial report |
+| EC-6.14 | ✅ Pauses and never returns | Auto-close after 30 min; partial report — the sweeper, since the fix inserted before day 9 |
 | EC-6.15 | ⛔ Steelman accepted by a correct student | Blocked with FR-6.20 |
 | EC-6.16 | ⬜ Coding round with no editor | Dropped at plan time — which is every coding round until M07 exists |
 | EC-6.17 | ⛔ Camera denied after opting in | Phase 3 (M12) |

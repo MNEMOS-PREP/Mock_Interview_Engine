@@ -44,6 +44,11 @@ _KEEP: dict[str, tuple[str, ...]] = {
     "answer.received": ("turn_id", "turn_index", "text", "question_turn_id"),
     "hint.given": ("level",),
     "segment.transition": ("from", "to", "from_title", "to_title", "line"),
+    # §6.4: the neutral note only. The plan (with its full reasons) is read
+    # through the session, which withholds the reasons until the end.
+    "plan.changed": ("live_note",),
+    # §6.9's checkpoints; the pace line itself is heard with the next question.
+    "time.warning": ("at",),
     "upstream.degraded": ("module", "sentence"),
 }
 

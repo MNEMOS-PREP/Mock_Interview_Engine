@@ -663,6 +663,11 @@ def test_a_thin_bank_ends_the_round_not_the_interview(db):
     ]
     assert [t["to"] for t in transitions] == [1, 2, 3]
     assert transitions[-1]["reason"] == "bank_exhausted"
+    # Off the end of the plan is the closing, which is reserved (FR-6.17):
+    # it still asks for the student's questions (FR-6.21) before it ends.
+    assert state.status is SessionStatus.live
+    assert state.transcript[-1].question_source == "closing"
+    state = say(engine, row, "No, thanks.")
     assert state.status is SessionStatus.ended
 
     # And what nothing asked about is owed to M02 as skipped, because a ledger

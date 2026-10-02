@@ -94,6 +94,20 @@ class SessionState(BaseModel):
     #: The student has chosen to move on and nothing has been asked since —
     #: what `continue_session` reads to know a question is owed.
     awaiting_next: bool = False
+    #: §6.9's checkpoints already announced (70, 90).
+    time_warnings: list[int] = Field(default_factory=list)
+    #: Live seconds used when the current segment began — what a round's
+    #: own clock (EC-6.9) is measured from.
+    segment_started_used_s: float = 0.0
+    #: §2.3's pace line, owed with the next question like a bridge.
+    pending_pace_line: str | None = None
+    #: §6.9's ahead-of-schedule rule: the segment from which one extra
+    #: follow-up is allowed, or None until the 70% check finds us ahead.
+    extra_depth_segment: int | None = None
+    #: FR-6.21: how many times the closing has asked "anything for me?".
+    closing_asked: int = 0
+    #: FR-6.21: what the student asked, in their words. Recorded, not scored.
+    closing_questions: list[str] = Field(default_factory=list)
     #: The index the NEXT turn will take.
     next_turn_index: int = 0
     transcript: list[TurnView] = Field(default_factory=list)
@@ -229,7 +243,12 @@ def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
     turn_id = UUID(str(p["turn_id"]))
     move = p.get("probe_move")
     retry = bool(p.get("retry"))
-    if p.get("new_question", move is None):
+    closing = p.get("question_source") == "closing"
+    if closing:
+        # FR-6.21: the closing asks, but it asks the student to ask. It is not
+        # a question of ours, and it does not count as one.
+        s.closing_asked += 1
+    if p.get("new_question", move is None) and not closing:
         # A fresh question opens a fresh ladder; a rung or a clarify continues
         # the one already open.
         s.ladder = ProbeLadderState(concept_id=p.get("concept_id") or "")
@@ -267,6 +286,8 @@ def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
     s.open_turn_id = turn_id
     s.pending_move = None
     s.awaiting_next = False
+    # Said with this question, like the bridge, so not owed twice.
+    s.pending_pace_line = None
     if p.get("nudged") and s.current_segment not in s.nudged_segments:
         s.nudged_segments.append(s.current_segment)
     # Said with this question, so it is not owed twice.
@@ -369,6 +390,9 @@ def _hint_given(s: SessionState, p: dict, _at: datetime) -> None:
 def _segment_transition(s: SessionState, p: dict, _at: datetime) -> None:
     _require_open(s, "segment.transition")
     s.current_segment = int(p["to"])
+    # The round's own clock starts here (EC-6.9). Recorded by the writer,
+    # because the fold has no clock of its own.
+    s.segment_started_used_s = float(p.get("used_s", s.segment_started_used_s))
     s.ladder = None
     s.pending_move = None
     s.pending_bridge = p.get("line") or None
@@ -376,6 +400,29 @@ def _segment_transition(s: SessionState, p: dict, _at: datetime) -> None:
     # would have the interviewer open by referring to a topic it has left.
     s.round_summary = ""
     s.summary_at_turn = s.next_turn_index
+
+
+def _plan_changed(s: SessionState, p: dict, _at: datetime) -> None:
+    """FR-6.4: the new plan, with its `Replan` appended — the before stays."""
+    _require_open(s, "plan.changed")
+    s.plan = InterviewPlan.model_validate(p["plan"])
+
+
+def _time_warning(s: SessionState, p: dict, _at: datetime) -> None:
+    mark = int(p["at"])
+    if mark not in s.time_warnings:
+        s.time_warnings.append(mark)
+    if p.get("line"):
+        s.pending_pace_line = str(p["line"])
+    if p.get("extra_depth"):
+        s.extra_depth_segment = s.current_segment
+
+
+def _closing_question(s: SessionState, p: dict, _at: datetime) -> None:
+    """FR-6.21: recorded in the student's own words."""
+    text = str(p.get("text") or "").strip()
+    if text:
+        s.closing_questions.append(text)
 
 
 def _paused(s: SessionState, _p: dict, at: datetime) -> None:
@@ -466,6 +513,9 @@ _REDUCERS = {
     "hint.given": _hint_given,
     "retry.offered": _retry_offered,
     "retry.declined": _retry_declined,
+    "plan.changed": _plan_changed,
+    "time.warning": _time_warning,
+    "closing.question": _closing_question,
     "segment.transition": _segment_transition,
     "session.paused": _paused,
     "session.resumed": _resumed,

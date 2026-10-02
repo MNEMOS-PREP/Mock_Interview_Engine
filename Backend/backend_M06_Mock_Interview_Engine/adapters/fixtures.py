@@ -289,6 +289,30 @@ class FixtureMemory:
     def consent(self, candidate_id: UUID, purpose: str) -> UUID | None:
         return self._consent
 
+    #: One hop of M04's ontology, in its shape, for the concepts the fixture
+    #: playlist asks about. Stacks and hashing share arrays — which is what
+    #: lets a test find the gap §6.4's first trigger looks for.
+    ONTOLOGY: dict[str, tuple[str, list[str]]] = {
+        "concept:time_complexity": ("Time complexity", ["concept:arrays"]),
+        "concept:stacks": ("Stacks", ["concept:arrays"]),
+        "concept:queues": ("Queues", ["concept:arrays"]),
+        "concept:hashing": ("Hashing", ["concept:arrays"]),
+        "concept:recursion": ("Recursion", ["concept:functions"]),
+        "concept:arrays": ("Arrays", []),
+        "concept:functions": ("Functions", []),
+    }
+
+    def concept(self, concept_id: str) -> dict[str, Any] | None:
+        found = self.ONTOLOGY.get(concept_id)
+        if found is None:
+            return None
+        name, prerequisites = found
+        return {
+            "id": concept_id,
+            "name": name,
+            "prerequisites": [{"concept_id": p, "strength": 0.6, "hops": 1} for p in prerequisites],
+        }
+
 
 class FixtureEvaluator:
     """M13. Records every request; answers with a minimal evaluation."""

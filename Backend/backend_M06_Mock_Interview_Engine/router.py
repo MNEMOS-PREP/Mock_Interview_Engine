@@ -168,6 +168,13 @@ class SessionOut(BaseModel):
     #: A sentence about the panel when it is not what the mode's name
     #: suggests (Real drive, until M15 can match a company's style).
     mode_note: str | None
+    #: §6.4's live notes — what changed, neutrally. The reasons come with the
+    #: report; mid-session "that round was hard" would be a live score.
+    plan_notes: list[str]
+    #: FR-6.21: the open turn is the closing, where the student asks.
+    in_closing: bool
+    #: §6.9's checkpoints passed (70, 90).
+    time_warnings: list[int]
     flags: SessionFlags
     drill_claim: str | None
     created_at: datetime | None
@@ -212,7 +219,7 @@ def session_out(state: SessionState, now: datetime | None = None) -> SessionOut:
         time_used_s=round(state.time_used_s(now), 1),
         time_remaining_s=round(state.time_remaining_s(now), 1),
         jd_id=state.jd_id,
-        plan=state.plan,
+        plan=_plan_view(state),
         current_segment=state.current_segment,
         questions_asked=state.questions_asked,
         open_turn_id=state.open_turn_id,
@@ -221,6 +228,9 @@ def session_out(state: SessionState, now: datetime | None = None) -> SessionOut:
         interviewer=_interviewer_card(state),
         retry_offered=state.retry_offer is not None,
         mode_note=mode_config(state.mode).persona_note,
+        plan_notes=[r.live_note for r in state.plan.replans] if state.plan is not None else [],
+        in_closing=_in_closing(state),
+        time_warnings=list(state.time_warnings),
         flags=state.flags,
         drill_claim=(state.drill or {}).get("claim_text"),
         created_at=state.created_at,
@@ -228,6 +238,28 @@ def session_out(state: SessionState, now: datetime | None = None) -> SessionOut:
         ended_at=state.ended_at,
         end_reason=state.end_reason,
     )
+
+
+def _plan_view(state: SessionState) -> InterviewPlan | None:
+    """The plan as a student may see it now.
+
+    During the session its re-plans carry no reasons or signals: "that round
+    was a hard one" mid-interview is a live score by another name (§2.2), and
+    the trigger names say the same thing in one word. The shape of the plan
+    — what was dropped, what was added — stays visible; the why comes with
+    the report.
+    """
+    plan = state.plan
+    if plan is None or state.is_final or not plan.replans:
+        return plan
+    return plan.model_copy(update={"replans": []})
+
+
+def _in_closing(state: SessionState) -> bool:
+    if state.open_turn_id is None:
+        return False
+    turn = state.turn(state.open_turn_id)
+    return turn is not None and turn.question_source == "closing"
 
 
 def _interviewer_card(state: SessionState) -> dict | None:

@@ -45,11 +45,17 @@ function TimeRemaining({ session }: { session: Session }) {
   const announced = useRef<Set<number>>(new Set());
   const [announcement, setAnnouncement] = useState("");
 
-  useEffect(() => setLeft(session.time_remaining_s), [session.time_remaining_s, session.status]);
+  useEffect(
+    () => setLeft(session.time_remaining_s),
+    [session.time_remaining_s, session.status],
+  );
 
   useEffect(() => {
     if (session.status !== "live") return;
-    const timer = window.setInterval(() => setLeft((value) => Math.max(0, value - 1)), 1000);
+    const timer = window.setInterval(
+      () => setLeft((value) => Math.max(0, value - 1)),
+      1000,
+    );
     return () => window.clearInterval(timer);
   }, [session.status]);
 
@@ -58,14 +64,19 @@ function TimeRemaining({ session }: { session: Session }) {
       const mark = minutes * 60;
       if (left <= mark && left > mark - 60 && !announced.current.has(minutes)) {
         announced.current.add(minutes);
-        setAnnouncement(`${minutes} minute${minutes === 1 ? "" : "s"} remaining`);
+        setAnnouncement(
+          `${minutes} minute${minutes === 1 ? "" : "s"} remaining`,
+        );
       }
     }
   }, [left]);
 
   return (
     <>
-      <span className="font-mono text-2xs tabular-nums text-ink-soft" title="Time remaining">
+      <span
+        className="font-mono text-2xs tabular-nums text-ink-soft"
+        title="Time remaining"
+      >
         {clock(left)}
       </span>
       <span aria-live="polite" className="sr-only">
@@ -131,7 +142,10 @@ function StatusStrip({
       <div className="ml-auto flex items-center gap-2">
         <TimeRemaining session={session} />
         {!connected && session.status === "live" && (
-          <span className="text-2xs text-session-degraded" title="Reconnecting to the live feed">
+          <span
+            className="text-2xs text-session-degraded"
+            title="Reconnecting to the live feed"
+          >
             offline
           </span>
         )}
@@ -175,9 +189,15 @@ function Turn({ turn }: { turn: TurnView }) {
  */
 function RoundRule({ title }: { title: string }) {
   return (
-    <div className="flex items-center gap-3 pt-2" role="separator" aria-label={`New round: ${title}`}>
+    <div
+      className="flex items-center gap-3 pt-2"
+      role="separator"
+      aria-label={`New round: ${title}`}
+    >
       <span className="h-px flex-1 bg-line" />
-      <span className="text-2xs uppercase tracking-wide text-ink-faint">{title}</span>
+      <span className="text-2xs uppercase tracking-wide text-ink-faint">
+        {title}
+      </span>
       <span className="h-px flex-1 bg-line" />
     </div>
   );
@@ -203,7 +223,9 @@ function HintButton({
 }) {
   if (!offer.available) {
     return offer.unavailable_reason ? (
-      <span className="text-2xs text-ink-faint">{offer.unavailable_reason}</span>
+      <span className="text-2xs text-ink-faint">
+        {offer.unavailable_reason}
+      </span>
     ) : null;
   }
   const kept = Math.round(offer.credit * 100);
@@ -240,16 +262,21 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const bottom = useRef<HTMLDivElement>(null);
 
   const data = session.data;
-  const waiting = answer.isPending || start.isPending || retry.isPending || moveOn.isPending;
+  const waiting =
+    answer.isPending || start.isPending || retry.isPending || moveOn.isPending;
 
-  const { connected } = useInterviewStream(data?.status === "live" ? sessionId : undefined, {
-    onToken: (text) => setPreview((current) => current + text),
-    onEvent: (event) => {
-      // The text of record has landed; the preview has served its purpose.
-      if (event.kind === "question.asked" || event.kind === "session.ended") setPreview("");
-      session.refetch();
+  const { connected } = useInterviewStream(
+    data?.status === "live" ? sessionId : undefined,
+    {
+      onToken: (text) => setPreview((current) => current + text),
+      onEvent: (event) => {
+        // The text of record has landed; the preview has served its purpose.
+        if (event.kind === "question.asked" || event.kind === "session.ended")
+          setPreview("");
+        session.refetch();
+      },
     },
-  });
+  );
 
   // Under 800 ms nothing changes on screen (spec §8).
   useEffect(() => {
@@ -265,20 +292,26 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [data?.transcript.length, preview, thinking]);
 
-  const notices = useMemo(() => Object.values(data?.flags.degraded ?? {}), [data]);
+  const notices = useMemo(
+    () => Object.values(data?.flags.degraded ?? {}),
+    [data],
+  );
 
   if (session.isLoading) return <Spinner label="Opening the interview…" />;
   if (session.isError || !data) {
     return (
       <ErrorNote
         message="That interview could not be opened."
-        detail={session.error instanceof Error ? session.error.message : undefined}
+        detail={
+          session.error instanceof Error ? session.error.message : undefined
+        }
         onRetry={() => session.refetch()}
       />
     );
   }
 
-  const canAnswer = data.status === "live" && Boolean(data.open_turn_id) && !waiting;
+  const canAnswer =
+    data.status === "live" && Boolean(data.open_turn_id) && !waiting;
 
   function submit() {
     const text = draft.trim();
@@ -293,7 +326,9 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
       {data.status === "planned" ? (
         <section>
           <h1 className="text-xl font-semibold tracking-tight">
-            {data.kind === "drill" ? "Defend one line from your resume" : "Ready when you are"}
+            {data.kind === "drill"
+              ? "Defend one line from your resume"
+              : "Ready when you are"}
           </h1>
           {data.drill_claim && (
             <blockquote className="mt-4 border-l-2 border-brand-line bg-brand-soft/40 p-3 text-sm text-ink">
@@ -325,7 +360,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
 
           {data.drill_claim && (
             <p className="mt-3 text-2xs text-ink-faint">
-              Defending: <span className="text-ink-soft">{data.drill_claim}</span>
+              Defending:{" "}
+              <span className="text-ink-soft">{data.drill_claim}</span>
             </p>
           )}
 
@@ -334,7 +370,9 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               const previous = data.transcript[index - 1];
               // A rule is drawn where the segment changes, never before the
               // first turn: the interview opening is not a round ending.
-              const crossed = previous !== undefined && previous.segment_index !== turn.segment_index;
+              const crossed =
+                previous !== undefined &&
+                previous.segment_index !== turn.segment_index;
               const title = data.plan?.segments.find(
                 (segment) => segment.index === turn.segment_index,
               )?.title;
@@ -347,7 +385,9 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             })}
 
             {preview && (
-              <p className="turn-interviewer whitespace-pre-wrap text-ink-soft">{preview}</p>
+              <p className="turn-interviewer whitespace-pre-wrap text-ink-soft">
+                {preview}
+              </p>
             )}
 
             {thinking && !preview && (
@@ -370,6 +410,14 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             </ul>
           )}
 
+          {data.status === "live" && data.plan_notes.length > 0 && (
+            // §6.4: the newest change only, and only what changed — the why
+            // is in the notes afterwards.
+            <p className="mt-4 text-2xs text-ink-faint" role="status">
+              {data.plan_notes[data.plan_notes.length - 1]}
+            </p>
+          )}
+
           {data.status === "live" && data.retry_offered ? (
             // §15.4: the interviewer asked; the student chooses. Two buttons,
             // because a typed "yes" would be judged as an answer.
@@ -377,7 +425,11 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               <Button onClick={() => retry.mutate()} disabled={waiting}>
                 Try it again
               </Button>
-              <Button variant="ghost" onClick={() => moveOn.mutate()} disabled={waiting}>
+              <Button
+                variant="ghost"
+                onClick={() => moveOn.mutate()}
+                disabled={waiting}
+              >
                 Move on
               </Button>
               <span className="text-2xs text-ink-faint">
@@ -400,7 +452,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit();
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey))
+                    submit();
                 }}
                 disabled={!canAnswer}
                 rows={5}
@@ -408,31 +461,39 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                 placeholder={
                   data.status === "paused"
                     ? "Paused — resume to keep going."
-                    : canAnswer
-                      ? "Type your answer. Say what you'd say out loud."
-                      : "One sec…"
+                    : !canAnswer
+                      ? "One sec…"
+                      : data.in_closing
+                        ? "Ask anything — the team, the work, what happens next. Or just say that's all."
+                        : "Type your answer. Say what you'd say out loud."
                 }
                 className="w-full resize-y rounded-lg border border-line bg-surface p-3 text-sm leading-relaxed text-ink placeholder:text-ink-faint focus:border-brand focus:outline-none disabled:bg-surface-sunken"
               />
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <Button type="submit" disabled={!canAnswer || !draft.trim()}>
-                  Answer
+                  {data.in_closing ? "Ask" : "Answer"}
                 </Button>
-                <HintButton
-                  offer={data.hint}
-                  busy={hint.isPending || !canAnswer}
-                  onTake={() => hint.mutate()}
-                />
+                {!data.in_closing && (
+                  <HintButton
+                    offer={data.hint}
+                    busy={hint.isPending || !canAnswer}
+                    onTake={() => hint.mutate()}
+                  />
+                )}
                 <span className="text-2xs text-ink-faint">
-                  Ctrl or ⌘ + Enter sends. There is no score on this screen — the notes come at
-                  the end.
+                  Ctrl or ⌘ + Enter sends. There is no score on this screen —
+                  the notes come at the end.
                 </span>
               </div>
               {answer.isError && (
                 <div className="mt-3">
                   <ErrorNote
                     message="That answer didn't go through."
-                    detail={answer.error instanceof Error ? answer.error.message : undefined}
+                    detail={
+                      answer.error instanceof Error
+                        ? answer.error.message
+                        : undefined
+                    }
                     onRetry={() => answer.reset()}
                   />
                 </div>
@@ -444,11 +505,13 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                 {data.kind === "drill" ? "That's the drill." : "That's time."}
               </h2>
               <p className="mt-1 text-sm text-ink-soft">
-                Your notes are ready — what was asked, how far each question went, and where it
-                stopped.
+                Your notes are ready — what was asked, how far each question
+                went, and where it stopped.
               </p>
               <div className="mt-4 flex gap-2">
-                <Button onClick={() => navigate(`/mock/${sessionId}/report`)}>See the notes</Button>
+                <Button onClick={() => navigate(`/mock/${sessionId}/report`)}>
+                  See the notes
+                </Button>
                 <Link
                   to="/mock"
                   className="inline-flex items-center rounded-lg px-3 py-1.5 text-sm text-ink-soft hover:text-ink"

@@ -85,6 +85,11 @@ class LiveMemory:
             headers=identity_headers(candidate_id),
         ).body
 
+    def concept(self, concept_id: str) -> dict[str, Any] | None:
+        """The public ontology: no candidate in it, so no identity to forward."""
+        response = self.http.get(f"/v1/concepts/{concept_id}", accept=(404,))
+        return None if response.status == 404 else response.body
+
     def posterior(self, candidate_id: UUID, concepts: list[str]) -> dict[str, float]:
         if not concepts:
             return {}

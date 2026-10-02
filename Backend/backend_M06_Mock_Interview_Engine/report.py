@@ -84,6 +84,12 @@ class SessionReport(BaseModel):
     minutes_planned: int
     framing: str
     questions: list[QuestionReport]
+    #: FR-6.21: what the student asked the interviewer, in their words.
+    #: Recorded, not scored — there is no rubric for a question yet.
+    your_questions: list[str] = Field(default_factory=list)
+    #: §6.4: "I changed the plan here because…" — each re-plan's reason, in
+    #: full, now that the session is over and it can no longer be a tell.
+    plan_changes: list[str] = Field(default_factory=list)
     notes: list[str]
     #: Spec §6.7 tells M06 to say this, "so students don't think Practice mode
     #: inflates their score" — which means it has to be exactly right, not
@@ -134,6 +140,11 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
 
     for event in sorted(events, key=lambda e: e.seq):
         p = event.payload
+        if event.kind == "question.asked" and p.get("question_source") == "closing":
+            # FR-6.21: the closing is not one of our questions. Its answers
+            # are the student's own, and are listed on their own below.
+            current = None
+            continue
         if event.kind == "question.asked" and p.get("retry") and current is not None:
             # §15.4: the same question again, on the same entry — the notes
             # show both attempts together, and the first stays the scored one.
@@ -218,6 +229,14 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
     mode_note = mode_config(state.mode).persona_note
     if mode_note and state.kind != "drill":
         notes.append(mode_note)
+    if state.closing_questions:
+        notes.append(
+            "Your questions for the interviewer are in these notes but not scored — there is "
+            "no rubric for a question yet, and the real panel is who can answer them."
+        )
+    plan_changes = (
+        [r.student_sentence for r in state.plan.replans] if state.plan is not None and final else []
+    )
 
     return SessionReport(
         session_id=str(state.session_id),
@@ -231,6 +250,8 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
         minutes_planned=state.requested_minutes,
         framing=_framing(state, now),
         questions=questions,
+        your_questions=list(state.closing_questions),
+        plan_changes=plan_changes,
         notes=notes,
     )
 

@@ -89,11 +89,33 @@ export interface PlannedSegment {
   persona_id: string;
 }
 
+export type ReplanTrigger =
+  | "gap_discovered"
+  | "ceiling_hit"
+  | "struggling"
+  | "time_overrun"
+  | "modality_lost";
+
+/** §6.4: one change to the plan at a segment boundary, at most two a session.
+ *  Mid-session the backend sends none of these — only `Session.plan_notes` —
+ *  because the trigger and its reason are a live score by another name. */
+export interface Replan {
+  at_segment: number;
+  trigger: ReplanTrigger;
+  signals: Record<string, number>;
+  before: PlannedSegment[];
+  after: PlannedSegment[];
+  student_sentence: string;
+  live_note: string;
+}
+
 export interface InterviewPlan {
   id: string;
   mode: Mode;
   total_minutes: number;
   segments: PlannedSegment[];
+  /** Empty while the session is live; filled once it is over. */
+  replans: Replan[];
   /** Requirements in the posting that this session will not reach. M02's
    *  list, shown rather than hidden — a plan that quietly covers 3 of 8 is
    *  the one a student would want to know about. */
@@ -127,6 +149,12 @@ export interface Session {
   retry_offered: boolean;
   /** A sentence about the panel when it isn't what the mode's name suggests. */
   mode_note: string | null;
+  /** §6.4's live notes: what changed in the plan, said neutrally. */
+  plan_notes: string[];
+  /** FR-6.21: the open turn is the closing, where the student asks. */
+  in_closing: boolean;
+  /** §6.9's checkpoints passed — 70 and 90 (percent of the session). */
+  time_warnings: number[];
   current_segment: number;
   questions_asked: number;
   /** The interviewer turn the answer box posts to. Null when nothing is open. */
@@ -184,6 +212,10 @@ export interface SessionReport {
   minutes_planned: number;
   framing: string;
   questions: QuestionReport[];
+  /** FR-6.21: what the student asked at the closing. Recorded, not scored. */
+  your_questions: string[];
+  /** §6.4: why the plan changed, in full. Only once the session is over. */
+  plan_changes: string[];
   notes: string[];
   persona_note: string;
 }

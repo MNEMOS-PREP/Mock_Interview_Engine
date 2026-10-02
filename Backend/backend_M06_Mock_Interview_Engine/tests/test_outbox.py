@@ -16,7 +16,11 @@ from backend_M06_Mock_Interview_Engine.contracts import (
 )
 from backend_M06_Mock_Interview_Engine.engine import Engine, ThetaCache
 from backend_M06_Mock_Interview_Engine.llm import NullLLM
-from backend_M06_Mock_Interview_Engine.models import EvaluationOutbox, LedgerOutbox
+from backend_M06_Mock_Interview_Engine.models import (
+    ArtifactOutbox,
+    EvaluationOutbox,
+    LedgerOutbox,
+)
 
 from .stubs import BankQuestions, DownMemory, StubLLM, drill_body, verdict
 
@@ -79,6 +83,13 @@ def queued(db, session_id) -> list[EvaluationOutbox]:
     )
 
 
+def artifacts(db) -> list[ArtifactOutbox]:
+    """Every artifact row. They carry a turn id and no session id — M04
+    derives the artifact id from the turn — so a test's own database is the
+    session's scope."""
+    return list(db.exec(select(ArtifactOutbox)).all())
+
+
 def ledger(db, session_id) -> list[LedgerOutbox]:
     return list(db.exec(select(LedgerOutbox).where(LedgerOutbox.session_id == session_id)).all())
 
@@ -136,6 +147,9 @@ def test_a_drill_turn_is_never_queued(db):
     engine.start(row.id)
     say(engine, row, "A ResNet-50 on PlantVillage.")
     assert queued(db, row.id) == []
+    # Nor registered with M04: an answer nobody will score is evidence
+    # nobody will cite (day 10 — the docstring said so from day 4).
+    assert artifacts(db) == []
 
 
 def test_a_backup_question_is_not_queued_and_the_report_says_why(db):
@@ -147,6 +161,7 @@ def test_a_backup_question_is_not_queued_and_the_report_says_why(db):
     engine.start(row.id)
     say(engine, row, "A hash map.")
     assert queued(db, row.id) == []
+    assert artifacts(db) == []
 
     built = report.build(engine.state(row.id), store.events_for(db, row.id), engine.clock())
     question = built.questions[0]

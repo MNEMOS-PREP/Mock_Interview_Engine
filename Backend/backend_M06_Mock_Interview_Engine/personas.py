@@ -103,6 +103,10 @@ class Persona(BaseModel):
                 raise ValueError(f"line {name!r} is refused by the guard: {verdict.reason}")
         if "bridge_to" in value and "{topic}" not in value["bridge_to"]:
             raise ValueError("line 'bridge_to' must name the next topic with {topic}")
+        if "pace_focus" in value and not all(
+            part in value["pace_focus"] for part in ("{minutes}", "{topic}")
+        ):
+            raise ValueError("line 'pace_focus' must say {minutes} and {topic}")
         return value
 
     # ── the mechanics the parameters drive ───────────────────────────────

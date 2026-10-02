@@ -123,6 +123,12 @@ def scoreable(state: SessionState, turn, item: Item | None) -> str | None:
         # M13 resolves a question package from M05, and a claim probe is not a
         # bank item. Minting grounded items from claims is M05's Phase 2 path.
         return "Practice drill — drills are not scored yet."
+    if turn.question_source == "closing":
+        # FR-6.21: the student's own questions are recorded, and there is no
+        # rubric to score a question with yet.
+        return "Your questions for the interviewer are recorded, not scored."
+    if getattr(turn, "retry", False):
+        return "A retry — the first attempt is the one that counts."
     if turn.deliberately_false:
         # Unreachable while FR-6.20 is blocked, and the guard belongs here too:
         # scored under the ordinary rubric, agreeing with a falsehood would be
@@ -158,9 +164,11 @@ def enqueue_artifact(db: Session, state: SessionState, turn) -> ArtifactOutbox |
     """Register the answer so M13's evidence can resolve against it.
 
     Queued on the same condition as the evaluation: an answer nobody will
-    score is an artifact nobody will cite.
+    score is an artifact nobody will cite. (The docstring said so from day 4
+    and the code did not check — every drill answer and every backup-set
+    answer was being registered with M04 for nothing to cite.)
     """
-    if not turn.text:
+    if not turn.text or scoreable(state, turn, None) is not None:
         return None
     existing = db.get(ArtifactOutbox, turn.turn_id)
     if existing is not None:
