@@ -1,10 +1,10 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 87%** — 20 of 26 functional requirements met, 5 partially. **Days 1–14 of 15 are done**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 14 **the full chain runs live with M04's guard on** — five real services, the real model, a student's answers reaching M13 and moving M04's skill graph — and a scripted student drives twenty sessions across the four modes on every run of the suite. Since day 13 **every route has a screen** — or a named caller — and a gate fails the build the day one does not; the setup offers the four modes and honours a job description handed over, the preview says who runs each part, and §7's last three routes exist. Since day 12 **a session degrades instead of breaking**: a failing model is noticed turn by turn, the session wraps up early and then stops asking it, and if everything fails the student gets an apology and an honest record rather than a spinner. The notes now carry M13's own words about each answer — never its numbers. Since day 11 **a session survives the student leaving**: the clock stops while their stage is gone, they come back to "we were on question 2 of Data structures", silence gets a prompt rather than a stare, and the spec's five chaos scenarios pass with nothing done twice. Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
+> **Completion: 87%** — 20 of 26 functional requirements met, 5 partially. **Days 1–15 of 15 are done — the build order is complete**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 15 **the build order is finished and what is left is named**: what waits on another module, what waits on a person (human evaluation, round 1, prepared), and what M06 still owes itself. Since day 14 **the full chain runs live with M04's guard on** — five real services, the real model, a student's answers reaching M13 and moving M04's skill graph — and a scripted student drives twenty sessions across the four modes on every run of the suite. Since day 13 **every route has a screen** — or a named caller — and a gate fails the build the day one does not; the setup offers the four modes and honours a job description handed over, the preview says who runs each part, and §7's last three routes exist. Since day 12 **a session degrades instead of breaking**: a failing model is noticed turn by turn, the session wraps up early and then stops asking it, and if everything fails the student gets an apology and an honest record rather than a spinner. The notes now carry M13's own words about each answer — never its numbers. Since day 11 **a session survives the student leaving**: the clock stops while their stage is gone, they come back to "we were on question 2 of Data structures", silence gets a prompt rather than a stare, and the spec's five chaos scenarios pass with nothing done twice. Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
 >
 > Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), segments with a persona each (FR-6.3), the probe ladder and break depths (FR-6.5, 6.6), hints at a published price (FR-6.7), modes as configs (FR-6.8), pause (FR-6.12), reconnect and resume (FR-6.13), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), fixed context (FR-6.16), a report for every session (FR-6.18), re-planning (FR-6.4), Final Boss (FR-6.9), pacing and the reserved closing (FR-6.17), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
-> Partly: closing questions (FR-6.21 — recorded and shown; scoring them waits on a rubric). Blocked: steelman (FR-6.20).
+> Partly: the modalities beyond text (FR-6.10, 6.11, 6.22 — voice waits on M11, the editor on M07, the canvas on M08), the trace's offline harness and Langfuse export (FR-6.19), and closing questions (FR-6.21 — recorded and shown; scoring them waits on a rubric). Blocked: steelman (FR-6.20), on M13's `push_back` rubric.
 >
 > _Day 6 moved no requirement across a line, and the number is right not to move: it deepened FR-6.3 (rounds now end, begin and say so) without completing it, because per-segment personas wait on day 9. The measure counts requirements, not work — which is the point of having one._
 >
@@ -43,7 +43,7 @@ _Nothing scouted for this module yet._
 
 | | |
 |---|---|
-| Status | **Days 1–14 of 15 done.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
+| Status | **Days 1–15 of 15 done — the build order is complete.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
 | Backend tests passing | **375**, no socket opened, no API key |
 | Release gates (`-m gate`) | **79** |
 | Route decorators | **31** on `/v1`, plus `/health` and `/status` |
@@ -84,7 +84,7 @@ _Nothing scouted for this module yet._
 | 12 | ✅ | The degradation ladder (L0 → panic, from what the session saw), everything-fails with the apology, M13's words in the notes, AC-6.9's number from the log |
 | 13 | ✅ | UI pass: mode picker, `?jd=`, who runs each part, round name, pause confirmation, Repeat and ⚑; §7's `/repeat`, `/flag`, `/switch-modality`; the route-client contract gate |
 | 14 | ✅ | The scripted student (20 sessions across the 4 modes), the manual QA script, and the full chain live with M04's guard on |
-| 15 | ⬜ | Cross-module asks raised, TODO reconciled, human eval prep |
+| 15 | ✅ | Every open ask raised in its owner's TODO; this TODO reconciled against shipped code; human evaluation round 1 prepared ([M06_HUMAN_EVAL_ROUND1.md](M06_HUMAN_EVAL_ROUND1.md)) |
 
 ### Day 1 — what landed, and what it found
 
@@ -780,14 +780,67 @@ hash tables as off-question for *"elaborate on why O(1) given those
 conditions"*. It is a judgment call, logged for the first human-evaluation
 round (§12), which is where a judgment like that gets measured.
 
-### Next: day 15
+### Day 15 — what landed
 
-1. **Raise the cross-module asks** (§7 below) in each module's own TODO.
-2. **Reconcile this TODO**: the completion figure, every row against
-   shipped code, the asks that landed.
-3. **Prepare human evaluation, round 1**: the protocol §12 asks for (ten
-   students, a session each, a five-minute structured interview), the
-   consent form, and what gets recorded.
+**The asks, raised where their owners will read them.** Every open row in §7
+went into its owner's `main` TODO and the umbrella copy, as a dated
+*"asks from M06"* note in the style M05 and M13 already used for M06's
+earlier seams:
+- **M02** (`cde74e6`): the 4.7 s first plan; the `?jd=` link; the ledger
+  docstring.
+- **M05** (`7b0bbf4`, `e9d3161`): the unguarded ⚑; EC-5.9's retraction;
+  `difficulty_offset`; per-round-type counts.
+- **M13** (`9e4c6c7`, `40c1846`): its words are student-visible now; the
+  artifact ids; `push_back`; `cs_core` and communication.
+- **M04** (`265774f`): `recent_sessions`, and the live confirmation of its
+  guard.
+- **M15**: the `?jd=` link — in its local plan copy, which its repo does not
+  track.
+
+The owners' `todo` branches were last synced on 2026-08-27, and rebuilding
+them is theirs to do.
+
+**This TODO, reconciled against shipped code.**
+- EC-6.5 was ✅ since day 7 and still said "day 7".
+- EC-6.16 has been enforced and tested since day 5, and was marked ⬜.
+- FR-6.11 and FR-6.19 now say what day 13 and day 14 added to them.
+- The completion figure was recounted from the table rather than carried
+  forward: **87%**, 20 met and 5 partial of 26.
+
+**Human evaluation, round 1, prepared**
+([M06_HUMAN_EVAL_ROUND1.md](M06_HUMAN_EVAL_ROUND1.md)):
+- ten students, split six Mock / two Practice / two Final Boss — Final Boss
+  because AC-6.12 is most at risk there;
+- the verbatim briefing, and seven questions in a fixed order;
+- consent twice: on paper, and in M04 with purpose `research`, which the
+  product's `practice` does not cover;
+- what to export on the day, and how a reported moment is found in the trace.
+
+### What is left — and whose it is
+
+**Waiting on another module:**
+- FR-6.20 (steelman) waits on M13's `push_back` rubric.
+- FR-6.21's scoring waits on a rubric for questions.
+- Voice (FR-6.10 and FR-6.22's voice half) waits on M11; the editor on M07;
+  the canvas on M08; the camera on M12.
+- FR-6.11 has nothing to switch to until one of those lands.
+
+**Waiting on a person:**
+- AC-6.8 and AC-6.12 — human evaluation round 1, prepared above.
+- AC-6.5, AC-6.6, AC-6.7 and AC-6.9 on real sessions; each is met or
+  measured by the scripted student or the reliability page today.
+- The manual QA script has never been run by a person.
+
+**M06's own:**
+- FR-6.19's offline re-run harness and the Langfuse export.
+- AC-6.11 (prompt cache hits) measured on a streamed call.
+- Moving M06's outbox onto Platform_Core v0.10.0's shared `ai_core.outbox`,
+  as M13 did — the second consumer is what proves that library.
+- The live drill path with M01 running: the full chain on 2026-10-02 ran
+  without M01, so the project segment was not exercised live.
+
+Still open: FR-6.20 blocked, and FR-6.10, FR-6.11, FR-6.19, FR-6.21, FR-6.22 partial —
+each row below says what it waits on.
 
 ---
 
@@ -807,7 +860,7 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.8 | ✅ Four modes as one table (`modes.py`): personas per segment kind, hints, ensemble, overrun allowance, retry, steelman flag; `GET /v1/interviews/modes` serves only true mechanics | P0 | 1 |
 | FR-6.9 | ✅ No hints, the deepest ladder, the shortest patience, a `RUDE` screen on every line, and the hard clock — 0% overrun, enforced at the next question boundary | P0 | 1 |
 | FR-6.10 | 🟡 Text runs; the turn contract carries `modality` | P0 | 1·text · voice ⛔ M11 · coding ⛔ M07 · canvas ⛔ M08 |
-| FR-6.11 | 🟡 Contract fixed and carried; nothing to switch to yet | P0 | 1·text |
+| FR-6.11 | 🟡 Contract fixed and carried, and `POST /switch-modality` exists (day 13): text is a no-op, anything else names the module it waits on — nothing to switch to yet | P0 | 1·text |
 | FR-6.12 | ✅ Pause once ≤ 5 min, resume. The cap is applied on `/resume` for a student who comes back, and by the sweeper (EC-6.14) for one who does not — which used to lock them out of every future interview | P1 | 1 |
 | FR-6.13 | ✅ Reconnect and resume: checkpoint recovery (stale, unreadable, failed write); presence — a disconnect stops the clock, a return restarts it after a 30 s grace; `GET /resume-state` with "welcome back, we were on question N"; the stage re-attaches | P0 | 1 |
 | FR-6.14 | ✅ Evaluation never blocks the hot path — outbox written with the turn, delivered by a background task, an explicit drain, or the sweeper; claimed before sending; a status returns, never a number. Three obligations now: the answer text to M04 (so evidence resolves), the evaluation to M13, the coverage row to M02 — and the artifact goes first | P0 | 1 |
@@ -815,7 +868,7 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.16 | ✅ Last six turns plus §6.6's rolling note, regenerated every four turns and REPLACING the dropped turns; bounded by construction, so a six-times-longer session is not a six-times-larger context | P0 | 1 |
 | FR-6.17 | ✅ 70%: announced, and in the enforced modes the plan narrows by M02 priority and says so; 90%: the closing takes over; a question is never asked without time to answer it; ahead of schedule, one rung deeper | P0 | 1 |
 | FR-6.18 | ✅ A report for every session — ended, aborted, or crashed half-way; built from the log | P0 | 1 |
-| FR-6.19 | 🟡 `/trace` serves the log, every model call, and a replay equality check; an offline re-run harness and the Langfuse export are not built | P0 | 1 |
+| FR-6.19 | 🟡 `/trace` serves the log, every model call, and a replay equality check, asserted over twenty scripted sessions on every run (day 14); an offline re-run harness and the Langfuse export are not built | P0 | 1 |
 | FR-6.20 | ⛔ Steelman probes, dispatched against `push_back` | P1 | blocked — M13 rubric |
 | FR-6.21 | 🟡 ✅ The closing runs and records the student's questions (two at most), shown in the notes · ⛔ scoring them | P1 | 1 · scoring blocked — rubric |
 | FR-6.22 | 🟡 Text measured at ≈ 2.0 s p95 to first visible token, inside the gate | P0 | 1·text · voice ⛔ M11 |
@@ -863,7 +916,7 @@ difference between a demo and a product.
 | EC-6.2 | ✅ Student answers a different question | Redirected once, then judged as given |
 | EC-6.3 | ✅ Student asks the interviewer a question | Brief answer, then the question again |
 | EC-6.4 | ✅ Student is abusive / tests the AI | One neutral redirect, then end politely. Logged — `abusive` in the verdict (model) or the lexicon (fallback) |
-| EC-6.5 | 🟡 Student asks for the answer | A hint while hints last, else a graceful exit; M13's credit table is day 7 |
+| EC-6.5 | ✅ Student asks for the answer | A hint while hints last, else a graceful exit — the credit table landed on day 7 and is shown before the hint is taken |
 | EC-6.6 | ✅ Answer contains prompt injection | Recognised spans stripped before the strategist; the guard model beside it; a flagged answer moves no θ; M13 neutralises before scoring; the report says a passage was set aside |
 | EC-6.7 | ⛔ Mic dies mid-answer | Phase 3 (M11) |
 | EC-6.8 | ✅ Browser refresh | Resume from checkpoint; a refresh under 5 s is not a disconnect; a longer one is welcomed back to the same question with the clock right |
@@ -874,7 +927,7 @@ difference between a demo and a product.
 | EC-6.13 | ✅ Two sessions in parallel | Blocked with an explanation and the id to resume; a unique nullable `occupying_key` enforces it at the database |
 | EC-6.14 | ✅ Pauses and never returns | Auto-close after 30 min; partial report — the sweeper, since the fix inserted before day 9 |
 | EC-6.15 | ⛔ Steelman accepted by a correct student | Blocked with FR-6.20 |
-| EC-6.16 | ⬜ Coding round with no editor | Dropped at plan time — which is every coding round until M07 exists |
+| EC-6.16 | ✅ Coding round with no editor | Dropped at plan time, with the reason on the preview and `skipped` owed to M02 (`test_a_coding_round_is_dropped_and_owed_to_m02_as_skipped`) — every coding round until M07 exists |
 | EC-6.17 | ⛔ Camera denied after opting in | Phase 3 (M12) |
 
 ---
@@ -900,7 +953,7 @@ Spec §5 (Revision 2).
 ## 7. Asks of other modules
 
 From [M06_REVIEW.md](M06_REVIEW.md) Part 5. None blocks day 1. Each belongs in
-the other module's TODO once raised; tick it here when it has been.
+the other module's TODO once raised; tick it here when it has been. **Day 15 (2026-10-02) raised every open one** in its owner's `main` TODO and the umbrella copy — the owners' `todo` branches are stale since 2026-08-27 and are theirs to rebuild.
 
 | Module | Ask | State |
 |---|---|---|
@@ -911,22 +964,22 @@ the other module's TODO once raised; tick it here when it has been.
 | M13 | **a live M05 question source** — `get_questions()` was always the fixture bank, so it 404d on every real question id (blocked the Phase-1 gate) | ✅ landed (`efb5a5a`); confirmed live: M13 resolves `/v1/questions/{id}/package?round_type=` from M05 |
 | M13 | **a worker that drains its own outbox** — `emit.py` promised one and only `POST /outbox/drain` existed | ✅ landed (`bdf31bb`), on Platform_Core v0.10.0's shared `ai_core.outbox` — which M06's own outbox should move to |
 | M13 | a rejected outbox row disappeared from `/v1/outbox` | ✅ landed (`bdf31bb`): stuck rows listed per destination, with requeue |
-| M13 | code and canvas artifacts get a fresh `uuid4()` every evaluation (`service.py`), so they can never resolve in M04 the way a transcript now does. Blocks scored evidence for M07/M08 | ⬜ new |
+| M13 | code and canvas artifacts get a fresh `uuid4()` every evaluation (`service.py`), so they can never resolve in M04 the way a transcript now does. Blocks scored evidence for M07/M08 | ⬜ raised (`Evaluation_Engine` `9e4c6c7`) |
 | M13 | `authenticated: false` on `/v1/outbox` — the observation write was unauthenticated | ✅ landed (`bdf31bb`, `ecb3548`): reads `M04_SERVICE_SECRET` and forwards the student |
-| M05 | `difficulty_offset` on `SelectionRequest` | ⬜ |
-| M05 | per-round-type counts on `/bank/health` | ⬜ |
+| M05 | `difficulty_offset` on `SelectionRequest` | ⬜ raised (`e9d3161`) |
+| M05 | per-round-type counts on `/bank/health` | ⬜ raised (`e9d3161`) |
 | M04 | consent lookup route — until it existed, M13 emitted **no observations at all** | ✅ landed (`5e01e8d`): `GET`/`POST /v1/candidates/{id}/consent` |
 | M04 | a route to register an artifact, so evidence can resolve | ✅ landed (`5e01e8d`): `POST /v1/candidates/{id}/artifacts` |
-| M04 | source `recent_sessions` from M06 | ⬜ |
-| M13 | `push_back` rubric variant (unblocks FR-6.20) | ⬜ |
-| M13 | `cs_core` and `communication` rubrics | ⬜ |
+| M04 | source `recent_sessions` from M06 | ⬜ raised (`Memory` `265774f`) |
+| M13 | `push_back` rubric variant (unblocks FR-6.20) | ⬜ raised (`40c1846`) |
+| M13 | `cs_core` and `communication` rubrics | ⬜ raised (`40c1846`) |
 | M13 | read `M04_SERVICE_SECRET`, as M04 and M15 do, not `SERVICE_SECRET` | ✅ landed (`bdf31bb`) |
 | M04 | guard every candidate route — it failed OPEN with no secret configured | ✅ landed (`97daa17`); M06 forwards the student on profile-summary and artifacts (`284634e`) |
-| M02 | docstring: M06 writes `asked`/`answered` | ⬜ |
-| M02 | the first plan for a posting took 4.7 s live (2026-10-02); M06 waits 20 s at plan time now, but a student watches that spinner — precompute on parse, or publish the expected latency | ⬜ new |
-| M02, M15 | link "practise for this role" to `/mock?jd={id}` — M06's setup honours `?jd=` since day 13 | ⬜ new |
-| M05 | `/questions/{id}/flag` takes any caller — no identity guard; and EC-5.9's retraction of observations already sent is still not wired (M06's ⚑ says "won't be picked again", not "undone") | ⬜ new |
-| M13 | M06's notes show `reasoning`, `missing_key_points` and verified quotes to the student (day 12); state in M13's contract that these are student-visible, so their wording is held to that | ⬜ new |
+| M02 | docstring: M06 writes `asked`/`answered` | ⬜ raised (`cde74e6`) |
+| M02 | the first plan for a posting took 4.7 s live (2026-10-02); M06 waits 20 s at plan time now, but a student watches that spinner — precompute on parse, or publish the expected latency | ⬜ raised (`jd-parser-coverage` `cde74e6`) |
+| M02, M15 | link "practise for this role" to `/mock?jd={id}` — M06's setup honours `?jd=` since day 13 | ⬜ raised (`cde74e6`; M15's local plan copy, which its repo does not track) |
+| M05 | `/questions/{id}/flag` takes any caller — no identity guard; and EC-5.9's retraction of observations already sent is still not wired (M06's ⚑ says "won't be picked again", not "undone") | ⬜ raised (`Question_Intelligence` `7b0bbf4`) |
+| M13 | M06's notes show `reasoning`, `missing_key_points` and verified quotes to the student (day 12); state in M13's contract that these are student-visible, so their wording is held to that | ⬜ raised (`Evaluation_Engine` `9e4c6c7`) |
 | Platform_Shell | add `interviews`/`drills`/`agents` to the proxy table and mount `m06Routes` | ✅ landed (`bbd4f69`); on GitHub (MNEMOS-PREP/Platform_Shell, private) since 2026-09-23 |
 | Platform | `modules_meta` M06 → built; `Platform_Shell` journey card | ⬜ (on ship) |
 
