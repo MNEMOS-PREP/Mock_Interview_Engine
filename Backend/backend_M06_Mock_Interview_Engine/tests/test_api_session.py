@@ -304,3 +304,61 @@ def test_the_staff_routes_are_for_administrators(client):
     gated = assert_staff_only(client, app, expect_at_least=2)
     assert ("GET", "/v1/interviews/reliability") in gated
     assert ("POST", "/v1/interviews/{session_id}/outbox/requeue") in gated
+
+
+# ── a company's drive, from M15's "Practise this format" (§2.3 door 1) ─────
+
+
+def _drive_session(client, as_student, **body):
+    return client.post("/v1/interviews", json={"minutes": 30, **body}, headers=as_student)
+
+
+def test_a_company_drive_is_planned_from_m02s_requirement_set(client, as_student, upstreams):
+    """M15's button used to send `?company=`, which nothing read: the student
+    got a general interview under a callout promising the company's format.
+    The drive now goes to M02, which builds its requirement set, and the
+    session is planned from that like any other JD."""
+    company = uuid.uuid4()
+    created = _drive_session(client, as_student, company_id=str(company), drive_id="digital")
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["jd_id"] == str(uuid.uuid5(company, "drive:digital"))
+    assert upstreams.m02.drive_calls == [(company, "digital")]
+    assert not body["flags"]["degraded"]
+
+    client.post(f"/v1/interviews/{body['id']}/plan", headers=as_student)
+    assert [call[0] for call in upstreams.m02.plan_calls] == [uuid.UUID(body["jd_id"])]
+
+
+def test_a_drive_m02_cannot_plan_is_a_general_interview_that_says_why(
+    client, as_student, upstreams
+):
+    upstreams.m02.drive_refusal = (
+        "We know the Digital drive but not the role it hires for, so we cannot build a "
+        "requirement set for it."
+    )
+    created = _drive_session(client, as_student, company_id=str(uuid.uuid4()), drive_id="digital")
+    assert created.status_code == 201
+    body = created.json()
+    assert body["jd_id"] is None
+    assert "not the role it hires for" in body["flags"]["degraded"]["M02"]
+    assert body["flags"]["degraded"]["M02"].startswith("This is a general interview")
+
+
+def test_with_m02_down_a_drive_still_starts_and_names_what_is_missing(
+    client, as_student, upstreams
+):
+    upstreams.is_available = lambda module: module != "M02"
+    created = _drive_session(client, as_student, company_id=str(uuid.uuid4()), drive_id="digital")
+    assert created.status_code == 201
+    assert created.json()["flags"]["degraded"]["M02"] == upstreams.on_missing("M02")
+    assert upstreams.m02.drive_calls == []
+
+
+def test_a_job_description_wins_over_a_drive(client, as_student, upstreams):
+    jd = uuid.uuid4()
+    body = _drive_session(
+        client, as_student, jd_id=str(jd), company_id=str(uuid.uuid4()), drive_id="digital"
+    ).json()
+    assert body["jd_id"] == str(jd)
+    assert upstreams.m02.drive_calls == []

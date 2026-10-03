@@ -285,3 +285,23 @@ def test_the_question_m06_probes_against_is_fetched_as_a_module(wire):
     LiveQuestions("http://m05").question(qid)
     assert rec.last.full_url == f"http://m05/v1/questions/{qid}"
     assert header(rec.last, "X-Service-Secret") == service.secret()
+
+
+def test_a_drive_is_asked_of_m02_for_the_student(wire):
+    company, cid = uuid.uuid4(), uuid.uuid4()
+    jd = str(uuid.uuid4())
+    rec = wire(status=201, body={"id": jd, "company_name": "TCS", "role_title": "Digital"})
+    got = LiveCoveragePlanner("http://m02").from_drive(company, "drive-7", cid)
+    assert got["id"] == jd
+    assert rec.last.full_url == "http://m02/v1/jds/from-drive"
+    assert json.loads(rec.last.data) == {"company_id": str(company), "drive_id": "drive-7"}
+    assert header(rec.last, "X-Candidate-Id") == str(cid)
+    assert rec.timeouts[-1] == LiveCoveragePlanner.PLAN_TIMEOUT_S
+
+
+def test_m02s_refusal_to_plan_a_drive_is_its_sentence_not_an_outage(wire):
+    """422 is M02 ANSWERING — it knows the drive, not the role. The student
+    reads that sentence; it is not the generic "M02 is down"."""
+    wire(status=422, body={"detail": "We know the Digital drive but not the role it hires for."})
+    got = LiveCoveragePlanner("http://m02").from_drive(uuid.uuid4(), "d", uuid.uuid4())
+    assert got == {"detail": "We know the Digital drive but not the role it hires for."}

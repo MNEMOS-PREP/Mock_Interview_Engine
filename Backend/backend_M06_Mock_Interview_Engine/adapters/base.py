@@ -41,6 +41,12 @@ class CoveragePlanner(Protocol):
     def job_description(self, jd_id: UUID) -> dict[str, Any]:
         """`GET /v1/jds/{jd_id}` — requirements and `resolved_concepts`."""
 
+    def from_drive(self, company_id: UUID, drive_id: str, candidate_id: UUID) -> dict[str, Any]:
+        """`POST /v1/jds/from-drive` — M02's requirement set for one company's
+        drive (§2.3 door 1). The JD on success; `{"detail": ...}` when M02
+        answered that it cannot build one (an unknown drive, a drive whose role
+        it does not know, M15 down) — that sentence is the student's."""
+
     def record_coverage(
         self,
         session_id: UUID,

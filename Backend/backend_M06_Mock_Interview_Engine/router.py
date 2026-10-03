@@ -32,7 +32,7 @@ from sqlmodel import Session, select
 from . import degrade, outbox, presence, store
 from . import report as report_module
 from .access import enforce_access, require_candidate
-from .adapters import Upstreams, get_upstreams
+from .adapters import Upstreams, UpstreamUnavailable, get_upstreams
 from .broker import broker
 from .contracts import (
     HintOffer,
@@ -117,6 +117,13 @@ class SessionCreate(BaseModel):
     #: who they are. Staff tooling may name one, and `may_see` decides.
     candidate_id: uuid.UUID | None = None
     jd_id: uuid.UUID | None = None
+    #: §2.3 door 1, from M15's "Practise this format": the company and the
+    #: drive being sat. Read only when `jd_id` is absent. M02 builds the drive's
+    #: requirement set (`/jds/from-drive`) and the session is planned from it
+    #: like any other JD — so "this company's format" is M02's plan for that
+    #: drive, not a second planner in this module.
+    company_id: uuid.UUID | None = None
+    drive_id: str | None = None
     mode: Mode = "mock"
     minutes: int = Field(default=45, ge=MIN_MINUTES, le=MAX_MINUTES)
 
@@ -498,11 +505,33 @@ def persona_cards() -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def _jd_for_drive(
+    upstreams: Upstreams, company_id: uuid.UUID, drive_id: str, candidate_id: uuid.UUID
+) -> tuple[uuid.UUID | None, str | None]:
+    """The JD M02 builds for a company's drive, or the sentence saying why not.
+
+    Not a refusal: a student who pressed "Practise this format" still gets an
+    interview, and the plan says in M02's own words why it is a general one —
+    an unknown drive, a drive whose role M02 cannot map, or M02 itself down.
+    """
+    if not upstreams.available("M02"):
+        return None, upstreams.on_missing("M02")
+    try:
+        jd = upstreams.m02.from_drive(company_id, drive_id, candidate_id)
+    except UpstreamUnavailable as exc:
+        log.info("M06: M02 could not plan drive %s of %s: %s", drive_id, company_id, exc)
+        return None, upstreams.on_missing("M02")
+    if jd.get("id"):
+        return uuid.UUID(str(jd["id"])), None
+    return None, f"This is a general interview, not the company's: {jd.get('detail')}"
+
+
 @router.post("/interviews", response_model=SessionOut, status_code=201)
 def create_session(
     body: SessionCreate,
     principal: Principal | None = Depends(enforce_access),
     db: Session = Depends(get_session),
+    upstreams: Upstreams = Depends(get_upstreams),
 ) -> SessionOut:
     candidate_id = body.candidate_id
     if candidate_id is None:
@@ -510,17 +539,30 @@ def create_session(
             raise HTTPException(status_code=403, detail="Not signed in.")
         candidate_id = uuid.UUID(principal.candidate_id)
     require_candidate(principal, candidate_id)
+    jd_id, unplanned = body.jd_id, None
+    if jd_id is None and body.company_id is not None and body.drive_id:
+        jd_id, unplanned = _jd_for_drive(upstreams, body.company_id, body.drive_id, candidate_id)
     try:
-        _row, state = store.create_session(
+        row, state = store.create_session(
             db,
             candidate_id=candidate_id,
             kind=SessionKind.mock.value,
             mode=body.mode,
             minutes=body.minutes,
-            jd_id=body.jd_id,
+            jd_id=jd_id,
         )
     except store.LiveSessionExists as exc:
         raise _live_conflict(exc) from exc
+    if unplanned:
+        # On the session, where the plan screen already shows what is missing
+        # and why, rather than in a response the screen does not keep.
+        state = store.record(
+            db,
+            row,
+            "upstream.degraded",
+            step="degraded:M02",
+            payload={"module": "M02", "sentence": unplanned},
+        ).state
     return session_out(state)
 
 

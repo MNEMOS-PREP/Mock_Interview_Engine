@@ -22,7 +22,7 @@ from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid5
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
@@ -114,6 +114,22 @@ class FixtureCoveragePlanner:
         self._requirements = requirements
         self.ledger: list[dict[str, Any]] = []
         self.plan_calls: list[tuple[UUID, UUID, int]] = []
+        self.drive_calls: list[tuple[UUID, str]] = []
+        #: Set to M02's sentence to answer `from_drive` as M02 does when it
+        #: cannot build a requirement set for the drive.
+        self.drive_refusal: str | None = None
+
+    def from_drive(self, company_id: UUID, drive_id: str, candidate_id: UUID) -> dict[str, Any]:
+        self.drive_calls.append((company_id, drive_id))
+        if self.drive_refusal is not None:
+            return {"detail": self.drive_refusal}
+        # M02 keys a drive's requirement set on the drive, so the same drive
+        # is the same JD every time.
+        return {
+            "id": str(uuid5(company_id, f"drive:{drive_id}")),
+            "company_name": "Fixture Co",
+            "role_title": "Fixture drive",
+        }
 
     def plan(self, jd_id: UUID, candidate_id: UUID, minutes: int) -> dict[str, Any]:
         self.plan_calls.append((jd_id, candidate_id, minutes))

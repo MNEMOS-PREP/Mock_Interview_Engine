@@ -150,7 +150,13 @@ function useSessionWriter(id: string | undefined) {
 export function useCreateSession() {
   const write = useSessionWriter(undefined);
   return useMutation({
-    mutationFn: (body: { minutes: number; mode?: string; jd_id?: string }) =>
+    mutationFn: (body: {
+      minutes: number;
+      mode?: string;
+      jd_id?: string;
+      company_id?: string;
+      drive_id?: string;
+    }) =>
       api.post<Session>("/v1/interviews", body),
     onSuccess: write,
   });

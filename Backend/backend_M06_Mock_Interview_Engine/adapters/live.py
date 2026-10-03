@@ -38,6 +38,21 @@ class LiveCoveragePlanner:
     def job_description(self, jd_id: UUID) -> dict[str, Any]:
         return self.http.get(f"/v1/jds/{jd_id}").body
 
+    def from_drive(self, company_id: UUID, drive_id: str, candidate_id: UUID) -> dict[str, Any]:
+        # A plan's budget, not a turn's: M02 asks M15 for the drive and M04 for
+        # the concepts before it answers, the first time a drive is asked for.
+        response = self.http.post(
+            "/v1/jds/from-drive",
+            {"company_id": str(company_id), "drive_id": drive_id},
+            headers=identity_headers(candidate_id),
+            accept=(404, 422, 503),
+            timeout_s=self.PLAN_TIMEOUT_S,
+        )
+        if response.status >= 400:
+            body = response.body if isinstance(response.body, dict) else {}
+            return {"detail": str(body.get("detail") or f"M02 answered {response.status}.")}
+        return response.body
+
     def requirements(self, jd_id: UUID, candidate_id: UUID) -> list[dict[str, Any]]:
         """Each requirement with its `concept_ids` and `measured_by`.
 

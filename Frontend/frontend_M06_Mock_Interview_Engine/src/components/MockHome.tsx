@@ -71,6 +71,11 @@ export function MockHome() {
   const modes = useModes();
   const [params] = useSearchParams();
   const jd = params.get("jd");
+  // From M15's "Practise this format": a company and the drive being sat.
+  // The backend asks M02 for that drive's requirement set (§2.3 door 1).
+  const company = params.get("company");
+  const drive = params.get("drive");
+  const driveLabel = params.get("label");
   const create = useCreateSession();
   const history = useHistory();
   const navigate = useNavigate();
@@ -154,6 +159,12 @@ export function MockHome() {
             Tailored to the job description you came from.
           </p>
         )}
+        {!jd && company && drive && (
+          <p className="mt-4 text-2xs text-ink-soft">
+            Planned from what {driveLabel ?? "this drive"} asks for — the requirement set the
+            job description screen builds for that drive.
+          </p>
+        )}
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <Button
@@ -161,7 +172,13 @@ export function MockHome() {
               // Via the plan, not straight into the first question: a student
               // should see what they are about to be asked (FR-6.2).
               create.mutate(
-                { minutes, mode, jd_id: jd ?? undefined },
+                {
+                  minutes,
+                  mode,
+                  jd_id: jd ?? undefined,
+                  company_id: company ?? undefined,
+                  drive_id: drive ?? undefined,
+                },
                 { onSuccess: (s) => navigate(`/mock/${s.id}/plan`) },
               )
             }

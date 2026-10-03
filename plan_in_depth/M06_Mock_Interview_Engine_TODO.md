@@ -44,7 +44,7 @@ _Nothing scouted for this module yet._
 | | |
 |---|---|
 | Status | **Days 1–15 of 15 done — the build order is complete.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **384**, no socket opened, no API key |
+| Backend tests passing | **390**, no socket opened, no API key |
 | Release gates (`-m gate`) | **79** |
 | Route decorators | **31** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
@@ -55,6 +55,7 @@ _Nothing scouted for this module yet._
 | Scope | 26 functional requirements (21 of them P0), 17 acceptance metrics (8 release-blocking), 17 edge cases |
 | Upstreams | M01, M02, M04, M05, M13 — all shipped, all optional at runtime, each behind an adapter with a fixture |
 | Asked as a module | **2026-10-03**: M05 now serves a question's key points and follow-ups only with the platform secret, so `LiveQuestions.question()` sends it; `test_the_question_m06_probes_against_is_fetched_as_a_module` fails without it |
+| From a company | **2026-10-03**: `POST /v1/interviews` takes `company_id` + `drive_id` (M15's "Practise this format"). M02 builds the drive's requirement set (`/jds/from-drive`) and the session is planned from it like any JD; a drive M02 cannot plan starts a general interview whose plan says why, in M02's words. Live: Zoho · Campus SDE → JD → plan, nothing degraded |
 
 **What the review changed, in one breath.**
 - **The plan:** it wraps M02's `CoveragePlan` instead of re-allocating it, and no model builds it.
