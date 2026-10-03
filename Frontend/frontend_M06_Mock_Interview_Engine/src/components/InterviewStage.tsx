@@ -637,6 +637,10 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const canAnswer =
     data.status === "live" && Boolean(data.open_turn_id) && !waiting;
   const who = data.interviewer?.name ?? "Interviewer";
+  // What a screen reader hears when the interviewer speaks: the newest line,
+  // in a polite live region. The transcript itself is not live — announcing
+  // the whole conversation on every change would bury the question.
+  const lastLine = [...data.transcript].reverse().find((turn) => turn.role === "interviewer")?.text ?? "";
 
   function submit() {
     const typed = draft.trim();
@@ -689,6 +693,10 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
         </section>
       ) : (
         <>
+          <h1 className="sr-only">Interview with {who}</h1>
+          <p className="sr-only" aria-live="polite">
+            {lastLine ? `${who} asks: ${lastLine}` : ""}
+          </p>
           <StatusStrip
             session={data}
             waiting={waiting}
@@ -947,6 +955,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     size="sm"
                     variant="ghost"
                     onClick={() => setFlagging((v) => !v)}
+                    aria-label="Flag this question as broken or unclear"
                   >
                     ⚑ Flag
                   </Button>

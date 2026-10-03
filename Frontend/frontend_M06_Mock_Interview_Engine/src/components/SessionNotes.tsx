@@ -45,10 +45,17 @@ import { useReport } from "../api";
 import { bandOf, missingStatements, topicName } from "../bands";
 import type { QuestionReport, SessionReport } from "../types";
 
+/** The colour is a dot and a tint; the word stays in ink, which passes
+ *  contrast in both themes where orange text on white did not. */
 const BAND_STYLE: Record<AnswerBand, string> = {
-  strong: "border-mastery-strong/40 bg-mastery-strong/12 text-mastery-strong",
-  partly: "border-mastery-ok/40 bg-mastery-ok/12 text-mastery-ok",
-  not_yet: "border-mastery-weak/40 bg-mastery-weak/12 text-mastery-weak",
+  strong: "border-mastery-strong/50 bg-mastery-strong/12",
+  partly: "border-mastery-ok/50 bg-mastery-ok/12",
+  not_yet: "border-mastery-weak/50 bg-mastery-weak/12",
+};
+const BAND_DOT: Record<AnswerBand, string> = {
+  strong: "bg-mastery-strong",
+  partly: "bg-mastery-ok",
+  not_yet: "bg-mastery-weak",
 };
 
 /** The notes as plain text, for the student to send where they choose. */
@@ -145,9 +152,10 @@ function QuestionBlock({
         {question.asked_by && <span>· {question.asked_by}</span>}
         {bandOf(question) && (
           <span
-            className={`rounded-full border px-2 py-0.5 text-2xs font-semibold ${BAND_STYLE[bandOf(question)!]}`}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-semibold text-ink ${BAND_STYLE[bandOf(question)!]}`}
             title="The share of a strong answer's key points your answer reached"
           >
+            <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${BAND_DOT[bandOf(question)!]}`} />
             {ANSWER_BAND_LABEL[bandOf(question)!]}
           </span>
         )}
