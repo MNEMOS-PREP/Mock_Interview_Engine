@@ -19,6 +19,7 @@ export {
   m06Keys,
   useAgents,
   useAnswer,
+  useCohortStats,
   useCreateSession,
   useDeps,
   useDropSegment,
@@ -43,6 +44,9 @@ export {
   useStart,
 } from "./api";
 export { useInterviewStream } from "./stream";
+export { bandOf, missingStatements, topicName } from "./bands";
+export { MockTargetsContext, type MockTarget } from "./targets";
+export { Face } from "./ui/Face";
 export {
   DEFAULT_CANDIDATE_ID,
   getCandidateId,
@@ -54,6 +58,7 @@ export {
 export type {
   AgentRow,
   AgentsResponse,
+  CohortStats,
   DependencyRow,
   Exchange,
   HintOffer,

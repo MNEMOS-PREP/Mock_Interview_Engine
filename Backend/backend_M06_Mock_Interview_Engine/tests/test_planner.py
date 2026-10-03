@@ -355,3 +355,34 @@ def test_with_no_round_to_take_from_the_project_segment_is_the_interview():
     )
     assert kinds(plan) == ["warmup", "project", "closing"]
     assert next(s for s in plan.segments if s.kind == "project").minutes == 3.5
+
+
+# ── a focused session ("Practise Recursion" on Today) ────────────────────
+
+
+def test_a_chosen_focus_is_the_whole_interview():
+    """Practise Recursion means recursion: one segment, every usable minute,
+    and the concepts handed to M05 as the coverage it selects on."""
+    plan = planner.assemble(
+        inputs(
+            coverage=None,
+            jd_id=None,
+            focus_concepts=("concept:recursion",),
+            focus_label="Recursion",
+        )
+    )
+    middle = [s for s in plan.segments if s.kind == "technical"]
+    assert len(middle) == 1
+    assert middle[0].title == "Focus: Recursion"
+    assert middle[0].concept_ids == ["concept:recursion"]
+    assert middle[0].minutes == 36.0
+    assert "You chose to practise Recursion" in middle[0].rationale
+
+
+def test_a_focus_without_a_label_is_named_from_its_concept():
+    plan = planner.assemble(
+        inputs(coverage=None, jd_id=None, focus_concepts=("concept:dynamic_programming",))
+    )
+    assert [s.title for s in plan.segments if s.kind == "technical"] == [
+        "Focus: dynamic programming"
+    ]

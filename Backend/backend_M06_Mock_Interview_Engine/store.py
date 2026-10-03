@@ -354,6 +354,8 @@ def create_session(
     source_module: str | None = None,
     source_ref: str | None = None,
     drill: dict | None = None,
+    focus_concepts: list[str] | None = None,
+    focus_label: str | None = None,
 ) -> tuple[InterviewSession, SessionState]:
     """A new session in `planned`. Refused while one is live or paused (EC-6.13).
 
@@ -399,6 +401,8 @@ def create_session(
             "source_module": source_module,
             "source_ref": source_ref,
             "drill": drill,
+            "focus_concepts": list(focus_concepts or []),
+            "focus_label": focus_label,
         },
     )
     return row, created.state

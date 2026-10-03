@@ -16,7 +16,7 @@ import logging
 import queue
 import uuid
 from collections.abc import AsyncIterator, Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ai_core.db import engine as db_engine
 from ai_core.db import get_session
@@ -124,6 +124,9 @@ class SessionCreate(BaseModel):
     #: drive, not a second planner in this module.
     company_id: uuid.UUID | None = None
     drive_id: str | None = None
+    #: Concept ids to practise ("Practise Recursion" on Today). Up to three.
+    focus_concepts: list[str] = Field(default_factory=list, max_length=3)
+    focus_label: str | None = Field(default=None, max_length=80)
     mode: Mode = "mock"
     minutes: int = Field(default=45, ge=MIN_MINUTES, le=MAX_MINUTES)
 
@@ -412,6 +415,30 @@ def agents() -> dict:
     }
 
 
+class CohortOut(BaseModel):
+    """Counts across everyone, never anyone: social proof that is true."""
+
+    interviews_this_week: int
+    students_this_week: int
+    since: datetime
+
+
+@router.get("/interviews/stats", response_model=CohortOut, tags=["meta"])
+def cohort_stats(db: Session = Depends(get_session)) -> CohortOut:
+    """How many interviews were started on the platform this week, and by how
+    many students. Aggregate by construction - no id, no name, no session -
+    so any signed-in student may read it. Declared before
+    `/interviews/{session_id}`, which would otherwise claim "stats" as an id."""
+    now = utcnow()
+    since = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    rows = db.exec(
+        select(InterviewSession.candidate_id).where(InterviewSession.started_at >= since)  # type: ignore[operator]
+    ).all()
+    return CohortOut(
+        interviews_this_week=len(rows), students_this_week=len(set(rows)), since=since
+    )
+
+
 @router.get(
     "/interviews/reliability",
     response_model=ReliabilityOut,
@@ -550,6 +577,8 @@ def create_session(
             mode=body.mode,
             minutes=body.minutes,
             jd_id=jd_id,
+            focus_concepts=body.focus_concepts,
+            focus_label=body.focus_label,
         )
     except store.LiveSessionExists as exc:
         raise _live_conflict(exc) from exc
@@ -873,12 +902,24 @@ def pause_session(session_id: uuid.UUID, db: Session = Depends(get_session)) -> 
     presence.back(db, session_id, utcnow(), grace_s=0.0)
     state = store.load_state(db, session_id)
     if state.flags.pause_used and state.status is not SessionStatus.paused:
+        allowed = state.flags.pauses_allowed
         raise HTTPException(
             status_code=409,
-            detail="You've already used your pause for this interview — it's once per session.",
+            detail=(
+                f"You've used your {allowed} pause{'s' if allowed != 1 else ''} for this "
+                "interview — one per 15 minutes planned."
+            ),
         )
+    if state.status is SessionStatus.paused:
+        # A retried click: already paused, nothing new to record.
+        return session_out(state)
+    # Each pause has its own key; the first keeps the original one, so a
+    # session recorded before pauses were counted replays the same.
+    n = state.flags.pauses_used + 1
     try:
-        recorded = store.record(db, row, "session.paused", step="pause")
+        recorded = store.record(
+            db, row, "session.paused", step="pause" if n == 1 else f"pause:{n}"
+        )
     except (InvalidTransition, store.ConcurrentWrite) as exc:
         raise _conflict(exc) from exc
     return session_out(recorded.state)
@@ -899,7 +940,10 @@ def resume_session(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) 
         if now.timestamp() > limit:
             at = datetime.fromtimestamp(limit, tz=now.tzinfo)
     try:
-        store.record(engine.db, row, "session.resumed", step="resume", at=at)
+        n = state.flags.pauses_used
+        store.record(
+            engine.db, row, "session.resumed", step="resume" if n <= 1 else f"resume:{n}", at=at
+        )
     except (InvalidTransition, store.ConcurrentWrite) as exc:
         raise _conflict(exc) from exc
     return session_out(engine.continue_session(session_id))

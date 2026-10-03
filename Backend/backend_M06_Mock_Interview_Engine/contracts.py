@@ -310,7 +310,13 @@ class SessionFlags(BaseModel):
     modalities_available: list[Modality] = Field(default_factory=lambda: [Modality.verbal])
     camera_on: bool = False
     paused_at: datetime | None = None
+    #: True once no pause is left (kept for every caller that reads it).
     pause_used: bool = False
+    #: FR-6.12, revised 2026-10-04: one pause per 15 planned minutes, each up
+    #: to five. "Once" was strict for a 45-minute session — a student who
+    #: needed water at minute 10 had nothing left at minute 35.
+    pauses_used: int = 0
+    pauses_allowed: int = 1
     #: §6.8: returns after a disconnect. More than two, and the student is
     #: offered a way out of a connection that keeps dropping.
     reconnect_count: int = 0

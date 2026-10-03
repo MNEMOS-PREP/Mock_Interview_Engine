@@ -21,10 +21,10 @@
  * planned as well as what happened.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { Button, Card, ErrorNote, Spinner } from "@ai/core";
+import { Button, Card, ErrorNote, PageHeader } from "@ai/core";
 
 import {
   useDropSegment,
@@ -34,6 +34,53 @@ import {
   useStart,
 } from "../api";
 import type { PersonaCard, PlannedSegment } from "../types";
+import { Face } from "../ui/Face";
+
+/**
+ * A cold first plan can take several seconds (M02 builds the requirement set,
+ * M05 checks the bank), and a sentence on its own read as a stall. The steps
+ * are the ones the backend really takes, lit in order on a timer — honest
+ * about the shape of the wait, never claiming a step finished that it can't
+ * see.
+ */
+const BUILD_STEPS = [
+  "Reading what you're practising for",
+  "Checking what your skill graph hasn't seen yet",
+  "Choosing questions from the bank",
+  "Putting the panel together",
+];
+
+function Building() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setStep((s) => Math.min(s + 1, BUILD_STEPS.length - 1)), 1400);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <div className="mx-auto max-w-md py-16" role="status" aria-live="polite">
+      <div className="h-1 overflow-hidden rounded-full bg-surface-sunken">
+        <div
+          className="h-full rounded-full bg-brand transition-[width] duration-700"
+          style={{ width: `${((step + 1) / (BUILD_STEPS.length + 1)) * 100}%` }}
+        />
+      </div>
+      <ol className="mt-6 space-y-2.5">
+        {BUILD_STEPS.map((label, i) => (
+          <li
+            key={label}
+            className={`flex items-center gap-2.5 text-sm ${i <= step ? "text-ink" : "text-ink-faint"}`}
+          >
+            <span
+              aria-hidden
+              className={`h-1.5 w-1.5 rounded-full ${i < step ? "bg-confirmed" : i === step ? "animate-pulse bg-brand" : "bg-line-strong"}`}
+            />
+            {label}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
 
 const KIND_LABEL: Record<string, string> = {
   warmup: "Warm-up",
@@ -66,7 +113,12 @@ function SegmentRow({
         dropped ? "opacity-55" : ""
       }`}
     >
-      <div className="min-w-0">
+      {who && !dropped && (
+        <span className="mt-0.5">
+          <Face name={who.name} size={32} />
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-baseline gap-2">
           <span
             className={`text-sm font-medium text-ink ${dropped ? "line-through" : ""}`}
@@ -129,7 +181,7 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
   }, [session.data, planned, navigate, sessionId]);
 
   if (session.isPending || (!built && plan.isPending)) {
-    return <Spinner label="Working out what to ask you…" />;
+    return <Building />;
   }
   if (session.isError) {
     return <ErrorNote message="That interview could not be loaded." />;
@@ -142,14 +194,16 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-2xl font-semibold tracking-tight">
-        Here is the plan
-      </h1>
-      <p className="mt-2 max-w-prose text-sm leading-relaxed text-ink-soft">
-        {built?.jd_id
-          ? "Built from the job description you added, so the questions follow what the posting asks for."
-          : "Not tailored to a job description — add one and the plan follows it instead."}
-      </p>
+      <PageHeader
+        title="Here is the plan"
+        subtitle={
+          built?.jd_id
+            ? "Built from the job description you chose, so the questions follow what it asks for."
+            : segments.some((s) => s.title.startsWith("Focus: "))
+              ? "Built around the topic you chose."
+              : "General practice — choose a job description or a drive and the plan follows it."
+        }
+      />
 
       <div className="mt-5">
         <Card>
@@ -177,7 +231,11 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
       <p className="mt-3 text-2xs text-ink-faint">
         {minutes(totalMinutes)} · {totalQuestions} question
         {totalQuestions === 1 ? "" : "s"}
-        {" · you can pause once, for five minutes"}
+        {` · you can pause ${
+          (session.data?.flags.pauses_allowed ?? 1) === 1
+            ? "once"
+            : `${session.data?.flags.pauses_allowed} times`
+        }, up to five minutes each`}
       </p>
 
       {(built?.uncovered.length ?? 0) > 0 && (
@@ -203,7 +261,8 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
         <Button
           onClick={() =>
             start.mutate(undefined, {
-              onSuccess: () => navigate(`/mock/${sessionId}`),
+              // Said, so the stage does not greet a first start as a return.
+              onSuccess: () => navigate(`/mock/${sessionId}`, { state: { justStarted: true } }),
             })
           }
           disabled={start.isPending || drop.isPending}

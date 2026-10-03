@@ -83,6 +83,9 @@ def test_a_whole_drill_over_http(client, candidate_id, as_student):
     assert report["questions"][0]["scored"] is False
     assert "not scored" in report["questions"][0]["not_scored_reason"]
     assert report["questions"][0]["strong_answer_covers"]  # shown once it is over
+    # The first answer's turn, so the notes can link to how it was marked.
+    first_answer = next(t for t in answered["transcript"] if t["role"] == "candidate")
+    assert report["questions"][0]["turn_id"] == first_answer["turn_id"]
 
 
 def test_an_answer_longer_than_the_limit_is_refused(client, candidate_id, as_student):

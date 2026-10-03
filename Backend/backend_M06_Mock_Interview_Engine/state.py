@@ -64,6 +64,11 @@ class SessionState(BaseModel):
     source_ref: str | None = None
     #: FR-6.23. M01's claim and probe ladder, exactly as handed over.
     drill: dict | None = None
+    #: Concepts the student asked to practise ("Practise Recursion" on Today,
+    #: from M04's bottleneck). Planned as one focused segment when there is
+    #: no job description; the label is for display only.
+    focus_concepts: list[str] = Field(default_factory=list)
+    focus_label: str | None = None
     #: M04's pinned summary text (AC-4.13). The interviewer's cached prefix.
     profile_prefix: str = ""
 
@@ -227,6 +232,9 @@ def _created(_s: SessionState | None, p: dict, at: datetime) -> SessionState:
         source_module=p.get("source_module"),
         source_ref=p.get("source_ref"),
         drill=p.get("drill"),
+        focus_concepts=[str(c) for c in p.get("focus_concepts") or []],
+        focus_label=p.get("focus_label"),
+        flags=SessionFlags(pauses_allowed=pause_allowance(int(p.get("requested_minutes", 45)))),
         created_at=at,
     )
 
@@ -467,13 +475,19 @@ def _closing_question(s: SessionState, p: dict, _at: datetime) -> None:
         s.closing_questions.append(text)
 
 
+def pause_allowance(requested_minutes: int) -> int:
+    """One pause per 15 planned minutes, at least one (FR-6.12, revised)."""
+    return max(1, requested_minutes // 15)
+
+
 def _paused(s: SessionState, _p: dict, at: datetime) -> None:
     if s.status is not SessionStatus.live:
         raise InvalidTransition(f"session.paused from {s.status.value}")
     _stop_clock(s, at)
     s.status = SessionStatus.paused
     s.flags.paused_at = at
-    s.flags.pause_used = True
+    s.flags.pauses_used += 1
+    s.flags.pause_used = s.flags.pauses_used >= s.flags.pauses_allowed
 
 
 def _resumed(s: SessionState, _p: dict, at: datetime) -> None:

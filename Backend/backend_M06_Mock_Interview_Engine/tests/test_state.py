@@ -119,7 +119,7 @@ def test_pause_stops_the_clock():
     state = fold(events)
     now = T0 + timedelta(seconds=60 + 240 + 30)
     assert state.time_used_s(now) == pytest.approx(90)
-    assert state.flags.pause_used is True
+    assert state.flags.pauses_used == 1
     assert state.time_remaining_s(now) == pytest.approx(30 * 60 - 90)
 
 

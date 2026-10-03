@@ -28,6 +28,7 @@ FRONTEND = (
 #: Routes another module calls, not one of this module's screens — and who.
 SERVICE_ONLY: dict[tuple[str, str], str] = {
     ("POST", "/v1/drills"): "M01's defend-drill hand-off (FR-6.23)",
+    ("GET", "/v1/interviews/stats"): "Platform_Shell's Today screen: this week's cohort count",
     ("GET", "/v1/interviews/by-candidate/{}/recent"): "M04's `recent_sessions` slot",
     ("GET", "/v1/interviews/{}/trace"): "FR-6.19's replay input — read by the harness",
     ("GET", "/v1/interviews/{}/transcript"): "M19's report, when it exists (§15.7)",

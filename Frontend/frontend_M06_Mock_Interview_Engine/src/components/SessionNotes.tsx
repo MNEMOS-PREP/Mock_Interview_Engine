@@ -18,14 +18,82 @@
  * read back to the statements this same report lists under "what a strong
  * answer covers", by position, and an id with no statement is left out rather
  * than printed.
+ *
+ * 2026-10-04 — "how did I do?" gets an answer per question: a band (Strong /
+ * Partly there / Not yet) from the share of the strong answer's key points the
+ * answer reached, which this report already lists — never a number, which
+ * stays behind M13's calibration gate. Each question offers the next step:
+ * practise that topic as a focused interview, and see how the answer was
+ * marked (M13's evidence page). And the notes can be shared, as text the
+ * student copies or sends themselves — nothing is published for them.
  */
 
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { Card, EmptyState, ErrorNote, Spinner } from "@ai/core";
+import {
+  ANSWER_BAND_LABEL,
+  Card,
+  EmptyState,
+  ErrorNote,
+  Icon,
+  SkeletonRows,
+  type AnswerBand,
+} from "@ai/core";
 
 import { useReport } from "../api";
-import type { QuestionReport } from "../types";
+import { bandOf, missingStatements, topicName } from "../bands";
+import type { QuestionReport, SessionReport } from "../types";
+
+const BAND_STYLE: Record<AnswerBand, string> = {
+  strong: "border-mastery-strong/40 bg-mastery-strong/12 text-mastery-strong",
+  partly: "border-mastery-ok/40 bg-mastery-ok/12 text-mastery-ok",
+  not_yet: "border-mastery-weak/40 bg-mastery-weak/12 text-mastery-weak",
+};
+
+/** The notes as plain text, for the student to send where they choose. */
+function summaryText(data: SessionReport): string {
+  const lines = [
+    `My mock interview — ${data.questions.length} question${data.questions.length === 1 ? "" : "s"}, ${Math.round(data.minutes_used)} minutes`,
+    "",
+  ];
+  data.questions.forEach((q, i) => {
+    const band = bandOf(q);
+    lines.push(`${i + 1}. ${q.question}`);
+    lines.push(`   ${band ? ANSWER_BAND_LABEL[band] : "Not marked"}${topicName(q) ? ` · ${topicName(q)}` : ""}`);
+  });
+  lines.push("", "Practised on AI Interviewer.");
+  return lines.join("\n");
+}
+
+function ShareButton({ data }: { data: SessionReport }) {
+  const [done, setDone] = useState<string | null>(null);
+  const share = async () => {
+    const text = summaryText(data);
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "My mock interview", text });
+        setDone("Shared");
+      } else {
+        await navigator.clipboard.writeText(text);
+        setDone("Copied — paste it wherever you like");
+      }
+    } catch {
+      setDone(null); // the student closed the share sheet
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={share}
+      className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm text-ink-soft hover:bg-surface-sunken hover:text-ink"
+      title="Copies a short summary: the questions and their bands. Nothing is posted for you."
+    >
+      <Icon name="send" size={15} />
+      {done ?? "Share a summary"}
+    </button>
+  );
+}
 
 function depthSentence(question: QuestionReport): string {
   if (
@@ -54,22 +122,6 @@ function depthSentence(question: QuestionReport): string {
   }.`;
 }
 
-/**
- * `kp_3`, `[kp_3] Says the worst case degrades…` → the statement, once.
- * Key points are numbered in the order "what a strong answer covers" lists
- * them, so `kp_N` is entry N-1 when the item carries no text of its own.
- */
-function missingStatements(missing: string[], covers: string[]): string[] {
-  const out = new Map<string, string>();
-  for (const raw of missing) {
-    const match = /^\[?(kp_\d+)\]?\s*(.*)$/i.exec(raw.trim());
-    const id = match?.[1]?.toLowerCase() ?? raw;
-    const text = match?.[2]?.trim() || covers[Number(id.replace(/\D/g, "")) - 1] || "";
-    if (text && !out.has(id)) out.set(id, text);
-  }
-  return [...out.values()];
-}
-
 function Stat({ value, label }: { value: string | number; label: string }) {
   return (
     <div>
@@ -88,8 +140,17 @@ function QuestionBlock({
 }) {
   return (
     <section className="border-b border-line py-6 last:border-0">
-      <p className="text-2xs uppercase tracking-wide text-ink-faint">
-        Question {index + 1}
+      <p className="flex flex-wrap items-center gap-2 text-2xs text-ink-faint">
+        <span className="uppercase tracking-wide">Question {index + 1}</span>
+        {question.asked_by && <span>· {question.asked_by}</span>}
+        {bandOf(question) && (
+          <span
+            className={`rounded-full border px-2 py-0.5 text-2xs font-semibold ${BAND_STYLE[bandOf(question)!]}`}
+            title="The share of a strong answer's key points your answer reached"
+          >
+            {ANSWER_BAND_LABEL[bandOf(question)!]}
+          </span>
+        )}
       </p>
       <h2 className="mt-1 text-base font-semibold leading-snug text-ink">
         {question.question}
@@ -163,6 +224,28 @@ function QuestionBlock({
         </div>
       )}
 
+      {(question.concept_id || question.turn_id) && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {question.concept_id && (
+            <Link
+              to={`/mock?focus=${encodeURIComponent(question.concept_id)}&label=${encodeURIComponent(topicName(question) ?? "")}`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium text-ink hover:border-brand-line hover:text-brand"
+            >
+              <Icon name="refresh" size={13} />
+              Practise {topicName(question)} again
+            </Link>
+          )}
+          {question.turn_id && question.feedback.length > 0 && (
+            <Link
+              to={`/turns/${question.turn_id}`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-ink-soft hover:bg-surface-sunken hover:text-ink"
+            >
+              How this answer was marked →
+            </Link>
+          )}
+        </div>
+      )}
+
       <details className="mt-4">
         <summary className="cursor-pointer text-2xs text-ink-faint hover:text-ink-soft">
           The exchange
@@ -189,7 +272,13 @@ function QuestionBlock({
 export function SessionNotes({ sessionId }: { sessionId: string }) {
   const report = useReport(sessionId);
 
-  if (report.isLoading) return <Spinner label="Putting your notes together…" />;
+  if (report.isLoading) {
+    return (
+      <div className="mx-auto max-w-(--container-conversation)">
+        <SkeletonRows label="Putting your notes together" rows={5} />
+      </div>
+    );
+  }
   if (report.isError || !report.data) {
     return (
       <ErrorNote
@@ -243,12 +332,7 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
           >
             See your skill graph
           </Link>
-          <Link
-            to="/"
-            className="inline-flex h-9 items-center rounded-lg px-3 text-sm text-ink-soft hover:text-ink"
-          >
-            Back to today
-          </Link>
+          <ShareButton data={data} />
         </div>
       </header>
 
@@ -322,10 +406,9 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
             {data.persona_note}
           </p>
           <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-            Scores are not shown anywhere yet. The evaluator is a separate
-            module that never sees who you are, and its numbers stay hidden
-            until they agree with human raters — so what you get today is what
-            was asked and how far it went.
+            The band on each answer is the share of a strong answer's key points
+            it reached. The evaluator never sees who you are, and its numbers
+            stay hidden until they agree with human raters.
           </p>
         </Card>
         <Link

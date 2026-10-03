@@ -16,12 +16,19 @@
  * avatar in the page's voice; the student's words sit in their own bubble on
  * the right; the header holds who is asking, the state, and the clock; the
  * answer box stays in reach at the bottom. Still no score, no marker, no bar.
+ *
+ * 2026-10-04: the student can SPEAK an answer (the browser's own speech
+ * recognition, into the same box, editable before it is sent), switch the box
+ * to code for a DSA question, and see where they are in the plan — warm-up,
+ * the rounds, the closing — which is position, not performance. Pauses are one
+ * per 15 planned minutes (FR-6.12, revised), and the button says how many are
+ * left. The interviewer has a face rather than initials.
  */
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
-import { Button, ErrorNote, Spinner } from "@ai/core";
+import { Button, ErrorNote, Icon, Skeleton } from "@ai/core";
 
 import {
   useAnswer,
@@ -38,8 +45,10 @@ import {
   useSession,
   useStart,
 } from "../api";
+import { fillerCount, useDictation } from "../speech";
 import { useInterviewStream } from "../stream";
 import type { HintOffer, Session, TurnView } from "../types";
+import { Face } from "../ui/Face";
 
 const THINKING_AFTER_MS = 800;
 /** A drop shorter than this is a blip: no banner, as the server counts no
@@ -171,7 +180,9 @@ function StatusStrip({
       <span className="rounded-full border border-line px-2.5 py-1 text-2xs text-ink-soft">
         {session.kind === "drill"
           ? "Defend drill · not scored"
-          : `Question ${Math.max(session.questions_asked, 1)}`}
+          : `Question ${Math.max(session.questions_asked, 1)}${
+              plannedQuestions(session) ? ` of about ${plannedQuestions(session)}` : ""
+            }`}
         {session.kind !== "drill" &&
           roundTitle(session) &&
           ` · ${roundTitle(session)}`}
@@ -196,7 +207,11 @@ function StatusStrip({
           </span>
         )}
         {session.status === "live" && !session.flags.pause_used && (
-          <PauseButton onPause={onPause} busy={busy} />
+          <PauseButton
+            onPause={onPause}
+            busy={busy}
+            left={Math.max(0, (session.flags.pauses_allowed ?? 1) - (session.flags.pauses_used ?? 0))}
+          />
         )}
         {session.status === "paused" && (
           <Button size="sm" onClick={onResume} disabled={busy}>
@@ -213,23 +228,57 @@ function StatusStrip({
   );
 }
 
-/** The interviewer's face: their initials, in the brand. Personas have names
- *  ("Priya · Senior Engineer"), so the room has someone in it. */
+/** The interviewer's face. Personas have names ("Priya · Senior Engineer"),
+ *  so the room has someone in it — drawn, not initials (ui/Face.tsx). */
 function Avatar({ name, size = 36 }: { name: string; size?: number }) {
-  const letters = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
+  return <Face name={name} size={size} />;
+}
+
+/** The plan's question budget, summed — "about", because follow-ups and a
+ *  replan move it. Null for a drill or before there is a plan. */
+function plannedQuestions(session: Session): number | null {
+  if (session.kind === "drill" || !session.plan) return null;
+  const n = session.plan.segments
+    .filter((s) => s.dropped_reason === null)
+    .reduce((sum, s) => sum + s.question_budget, 0);
+  return n > 0 ? n : null;
+}
+
+const STEP_LABEL: Record<string, string> = { warmup: "Warm-up", closing: "Your questions" };
+
+/**
+ * Where the student is in the plan (3.4): position, never performance. The
+ * rounds are the plan's own, in order, with the current one lit.
+ */
+function Stepper({ session }: { session: Session }) {
+  const segments = (session.plan?.segments ?? []).filter((s) => s.dropped_reason === null);
+  if (segments.length < 2 || session.kind === "drill") return null;
+  const at = segments.findIndex((s) => s.index === session.current_segment);
   return (
-    <span
-      aria-hidden
-      className="grid shrink-0 place-items-center rounded-full bg-brand text-xs font-semibold text-white shadow-glow"
-      style={{ width: size, height: size }}
-    >
-      {letters}
-    </span>
+    <ol aria-label="Interview progress" className="mt-3 flex items-center gap-1.5 overflow-x-auto px-1 [scrollbar-width:none]">
+      {segments.map((segment, i) => {
+        const done = at >= 0 && i < at;
+        const current = i === at;
+        return (
+          <li key={segment.index} className="flex shrink-0 items-center gap-1.5">
+            {i > 0 && <span aria-hidden className={`h-px w-4 ${done || current ? "bg-brand" : "bg-line"}`} />}
+            <span
+              aria-current={current ? "step" : undefined}
+              className={`inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-2xs font-medium ${
+                current
+                  ? "bg-brand text-white"
+                  : done
+                    ? "bg-brand-soft text-brand"
+                    : "border border-line text-ink-faint"
+              }`}
+            >
+              {done && <Icon name="check" size={11} />}
+              {STEP_LABEL[segment.kind] ?? segment.title}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -349,13 +398,16 @@ function roundTitle(session: Session): string | null {
   return segment.title || null;
 }
 
-/** FR-6.12: one pause, five minutes. Spending it is a choice, so it asks. */
+/** FR-6.12, revised: one pause per 15 planned minutes, five minutes each.
+ *  Spending one is a choice, so it asks, and says how many are left. */
 function PauseButton({
   onPause,
   busy,
+  left,
 }: {
   onPause: () => void;
   busy: boolean;
+  left: number;
 }) {
   const [asking, setAsking] = useState(false);
   if (!asking) {
@@ -366,7 +418,7 @@ function PauseButton({
         onClick={() => setAsking(true)}
         disabled={busy}
       >
-        Pause
+        Pause{left > 1 ? ` (${left})` : ""}
       </Button>
     );
   }
@@ -377,7 +429,8 @@ function PauseButton({
       aria-label="Pause the interview"
     >
       <span className="text-2xs text-ink-soft">
-        Once, up to 5 min — the clock stops.
+        Up to 5 min, the clock stops ·{" "}
+        {left - 1 === 0 ? "your last pause" : `${left - 1} left after this`}
       </span>
       <Button
         size="sm"
@@ -417,8 +470,18 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const [flagged, setFlagged] = useState<string | null>(null);
   const resumeState = useResumeState(sessionId);
   const navigate = useNavigate();
+  // The plan screen starts the session and then comes here; the session is
+  // already live with its first question, which looks exactly like a reload.
+  const justStarted = Boolean((useLocation().state as { justStarted?: boolean } | null)?.justStarted);
 
   const [draft, setDraft] = useState("");
+  const [codeMode, setCodeMode] = useState(false);
+  const [spoken, setSpoken] = useState("");
+  const dictation = useDictation((phrase) => {
+    if (!phrase) return;
+    setDraft((current) => (current.trim() ? `${current.trimEnd()} ${phrase}` : phrase));
+    setSpoken((current) => `${current} ${phrase}`);
+  });
   const [preview, setPreview] = useState("");
   const [thinking, setThinking] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
@@ -463,7 +526,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const dropped = useRef(false);
   if (data && underWayAtLoad.current === null) {
     underWayAtLoad.current =
-      data.status === "live" && data.transcript.length > 0;
+      !justStarted && data.status === "live" && data.transcript.length > 0;
   }
   useEffect(() => {
     if (!connected) {
@@ -505,6 +568,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     setRepeated(null);
     setFlagged(null);
     setFlagging(false);
+    setCodeMode(false);
   }, [data?.questions_asked]);
   useEffect(() => {
     if (
@@ -542,7 +606,22 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     [data],
   );
 
-  if (session.isLoading) return <Spinner label="Opening the interview…" />;
+  if (session.isLoading) {
+    return (
+      <div className="mx-auto max-w-(--container-conversation) space-y-6" role="status" aria-label="Opening the interview">
+        <Skeleton className="h-16 w-full rounded-2xl" />
+        <div className="flex gap-3">
+          <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-5 w-4/5" />
+            <Skeleton className="h-5 w-3/5" />
+          </div>
+        </div>
+        <Skeleton className="h-36 w-full rounded-2xl" />
+      </div>
+    );
+  }
   if (session.isError || !data) {
     return (
       <ErrorNote
@@ -560,12 +639,17 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const who = data.interviewer?.name ?? "Interviewer";
 
   function submit() {
-    const text = draft.trim();
-    if (!text || !data?.open_turn_id) return;
+    const typed = draft.trim();
+    if (!typed || !data?.open_turn_id) return;
+    if (dictation.listening) dictation.stop();
+    // Fenced, so the evaluator reads code as code rather than as prose.
+    const text = codeMode ? "```\n" + draft.replace(/\s+$/, "") + "\n```" : typed;
     setDraft("");
+    setSpoken("");
     setPreview("");
     answer.mutate({ question_turn_id: data.open_turn_id, text });
   }
+  const fillers = spoken.trim() ? fillerCount(spoken) : null;
 
   return (
     <div className="mx-auto max-w-(--container-conversation)">
@@ -593,7 +677,9 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
           <p className="mt-4 text-sm leading-relaxed text-ink-soft">
             {data.kind === "drill"
               ? "Two minutes, typed, and not scored. I'll ask you to defend it and stop as soon as we reach the edge."
-              : `About ${data.requested_minutes} minutes, typed. You can pause once, and ending early still gives you notes.`}
+              : `About ${data.requested_minutes} minutes. Speak or type your answers. You can pause ${
+                  (data.flags.pauses_allowed ?? 1) === 1 ? "once" : `${data.flags.pauses_allowed} times`
+                }, and ending early still gives you notes.`}
           </p>
           <div className="mt-6">
             <Button onClick={() => start.mutate()} disabled={start.isPending}>
@@ -612,6 +698,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             onResume={() => resume.mutate()}
             onEnd={() => end.mutate("ended_by_student")}
           />
+          <Stepper session={data} />
 
           {lost && (
             <p
@@ -759,9 +846,21 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && (event.metaKey || event.ctrlKey))
                     submit();
+                  // In code mode Tab indents, as in an editor. Escape leaves
+                  // the box first, so keyboard users are never trapped.
+                  if (codeMode && event.key === "Tab" && !event.shiftKey) {
+                    event.preventDefault();
+                    const el = event.currentTarget;
+                    const { selectionStart: s, selectionEnd: e } = el;
+                    const next = `${draft.slice(0, s)}  ${draft.slice(e)}`;
+                    setDraft(next);
+                    requestAnimationFrame(() => el.setSelectionRange(s + 2, s + 2));
+                  }
+                  if (event.key === "Escape") event.currentTarget.blur();
                 }}
+                spellCheck={!codeMode}
                 disabled={!canAnswer}
-                rows={4}
+                rows={codeMode ? 8 : 4}
                 maxLength={8000}
                 placeholder={
                   data.status === "paused"
@@ -770,11 +869,58 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                       ? "One sec…"
                       : data.in_closing
                         ? "Ask anything — the team, the work, what happens next. Or just say that's all."
-                        : "Type your answer. Say what you'd say out loud."
+                        : codeMode
+                          ? "Write your code. Tab indents; Esc leaves the box."
+                          : dictation.supported
+                            ? "Speak with the mic, or type. Say what you'd say out loud."
+                            : "Type your answer. Say what you'd say out loud."
                 }
-                className="block w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[0.9375rem] leading-relaxed text-ink outline-none placeholder:text-ink-faint focus-visible:shadow-none disabled:opacity-60"
+                className={`block w-full resize-none bg-transparent px-4 pt-4 pb-2 text-ink outline-none placeholder:text-ink-faint focus-visible:shadow-none disabled:opacity-60 ${
+                  codeMode ? "font-mono text-[0.8125rem] leading-6" : "text-[0.9375rem] leading-relaxed"
+                }`}
               />
+              {dictation.listening && (
+                <p className="flex items-center gap-2 px-4 pb-2 text-2xs text-ink-soft" role="status">
+                  <span aria-hidden className="status-dot status-dot-live bg-session-listening" style={{ color: "var(--color-session-listening)" }} />
+                  Listening{dictation.interim ? `: ${dictation.interim}` : " — speak your answer"}
+                </p>
+              )}
               <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-2">
+                {dictation.supported && !codeMode && (
+                  <button
+                    type="button"
+                    onClick={() => (dictation.listening ? dictation.stop() : dictation.start())}
+                    disabled={!canAnswer}
+                    aria-pressed={dictation.listening}
+                    aria-label={dictation.listening ? "Stop speaking" : "Speak your answer"}
+                    title={dictation.listening ? "Stop" : "Speak your answer"}
+                    className={`grid h-8 w-8 place-items-center rounded-lg disabled:opacity-40 ${
+                      dictation.listening
+                        ? "bg-session-listening text-white"
+                        : "text-ink-soft hover:bg-surface-sunken hover:text-ink"
+                    }`}
+                  >
+                    <Icon name="mic" size={16} />
+                  </button>
+                )}
+                {!data.in_closing && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (dictation.listening) dictation.stop();
+                      setCodeMode((on) => !on);
+                    }}
+                    disabled={!canAnswer}
+                    aria-pressed={codeMode}
+                    title={codeMode ? "Back to a written answer" : "Answer with code"}
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-2xs font-medium disabled:opacity-40 ${
+                      codeMode ? "bg-brand-soft text-brand" : "text-ink-soft hover:bg-surface-sunken hover:text-ink"
+                    }`}
+                  >
+                    <Icon name="code" size={15} />
+                    Code
+                  </button>
+                )}
                 {!data.in_closing && (
                   <HintButton
                     offer={data.hint}
@@ -814,7 +960,11 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               </div>
               </div>
               <p className="mt-2 text-center text-2xs text-ink-faint">
-                There is no score on this screen — the notes come at the end.
+                {dictation.error
+                  ? dictation.error
+                  : fillers && fillers.total > 0
+                    ? `You said ${fillers.total} filler word${fillers.total === 1 ? "" : "s"} (${fillers.top.join(", ")}) — worth noticing, not a mark.`
+                    : "There is no score on this screen — the notes come at the end."}
               </p>
               {repeated && (
                 // §7: verbatim — the words that were asked, nearest the box.

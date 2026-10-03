@@ -582,7 +582,11 @@ class Engine:
         # handed to M05 BEFORE the availability probe selects against it.
         # Until 2026-09-30 nothing fetched it, so every session's CAT started
         # at the prior — "adaptive" from a standing start, every time.
-        self._seed_for(row, [c for r in requirements for c in (r.get("concept_ids") or [])])
+        self._seed_for(
+            row,
+            [c for r in requirements for c in (r.get("concept_ids") or [])]
+            + list(state.focus_concepts),
+        )
         rubrics = self._rubrics()
         scoreable = tuple(str(r["round_type"]) for r in rubrics) or (DEFAULT_ROUND_TYPE,)
         round_types = self._available_round_types(row, state, scoreable)
@@ -597,6 +601,8 @@ class Engine:
                 available_round_types=round_types,
                 claims=self._claims(row),
                 hint_penalty=self._hint_penalty(rubrics, round_types),
+                focus_concepts=tuple(state.focus_concepts),
+                focus_label=state.focus_label,
             )
         )
         store.record(

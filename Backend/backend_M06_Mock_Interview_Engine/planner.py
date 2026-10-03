@@ -103,6 +103,9 @@ class PlanInputs:
     #: M13's published hint credit for the round type this session will use.
     #: Frozen here so the price quoted is the price paid (§32.5).
     hint_penalty: dict[int, float] = field(default_factory=dict)
+    #: What the student asked to practise, from the skill graph's bottleneck.
+    focus_concepts: tuple[str, ...] = ()
+    focus_label: str | None = None
 
 
 def reserved_minutes(requested_minutes: int) -> tuple[float, float]:
@@ -353,6 +356,32 @@ def _without_a_job_description(
     if not available:
         return []
     usable = max(0.0, inputs.requested_minutes - warmup - closing)
+    if inputs.focus_concepts:
+        # "Practise Recursion" means recursion: the segment's concepts become
+        # M05's coverage debt, which is what steers selection toward items
+        # that measure them. One segment, all the usable time.
+        label = inputs.focus_label or ", ".join(
+            c.split(":")[-1].replace("_", " ") for c in inputs.focus_concepts
+        )
+        return [
+            PlannedSegment(
+                index=0,
+                kind="technical",
+                title=f"Focus: {label}",
+                persona_id=mode.persona_for("technical"),
+                minutes=round(usable, 1),
+                question_budget=max(1, int(usable // MINUTES_PER_VERBAL_QUESTION)),
+                concept_ids=list(inputs.focus_concepts),
+                rubric_round_types=list(available),
+                rationale=(
+                    # Neutral about WHERE the choice came from: Today's
+                    # bottleneck, the skill graph's Learn panel and the notes'
+                    # "practise again" all send a focus, and only one of them
+                    # is a bottleneck.
+                    f"You chose to practise {label}, so every question in this part is on it."
+                ),
+            )
+        ]
     each = usable / len(available)
     return [
         PlannedSegment(

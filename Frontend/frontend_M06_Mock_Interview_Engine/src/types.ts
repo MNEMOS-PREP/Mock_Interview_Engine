@@ -60,7 +60,11 @@ export interface SessionFlags {
   modalities_available: string[];
   camera_on: boolean;
   paused_at: string | null;
+  /** True once no pause is left. */
   pause_used: boolean;
+  /** FR-6.12, revised: one pause per 15 planned minutes. */
+  pauses_used: number;
+  pauses_allowed: number;
   reconnect_count: number;
   evaluation_pending: number;
   consent_id: string | null;
@@ -227,6 +231,13 @@ export interface QuestionReport {
   moved_on: boolean;
   /** Once M13 has scored the answer and the session is over. */
   feedback: Feedback[];
+  /** The concept the item measures — "practise this topic again". */
+  concept_id: string | null;
+  /** The item's own name for that topic, when it has one. */
+  topic: string | null;
+  /** The first answer's turn: M13's evidence page is `/turns/{turn_id}`. */
+  turn_id: string | null;
+  asked_by: string | null;
 }
 
 export interface SessionReport {
@@ -312,6 +323,13 @@ export interface Reliability {
   reached_panic: number;
   crashed_steps: number;
   ended_by_failure: number;
+}
+
+/** `GET /v1/interviews/stats`: counts across everyone, never anyone. */
+export interface CohortStats {
+  interviews_this_week: number;
+  students_this_week: number;
+  since: string;
 }
 
 export interface Health {

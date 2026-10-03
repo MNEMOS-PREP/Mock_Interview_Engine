@@ -93,6 +93,14 @@ class QuestionReport(BaseModel):
     #: What M13 said about the answer, once it has scored it and the session
     #: is over. Mid-session it would be a live verdict (§2.2).
     feedback: list[Feedback] = Field(default_factory=list)
+    #: The concept the item measures, so the notes can offer "practise this
+    #: topic again" as a focused interview rather than a generic one.
+    concept_id: str | None = None
+    #: The item's own name for its topic, when it has one.
+    topic: str | None = None
+    #: The first answer's turn — what M13's evidence page (`/turns/{id}`)
+    #: is keyed on, so "how was this marked?" is one link.
+    turn_id: str | None = None
 
 
 class SessionReport(BaseModel):
@@ -207,6 +215,8 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
                     if final
                     else [],
                     asked_by=_asked_by(state, p.get("segment_index")),
+                    concept_id=item.get("concept_id"),
+                    topic=item.get("label"),
                 )
                 questions.append(current)
             current.exchanges.append(
@@ -221,6 +231,8 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
         elif event.kind == "answer.received" and current is not None:
             by_turn[str(p.get("turn_id"))] = current
             retry_turn = state.turn_retry(p.get("turn_id"))
+            if current.turn_id is None and not retry_turn and p.get("turn_id"):
+                current.turn_id = str(p["turn_id"])
             current.exchanges.append(
                 Exchange(role="candidate", text=p.get("text", ""), retry=retry_turn)
             )
@@ -264,7 +276,10 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
     if any(q.scoring_status == "queued" for q in questions):
         notes.append("Some answers are still with the evaluator — check back in a minute.")
     if any(q.scored for q in questions):
-        notes.append("Scores appear here once they are calibrated against human raters.")
+        notes.append(
+            "Each answer's band is the share of a strong answer's key points it covered. "
+            "Numerical scores appear once they are calibrated against human raters."
+        )
     if any(q.retried for q in questions):
         notes.append("Where you took another go, the first attempt is the one that was scored.")
     if state.flags.inputs_flagged:

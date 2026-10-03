@@ -16,6 +16,7 @@ import { api } from "@ai/core";
 import { getCandidateId } from "./identity";
 import type {
   AgentsResponse,
+  CohortStats,
   DependencyRow,
   Health,
   ModeOption,
@@ -39,6 +40,7 @@ export const m06Keys = {
   resume: (id: string) => ["m06", "resume", id] as const,
   report: (id: string) => ["m06", "report", id] as const,
   history: (candidateId: string) => ["m06", "history", candidateId] as const,
+  cohort: ["m06", "cohort"] as const,
 };
 
 export function useHealth() {
@@ -71,6 +73,18 @@ export function useReliability() {
   return useQuery({
     queryKey: m06Keys.reliability,
     queryFn: () => api.get<Reliability>("/v1/interviews/reliability"),
+    retry: false,
+  });
+}
+
+/** How many interviews were started on the platform this week, and by how
+ *  many students. Counts only — the shell's Today card ("you're not the only
+ *  one practising"). */
+export function useCohortStats() {
+  return useQuery({
+    queryKey: m06Keys.cohort,
+    queryFn: () => api.get<CohortStats>("/v1/interviews/stats"),
+    staleTime: 5 * 60_000,
     retry: false,
   });
 }
@@ -158,6 +172,9 @@ export function useCreateSession() {
       jd_id?: string;
       company_id?: string;
       drive_id?: string;
+      /** Up to three concept ids: "Practise Recursion" plans one segment on them. */
+      focus_concepts?: string[];
+      focus_label?: string;
     }) =>
       api.post<Session>("/v1/interviews", body),
     onSuccess: write,

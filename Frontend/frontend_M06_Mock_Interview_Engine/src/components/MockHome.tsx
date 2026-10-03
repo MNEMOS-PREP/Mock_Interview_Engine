@@ -5,17 +5,25 @@
  * whole discipline of this screen: a modality picker with a disabled "Voice"
  * radio would be a promise the session breaks. The modes are offered because
  * since day 9 they are real — each is described by `/v1/interviews/modes`,
- * which serves only mechanics the engine enforces. A job description handed
- * over as `?jd=` (M02, M15) tailors the session and says so.
+ * which serves only mechanics the engine enforces.
+ *
+ * 2026-10-04 — what the student is practising FOR is now chosen here, not only
+ * arrived at by a URL: general, a drive or posting the host knows they are
+ * aiming at (`MockTargetsContext`), or one topic from the skill graph
+ * (`?focus=`, planned by M06 as one segment on that concept). The panel they
+ * may meet is shown with faces before they start, and the pause rule says
+ * what it now is: one per 15 planned minutes.
  */
 
-import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useContext, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
-import { Button, Card, EmptyState, ErrorNote, Spinner } from "@ai/core";
+import { ErrorNote, Icon, PageHeader, SkeletonRows, relativeDays } from "@ai/core";
 
-import { useCreateSession, useHistory, useModes } from "../api";
+import { useCreateSession, useHistory, useModes, usePersonas } from "../api";
+import { MockTargetsContext } from "../targets";
 import type { Mode, SessionSummary } from "../types";
+import { Face } from "../ui/Face";
 
 const LENGTHS = [
   { minutes: 15, label: "15 min", hint: "a few questions" },
@@ -25,42 +33,69 @@ const LENGTHS = [
 
 const LIVE = new Set(["planned", "live", "paused"]);
 
-function relative(iso: string): string {
-  const days = Math.round((Date.now() - new Date(iso).getTime()) / 86_400_000);
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  return `${days} days ago`;
+/** The same pause rule the backend enforces (state.pause_allowance). */
+function pausesFor(minutes: number): number {
+  return Math.max(1, Math.floor(minutes / 15));
+}
+
+function Choice({
+  active,
+  onClick,
+  title,
+  sub,
+  icon,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  sub?: string;
+  icon?: "compass" | "building" | "listChecks" | "target";
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`flex min-w-0 items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
+        active
+          ? "border-brand bg-brand-soft text-ink"
+          : "border-line bg-surface text-ink-soft hover:border-line-strong"
+      }`}
+    >
+      {icon && <Icon name={icon} size={16} className={`mt-0.5 shrink-0 ${active ? "text-brand" : "text-ink-faint"}`} />}
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium">{title}</span>
+        {sub && <span className="block truncate text-2xs text-ink-faint">{sub}</span>}
+      </span>
+    </button>
+  );
 }
 
 function HistoryRow({ session }: { session: SessionSummary }) {
-  const navigate = useNavigate();
   const unfinished = LIVE.has(session.status);
   return (
-    <li className="flex items-center justify-between gap-4 border-b border-line py-3 last:border-0">
-      <div className="min-w-0">
-        <p className="truncate text-sm text-ink">
-          {session.kind === "drill"
-            ? "Defend drill"
-            : `${session.requested_minutes}-minute mock`}
-          <span className="ml-2 text-2xs uppercase tracking-wide text-ink-faint">
-            {session.status}
-          </span>
-        </p>
-        <p className="text-2xs text-ink-faint">
-          {relative(session.created_at)}
-        </p>
-      </div>
-      <Button
-        variant={unfinished ? "primary" : "ghost"}
-        size="sm"
-        onClick={() =>
-          navigate(
-            unfinished ? `/mock/${session.id}` : `/mock/${session.id}/report`,
-          )
-        }
+    <li>
+      <Link
+        to={unfinished ? `/mock/${session.id}` : `/mock/${session.id}/report`}
+        className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 hover:bg-surface-sunken"
       >
-        {unfinished ? "Continue" : "Notes"}
-      </Button>
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-surface-sunken text-ink-soft">
+          <Icon name={session.kind === "drill" ? "zap" : "mic"} size={15} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-ink">
+            {session.kind === "drill" ? "Defend drill" : `${session.requested_minutes}-minute interview`}
+          </span>
+          <span className="block text-2xs text-ink-faint">{relativeDays(session.created_at)}</span>
+        </span>
+        <span
+          className={`rounded-full px-2 py-0.5 text-2xs font-medium ${
+            unfinished ? "border border-brand-line bg-brand-soft text-brand" : "bg-surface-sunken text-ink-soft"
+          }`}
+        >
+          {unfinished ? "Continue" : "Notes"}
+        </span>
+      </Link>
     </li>
   );
 }
@@ -69,110 +104,143 @@ export function MockHome() {
   const [minutes, setMinutes] = useState(30);
   const [mode, setMode] = useState<Mode>("mock");
   const modes = useModes();
-  const [params] = useSearchParams();
+  const personas = usePersonas();
+  const targets = useContext(MockTargetsContext);
+  const [params, setParams] = useSearchParams();
   const jd = params.get("jd");
   // From M15's "Practise this format": a company and the drive being sat.
   // The backend asks M02 for that drive's requirement set (§2.3 door 1).
   const company = params.get("company");
   const drive = params.get("drive");
-  const driveLabel = params.get("label");
+  const label = params.get("label");
+  // From the skill graph or Today: one topic, planned as one segment.
+  const focus = params.get("focus");
   const create = useCreateSession();
   const history = useHistory();
   const navigate = useNavigate();
 
-  const unfinished = (history.data ?? []).find((session) =>
-    LIVE.has(session.status),
-  );
+  const unfinished = (history.data ?? []).find((session) => LIVE.has(session.status));
+
+  const currentKey = focus ? `focus:${focus}` : jd ? `jd:${jd}` : drive ? `drive:${drive}` : "general";
+  const known = targets.some((t) => t.key === currentKey);
+  const choose = (next: Record<string, string>) => setParams(next, { replace: true });
+
+  const target = focus
+    ? `Topic: ${label ?? focus.split(":").pop()?.replace(/_/g, " ")}`
+    : jd
+      ? label ?? "The job description you came from"
+      : company && drive
+        ? label ?? "This drive"
+        : null;
+  const pauses = pausesFor(minutes);
 
   return (
-    <div className="mx-auto grid max-w-5xl gap-8 md:grid-cols-[1.4fr_1fr]">
-      <section>
-        {/* The same header shape as every other module's first screen: a
-            label, then a headline - this is the front door. */}
-        <p className="text-xs font-semibold tracking-[0.09em] text-ink-faint uppercase">
-          Mock interview · M06
-        </p>
-        <h1 className="mt-2.5 text-4xl font-semibold tracking-tight text-ink">
-          Practise an interview
-        </h1>
-        <p className="mt-2 max-w-prose text-sm leading-relaxed text-ink-soft">
-          A real interviewer asks a question, listens to your answer, and keeps
-          going until it finds the edge of what you know. This one does the
-          same, typed, and tells you afterwards where the edge was.
-        </p>
+    <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <section className="min-w-0">
+        <PageHeader
+          title="Practise an interview"
+          subtitle="An interviewer asks, listens, and follows up until it finds the edge of what you know."
+          how={
+            <>
+              <p>
+                Questions come from the platform's bank, chosen for what you are practising for and
+                for what your skill graph says you haven't shown yet. If the bank can't be reached,
+                the interview says so and runs from a short backup set.
+              </p>
+              <p>
+                Speak your answers with the mic or type them; either way you read and edit before
+                anything is sent. Afterwards you get notes on every question.
+              </p>
+            </>
+          }
+        />
 
-        <fieldset className="mt-6">
-          <legend className="text-2xs uppercase tracking-wide text-ink-faint">
-            How long
-          </legend>
-          <div className="mt-2 flex flex-wrap gap-2">
+        <fieldset className="mt-7">
+          <legend className="text-sm font-medium text-ink">Practising for</legend>
+          <div className="mt-2.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <Choice
+              active={currentKey === "general"}
+              onClick={() => choose({})}
+              title="General practice"
+              sub="Across the topics you haven't shown yet"
+              icon="compass"
+            />
+            {targets.map((t) => (
+              <Choice
+                key={t.key}
+                active={currentKey === t.key}
+                onClick={() => choose(t.params)}
+                title={t.label}
+                sub={t.sub}
+                icon={t.key.startsWith("jd:") ? "listChecks" : "building"}
+              />
+            ))}
+            {!known && target && (
+              <Choice active onClick={() => undefined} title={target} sub="From the link you followed" icon={focus ? "target" : "listChecks"} />
+            )}
+          </div>
+          <p className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-2xs text-ink-faint">
+            <Link to="/jd" className="font-medium text-brand">
+              + Paste a job description
+            </Link>
+            <Link to="/companies" className="font-medium text-brand">
+              + Practise for a company's drive
+            </Link>
+            <Link to="/skills" className="font-medium text-brand">
+              + Pick a topic from your skill graph
+            </Link>
+          </p>
+        </fieldset>
+
+        <fieldset className="mt-7">
+          <legend className="text-sm font-medium text-ink">How long</legend>
+          <div className="mt-2.5 flex flex-wrap gap-2">
             {LENGTHS.map((option) => (
               <button
                 key={option.minutes}
                 type="button"
                 aria-pressed={minutes === option.minutes}
                 onClick={() => setMinutes(option.minutes)}
-                className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                className={`rounded-xl border px-3.5 py-2 text-left transition-colors ${
                   minutes === option.minutes
                     ? "border-brand bg-brand-soft text-ink"
                     : "border-line bg-surface text-ink-soft hover:border-line-strong"
                 }`}
               >
-                <span className="block text-sm font-medium">
-                  {option.label}
-                </span>
-                <span className="block text-2xs text-ink-faint">
-                  {option.hint}
-                </span>
+                <span className="block text-sm font-medium">{option.label}</span>
+                <span className="block text-2xs text-ink-faint">{option.hint}</span>
               </button>
             ))}
           </div>
         </fieldset>
 
         {(modes.data ?? []).length > 0 && (
-          <fieldset className="mt-6">
-            <legend className="text-2xs uppercase tracking-wide text-ink-faint">
-              What kind
-            </legend>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <fieldset className="mt-7">
+            <legend className="text-sm font-medium text-ink">What kind</legend>
+            <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
               {(modes.data ?? []).map((option) => (
                 <button
                   key={option.id}
                   type="button"
                   aria-pressed={mode === option.id}
                   onClick={() => setMode(option.id)}
-                  className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                  className={`rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
                     mode === option.id
                       ? "border-brand bg-brand-soft text-ink"
                       : "border-line bg-surface text-ink-soft hover:border-line-strong"
                   }`}
                 >
-                  <span className="block text-sm font-medium">
-                    {option.label}
-                  </span>
-                  <span className="block text-2xs leading-relaxed text-ink-faint">
-                    {option.summary}
-                  </span>
+                  <span className="block text-sm font-medium">{option.label}</span>
+                  <span className="block text-2xs leading-relaxed text-ink-faint">{option.summary}</span>
                 </button>
               ))}
             </div>
           </fieldset>
         )}
 
-        {jd && (
-          <p className="mt-4 text-2xs text-ink-soft">
-            Tailored to the job description you came from.
-          </p>
-        )}
-        {!jd && company && drive && (
-          <p className="mt-4 text-2xs text-ink-soft">
-            Planned from what {driveLabel ?? "this drive"} asks for — the requirement set the
-            job description screen builds for that drive.
-          </p>
-        )}
-
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <Button
+        <div className="mt-8 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
             onClick={() =>
               // Via the plan, not straight into the first question: a student
               // should see what they are about to be asked (FR-6.2).
@@ -183,36 +251,30 @@ export function MockHome() {
                   jd_id: jd ?? undefined,
                   company_id: company ?? undefined,
                   drive_id: drive ?? undefined,
+                  focus_concepts: focus ? [focus] : undefined,
+                  focus_label: focus ? (label ?? undefined) : undefined,
                 },
                 { onSuccess: (s) => navigate(`/mock/${s.id}/plan`) },
               )
             }
             disabled={create.isPending || Boolean(unfinished)}
+            className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand px-5 text-sm font-semibold text-white shadow-glow hover:bg-brand-hover disabled:opacity-50"
           >
-            {create.isPending ? "Setting up…" : "Start interview"}
-          </Button>
+            <Icon name="mic" size={16} />
+            {create.isPending ? "Building your plan…" : "Start interview"}
+          </button>
           <p className="text-2xs text-ink-faint">
-            You can pause once, for five minutes. Ending early still gives you
-            notes.
+            {pauses === 1 ? "One pause" : `${pauses} pauses`} of up to 5 minutes · ending early still
+            gives you notes
           </p>
         </div>
 
         {unfinished && (
-          <div className="mt-4 rounded-lg border border-brand-line bg-brand-soft p-3 text-sm">
-            <p className="text-ink">
-              You have an interview in progress — two at once would overwrite
-              each other.
-            </p>
-            {/* `Button` sets its own className, so spacing goes on a wrapper. */}
-            <div className="mt-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => navigate(`/mock/${unfinished.id}`)}
-              >
-                Go back to it
-              </Button>
-            </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-brand-line bg-brand-soft p-3.5 text-sm">
+            <p className="text-ink">You have an interview in progress.</p>
+            <Link to={`/mock/${unfinished.id}`} className="font-medium text-brand">
+              Go back to it →
+            </Link>
           </div>
         )}
 
@@ -220,39 +282,56 @@ export function MockHome() {
           <div className="mt-4">
             <ErrorNote
               message="That didn't start."
-              detail={
-                create.error instanceof Error ? create.error.message : undefined
-              }
+              detail={create.error instanceof Error ? create.error.message : undefined}
               onRetry={() => create.reset()}
             />
           </div>
         )}
-
-        <p className="mt-8 max-w-prose text-2xs leading-relaxed text-ink-faint">
-          Typed only for now — speaking out loud arrives with the voice engine.
-          Questions come from the platform's bank; when it cannot reach it, the
-          interview says so and runs from a short backup set instead of
-          pretending.
-        </p>
       </section>
 
-      <aside>
-        <Card title="Your sessions">
+      <aside className="space-y-5">
+        {(personas.data ?? []).length > 0 && (
+          <section className="panel p-5">
+            <h2 className="text-sm font-semibold text-ink">Who you might meet</h2>
+            <p className="mt-1 text-2xs text-ink-faint">A mock is a panel; the plan says who runs each part.</p>
+            <ul className="mt-4 space-y-3.5">
+              {(personas.data ?? []).map((persona) => (
+                <li key={persona.id} className="flex items-start gap-3">
+                  <Face name={persona.name} size={40} />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-ink">{persona.name}</span>
+                    <span className="block text-2xs text-ink-faint">{persona.title}</span>
+                    {persona.style && (
+                      <span className="mt-0.5 block text-2xs leading-relaxed text-ink-soft">{persona.style}</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <section className="panel p-5">
+          <h2 className="text-sm font-semibold text-ink">Your interviews</h2>
           {history.isLoading ? (
-            <Spinner label="Looking up your sessions…" />
+            <SkeletonRows label="Loading your interviews" rows={3} className="mt-4" />
           ) : (history.data ?? []).length === 0 ? (
-            <EmptyState title="Nothing yet" icon="clock">
-              Your interviews and drills will be listed here, with the notes
-              from each.
-            </EmptyState>
+            <p className="mt-3 text-sm text-ink-faint">
+              Nothing yet. Each interview is listed here with its notes.
+            </p>
           ) : (
-            <ul>
-              {(history.data ?? []).map((session) => (
+            <ul className="mt-2">
+              {(history.data ?? []).slice(0, 6).map((session) => (
                 <HistoryRow key={session.id} session={session} />
               ))}
             </ul>
           )}
-        </Card>
+          {(history.data ?? []).length > 6 && (
+            <Link to="/history" className="mt-2 inline-block text-2xs font-medium text-brand">
+              All your interviews →
+            </Link>
+          )}
+        </section>
       </aside>
     </div>
   );

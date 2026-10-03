@@ -50,7 +50,10 @@ def test_create_start_pause_resume_end(client, as_student):
 
     paused = client.post(f"/v1/interviews/{sid}/pause", headers=as_student)
     assert paused.json()["status"] == "paused"
-    assert paused.json()["flags"]["pause_used"] is True
+    # 30 minutes planned: two pauses (FR-6.12, revised), one spent.
+    assert paused.json()["flags"]["pauses_used"] == 1
+    assert paused.json()["flags"]["pauses_allowed"] == 2
+    assert paused.json()["flags"]["pause_used"] is False
 
     resumed = client.post(f"/v1/interviews/{sid}/resume", headers=as_student)
     assert resumed.json()["status"] == "live"
@@ -60,15 +63,27 @@ def test_create_start_pause_resume_end(client, as_student):
     assert ended.json()["end_reason"] == "done"
 
 
-def test_the_pause_is_once_per_session(client, as_student):
-    """FR-6.12."""
-    sid = _create(client, as_student).json()["id"]
-    client.post(f"/v1/interviews/{sid}/start", headers=as_student)
-    client.post(f"/v1/interviews/{sid}/pause", headers=as_student)
-    client.post(f"/v1/interviews/{sid}/resume", headers=as_student)
-    again = client.post(f"/v1/interviews/{sid}/pause", headers=as_student)
+def _pause_twice(client, headers, minutes):
+    sid = _create(client, headers, minutes=minutes).json()["id"]
+    client.post(f"/v1/interviews/{sid}/start", headers=headers)
+    client.post(f"/v1/interviews/{sid}/pause", headers=headers)
+    client.post(f"/v1/interviews/{sid}/resume", headers=headers)
+    return client.post(f"/v1/interviews/{sid}/pause", headers=headers)
+
+
+def test_a_short_interview_gets_one_pause(client, as_student):
+    """FR-6.12, revised 2026-10-04: one pause per 15 planned minutes."""
+    again = _pause_twice(client, as_student, 15)
     assert again.status_code == 409
-    assert "once per session" in again.json()["detail"]
+    assert "one per 15 minutes" in again.json()["detail"]
+
+
+def test_a_longer_interview_gets_more_pauses(client, as_student):
+    """'Once' was strict for 45 minutes: water at minute 10 left nothing for 35."""
+    again = _pause_twice(client, as_student, 30)
+    assert again.status_code == 200
+    assert again.json()["flags"]["pauses_used"] == 2
+    assert again.json()["flags"]["pause_used"] is True
 
 
 def test_a_repeated_start_is_idempotent(client, as_student):
@@ -196,3 +211,33 @@ def test_meta_routes_are_not_gated(client, monkeypatch):
     registry.clear_cache()
     assert client.get("/v1/deps").status_code == 200
     registry.clear_cache()
+
+
+def test_a_focus_is_planned_as_one_segment(client, as_student):
+    """Today's "Practise Recursion" reaches the plan, not just the URL."""
+    created = _create(
+        client,
+        as_student,
+        focus_concepts=["concept:recursion"],
+        focus_label="Recursion",
+    )
+    assert created.status_code == 201, created.text
+    sid = created.json()["id"]
+    started = client.post(f"/v1/interviews/{sid}/start", headers=as_student).json()
+    titles = [s["title"] for s in started["plan"]["segments"]]
+    assert "Focus: Recursion" in titles
+
+
+def test_more_than_three_focus_concepts_is_refused(client, as_student):
+    four = [f"concept:c{i}" for i in range(4)]
+    assert _create(client, as_student, focus_concepts=four).status_code == 422
+
+
+def test_the_cohort_figure_counts_this_weeks_interviews_and_names_no_one(client, as_student):
+    before = client.get("/v1/interviews/stats", headers=as_student).json()
+    sid = _create(client, as_student).json()["id"]
+    client.post(f"/v1/interviews/{sid}/start", headers=as_student)
+    after = client.get("/v1/interviews/stats", headers=as_student).json()
+    assert after["interviews_this_week"] == before["interviews_this_week"] + 1
+    assert after["students_this_week"] >= 1
+    assert set(after) == {"interviews_this_week", "students_this_week", "since"}
