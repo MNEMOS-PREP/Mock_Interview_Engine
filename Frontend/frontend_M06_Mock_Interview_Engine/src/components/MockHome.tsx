@@ -87,7 +87,12 @@ export function MockHome() {
   return (
     <div className="mx-auto grid max-w-5xl gap-8 md:grid-cols-[1.4fr_1fr]">
       <section>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        {/* The same header shape as every other module's first screen: a
+            label, then a headline - this is the front door. */}
+        <p className="text-xs font-semibold tracking-[0.09em] text-ink-faint uppercase">
+          Mock interview · M06
+        </p>
+        <h1 className="mt-2.5 text-4xl font-semibold tracking-tight text-ink">
           Practise an interview
         </h1>
         <p className="mt-2 max-w-prose text-sm leading-relaxed text-ink-soft">
