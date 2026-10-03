@@ -21,6 +21,7 @@ from datetime import datetime
 from ai_core.db import engine as db_engine
 from ai_core.db import get_session
 from ai_core.dependencies import DependencyStatus
+from ai_core.guard import require_role
 from ai_core.identity import Principal, Role
 from ai_core.timeutil import utcnow
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
@@ -66,6 +67,11 @@ log = logging.getLogger("uvicorn.error")
 router = APIRouter(
     prefix="/v1", tags=["M06 Mock Interview Engine"], dependencies=[Depends(enforce_access)]
 )
+
+#: Staff routes — across every session, or fixing what only staff can fix.
+#: Platform_Core's `require_role` (v0.12.0) since 2026-10-02; this file had
+#: written the same "Staff only." check by hand twice.
+admin_only = require_role(Role.admin)
 
 #: FR-6.12.
 PAUSE_LIMIT_S = 5 * 60
@@ -399,19 +405,19 @@ def agents() -> dict:
     }
 
 
-@router.get("/interviews/reliability", response_model=ReliabilityOut, tags=["meta"])
-def reliability(
-    principal: Principal | None = Depends(enforce_access),
-    db: Session = Depends(get_session),
-) -> ReliabilityOut:
+@router.get(
+    "/interviews/reliability",
+    response_model=ReliabilityOut,
+    tags=["meta"],
+    dependencies=[Depends(admin_only)],
+)
+def reliability(db: Session = Depends(get_session)) -> ReliabilityOut:
     """AC-6.9's reconnect rate and §10's ladder, across every session — staff
     only, because it counts other students' sessions.
 
     Declared before `/interviews/{session_id}`: a path parameter declared
     first would claim "reliability" as an id and 422 on it.
     """
-    if principal is None or principal.role is not Role.admin:
-        raise HTTPException(status_code=403, detail="Staff only.")
     kinds = (
         "connection.lost",
         "connection.resumed",
@@ -800,18 +806,12 @@ def drain_outbox(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) ->
     }
 
 
-@router.post("/interviews/{session_id}/outbox/requeue")
-def requeue_outbox(
-    session_id: uuid.UUID,
-    principal: Principal | None = Depends(enforce_access),
-    engine: Engine = Depends(get_engine),
-) -> dict:
+@router.post("/interviews/{session_id}/outbox/requeue", dependencies=[Depends(admin_only)])
+def requeue_outbox(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> dict:
     """Put this session's stuck rows back, after a person fixed what held them
     (a rejected or held row is listed with its reason on `/outbox`). Staff
     only: a student retrying a rejected request at will is a way to keep M13
     busy, and fixing the cause is not theirs to do."""
-    if principal is None or principal.role is not Role.admin:
-        raise HTTPException(status_code=403, detail="Staff only.")
     _row_or_404(engine.db, session_id)
     requeued = outbox.requeue(engine.db, session_id)
     drained = engine.deliver(session_id)

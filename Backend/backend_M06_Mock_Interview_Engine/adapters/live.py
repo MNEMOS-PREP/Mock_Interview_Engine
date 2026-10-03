@@ -177,7 +177,10 @@ class LiveQuestions:
         return None if response.status == 409 else response.body
 
     def question(self, question_id: UUID) -> dict[str, Any]:
-        return self.http.get(f"/v1/questions/{question_id}").body
+        # As a module: the key points and follow-ups the interviewer probes
+        # against are M05's answer key, served only with the platform secret
+        # (Platform_Core v0.12.0). A browser gets the stem alone.
+        return self.http.get(f"/v1/questions/{question_id}", service=True).body
 
     def seed(
         self,

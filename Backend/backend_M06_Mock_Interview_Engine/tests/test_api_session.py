@@ -290,3 +290,17 @@ def test_every_route_that_names_a_student_refuses_strangers(client, engine):
     )
     assert ("POST", "/v1/interviews/{session_id}/answer") in checked
     assert ("GET", "/v1/interviews/{session_id}/events") in checked
+
+
+@pytest.mark.gate
+def test_the_staff_routes_are_for_administrators(client):
+    """Platform_Core's `require_role` (v0.12.0), found from the OpenAPI
+    document. These two had each been a hand-written "Staff only." — the
+    copy that ends up differing is the one nobody re-reads."""
+    from ai_core.testing import assert_staff_only
+
+    from backend_M06_Mock_Interview_Engine.app import app
+
+    gated = assert_staff_only(client, app, expect_at_least=2)
+    assert ("GET", "/v1/interviews/reliability") in gated
+    assert ("POST", "/v1/interviews/{session_id}/outbox/requeue") in gated

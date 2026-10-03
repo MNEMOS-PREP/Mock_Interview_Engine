@@ -119,6 +119,7 @@ def test_m04_service_routes_also_name_the_student(wire, monkeypatch):
     and the artifact is the one that matters: without it no evidence resolves
     and no scored answer moves the skill graph."""
     monkeypatch.setenv("M04_SERVICE_SECRET", "s3cret")
+    monkeypatch.delenv("SERVICE_SECRET", raising=False)
     cid, sid = uuid.uuid4(), uuid.uuid4()
     memory = LiveMemory("http://m04")
 
@@ -271,3 +272,16 @@ def test_m13_hears_which_student_an_evaluation_is_for(wire):
     LiveEvaluator("http://m13").evaluate({"turn_id": str(uuid.uuid4()), "candidate_id": str(cid)})
     assert header(rec.last, "X-Candidate-Id") == str(cid)
     assert header(rec.last, "X-Role") == "student"
+
+
+def test_the_question_m06_probes_against_is_fetched_as_a_module(wire):
+    """M05 serves the key points and follow-ups only with the platform secret
+    (Platform_Core v0.12.0); a browser gets the stem alone. Asked without it,
+    the interviewer would probe against nothing."""
+    from ai_core import service
+
+    rec = wire(body={"stem": "Why?", "key_points": [{"id": "kp1"}]})
+    qid = uuid.uuid4()
+    LiveQuestions("http://m05").question(qid)
+    assert rec.last.full_url == f"http://m05/v1/questions/{qid}"
+    assert header(rec.last, "X-Service-Secret") == service.secret()

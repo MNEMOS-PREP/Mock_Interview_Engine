@@ -11,12 +11,19 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import { SEEDED_CANDIDATE_ID, ensureSession } from "@ai/core";
+
 import { m06Routes } from "./routes";
 import { AppShell } from "./ui/AppShell";
 // One stylesheet, on purpose: theme.css imports @ai/core/styles.css itself so
 // Tailwind sees a single entry graph and generates utilities from both token
 // sets. Importing them separately here silently drops half the utilities.
 import "./ui/theme.css";
+
+// Alone there is no sign-in screen — that is Platform_Shell's — so with nobody
+// signed in this is the seeded student, which is what this module's candidate
+// control always defaulted to (`@ai/core`'s session, v0.12.0).
+ensureSession({ role: "student", subject: SEEDED_CANDIDATE_ID });
 
 const queryClient = new QueryClient({
   defaultOptions: {

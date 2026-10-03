@@ -1,61 +1,49 @@
 /**
- * Who the browser is, while the platform has no login (PLATFORM_TODO §1).
+ * Who the browser is — `@ai/core`'s session (v0.12.0), in this module's words.
  *
- * M01's `candidate.ts` is the reference shape and this follows it: a persisted
- * id with a visible control, published to `@ai/core`'s fetch wrapper as the dev
- * headers the backend honours only under `AI_AUTH_MODE=dev`. It reads M01's
- * key first, so the two modules present the same student when Platform_Shell
- * mounts them side by side. When the shell grows a login, this file is the one
- * that changes.
+ * Until 2026-10-02 this file kept its own id under its own localStorage key
+ * and set the page's identity headers itself, as did M01, M02 and M15. In
+ * Platform_Shell the student was whoever's module loaded last. The session is
+ * the platform's now: the shell's sign-in screen sets it, standalone sets the
+ * seeded student when nobody is signed in, and the headers follow it. What is
+ * left here is the vocabulary the rest of this module already uses — the old
+ * keys are migrated by the session itself, so nobody loses the student they were.
  */
 
-import { setIdentityHeaders } from "@ai/core";
+import {
+  SEEDED_CANDIDATE_ID,
+  candidateIdOf,
+  getSession,
+  sessionHeaders,
+  signIn,
+  subscribeSession,
+} from "@ai/core";
 
-const KEY = "m06.candidateId";
-const SHARED_KEY = "m01.candidateId";
+/** The platform's shared seeded candidate. */
+export const DEFAULT_CANDIDATE_ID = SEEDED_CANDIDATE_ID;
 
-/** The platform's shared seeded candidate (M01's DEFAULT_CANDIDATE_ID). */
-export const DEFAULT_CANDIDATE_ID = "4d0aa1c0-0000-4000-8000-000000000004";
-
-const listeners = new Set<() => void>();
-let current = read();
-
-function read(): string {
-  if (typeof window === "undefined") return DEFAULT_CANDIDATE_ID;
-  const fromUrl = new URLSearchParams(window.location.search).get("candidate");
-  if (fromUrl) return fromUrl;
-  return (
-    window.localStorage.getItem(KEY) ??
-    window.localStorage.getItem(SHARED_KEY) ??
-    DEFAULT_CANDIDATE_ID
-  );
-}
-
+/**
+ * The student these screens are about: the signed-in student, or — for staff,
+ * who are nobody's candidate — the seeded one, which the backend then decides
+ * whether they may see.
+ */
 export function getCandidateId(): string {
-  return current;
+  return candidateIdOf(getSession()) ?? DEFAULT_CANDIDATE_ID;
 }
 
+/** The dev control's "be this student". */
 export function setCandidateId(next: string): void {
-  const trimmed = next.trim() || DEFAULT_CANDIDATE_ID;
-  if (trimmed === current) return;
-  current = trimmed;
-  window.localStorage.setItem(KEY, current);
-  publishIdentity();
-  listeners.forEach((listener) => listener());
+  signIn({ role: "student", subject: next.trim() || DEFAULT_CANDIDATE_ID });
 }
 
 export function subscribeCandidateId(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  return subscribeSession(listener);
 }
 
-/** The headers every request carries — also used by the live stream. */
+/** The headers a raw `fetch` sends — the live stream's, which `api` cannot carry. */
 export function identityHeaders(): Record<string, string> {
-  return { "X-Role": "student", "X-Candidate-Id": current };
+  return sessionHeaders();
 }
 
-export function publishIdentity(): void {
-  setIdentityHeaders(identityHeaders());
-}
-
-publishIdentity();
+/** Kept for callers; the session publishes the headers itself now. */
+export function publishIdentity(): void {}

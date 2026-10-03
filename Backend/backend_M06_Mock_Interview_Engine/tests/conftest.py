@@ -23,6 +23,13 @@ from backend_M06_Mock_Interview_Engine.app import app
 
 
 @pytest.fixture(autouse=True)
+def _service_secret(monkeypatch):
+    """A known platform secret, so no test reads or writes the developer's
+    machine secret under their home directory (Platform_Core v0.12.0)."""
+    monkeypatch.setenv("SERVICE_SECRET", "m06-test-secret")
+
+
+@pytest.fixture(autouse=True)
 def no_network_model():
     """`get_llm()` would read the real keys.txt beside the repos and go live.
     Every test starts with the model off; a test that wants one installs a stub."""

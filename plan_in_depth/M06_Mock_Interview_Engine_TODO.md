@@ -19,7 +19,7 @@ Task list for taking **M6 — Mock Interview Engine** to 100% of [M06_Mock_Inter
 
 - **Phase:** 1–2 · **Owner:** E2 · **Ports:** API `8106`, web `5206`
 - **Repo:** `Mock_Interview_Engine` — on disk at `projects\Mock_Interview_Engine` (the folder must equal the repo name, or `launch.ps1` skips it)
-- **Platform_Core:** v0.11.0 (backend and frontend, since 2026-10-02; the router guard is `ai_core.guard`'s)
+- **Platform_Core:** v0.12.0 (backend and frontend, since 2026-10-03). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
 
 Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked on another module
 
@@ -44,7 +44,7 @@ _Nothing scouted for this module yet._
 | | |
 |---|---|
 | Status | **Days 1–15 of 15 done — the build order is complete.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **375**, no socket opened, no API key |
+| Backend tests passing | **384**, no socket opened, no API key |
 | Release gates (`-m gate`) | **79** |
 | Route decorators | **31** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
@@ -54,6 +54,7 @@ _Nothing scouted for this module yet._
 | Spec | [Revision 2](M06_Mock_Interview_Engine.md), after [the review](M06_REVIEW.md) |
 | Scope | 26 functional requirements (21 of them P0), 17 acceptance metrics (8 release-blocking), 17 edge cases |
 | Upstreams | M01, M02, M04, M05, M13 — all shipped, all optional at runtime, each behind an adapter with a fixture |
+| Asked as a module | **2026-10-03**: M05 now serves a question's key points and follow-ups only with the platform secret, so `LiveQuestions.question()` sends it; `test_the_question_m06_probes_against_is_fetched_as_a_module` fails without it |
 
 **What the review changed, in one breath.**
 - **The plan:** it wraps M02's `CoveragePlan` instead of re-allocating it, and no model builds it.

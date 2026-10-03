@@ -14,13 +14,13 @@ dozen requests. Two things it does that a bare `urlopen` does not:
 from __future__ import annotations
 
 import json
-import os
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
 
+from ai_core import service as platform_service
 from ai_core.models import USER_AGENT
 
 from .base import UpstreamUnavailable
@@ -29,10 +29,10 @@ from .base import UpstreamUnavailable
 #: drainer can afford to wait longer for M13.
 DEFAULT_TIMEOUT_S = 3.0
 
-#: What M04's `require_service` compares against (its keys.py), and what M15
-#: sends. M13 reads a bare `SERVICE_SECRET` instead — accepted here as a
-#: fallback so one keys.txt line serves both, and raised with M13 as an ask.
-SERVICE_SECRET_VARS = ("M04_SERVICE_SECRET", "SERVICE_SECRET")
+#: Kept for importers. The secret is Platform_Core's since v0.12.0
+#: (`ai_core.service`): this file, M13's `emit.py` and M15's theta fetch had
+#: each read it their own way, under two names.
+SERVICE_SECRET_VARS = platform_service.SECRET_VARS
 
 
 @dataclass
@@ -70,11 +70,9 @@ class JSONClient:
         if data is not None:
             sent["Content-Type"] = "application/json"
         if service:
-            secret = next(
-                (v for v in (os.getenv(n, "").strip() for n in SERVICE_SECRET_VARS) if v), ""
-            )
-            if secret:
-                sent["X-Service-Secret"] = secret
+            # Never empty: with nothing configured, the machine secret every
+            # module on this host shares.
+            sent.update(platform_service.headers())
         sent.update(headers or {})
         req = urllib.request.Request(url, data=data, headers=sent, method=method)
         try:
