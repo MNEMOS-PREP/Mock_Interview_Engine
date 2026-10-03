@@ -122,13 +122,15 @@ export function useReport(id: string | undefined) {
   });
 }
 
-export function useHistory() {
+/** This student's sessions, newest first. `limit` up to the backend's 200 —
+ *  a practice streak needs more history than the recent-sessions list does. */
+export function useHistory(limit = 20) {
   const candidateId = getCandidateId();
   return useQuery({
-    queryKey: m06Keys.history(candidateId),
+    queryKey: [...m06Keys.history(candidateId), limit],
     queryFn: () =>
       api.get<SessionSummary[]>(
-        `/v1/interviews/by-candidate/${candidateId}?limit=20`,
+        `/v1/interviews/by-candidate/${candidateId}?limit=${limit}`,
       ),
   });
 }

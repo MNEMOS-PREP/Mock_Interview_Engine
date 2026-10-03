@@ -11,9 +11,14 @@
  *     "Thinking…" reads as a stall;
  *   · tokens arriving — the line writes itself, and is replaced by the text of
  *     record when `question.asked` lands (the guard may have swapped it).
+ *
+ * 2026-10-03: drawn as a conversation. The interviewer speaks beside their
+ * avatar in the page's voice; the student's words sit in their own bubble on
+ * the right; the header holds who is asking, the state, and the clock; the
+ * answer box stays in reach at the bottom. Still no score, no marker, no bar.
  */
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { Button, ErrorNote, Spinner } from "@ai/core";
@@ -88,9 +93,15 @@ function TimeRemaining({
   return (
     <>
       <span
-        className="font-mono text-2xs tabular-nums text-ink-soft"
+        className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-xs tabular-nums ${
+          left <= 60 ? "border-session-degraded text-session-degraded" : "border-line text-ink-soft"
+        }`}
         title="Time remaining"
       >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" strokeLinecap="round" />
+        </svg>
         {clock(left)}
       </span>
       <span aria-live="polite" className="sr-only">
@@ -137,18 +148,27 @@ function StatusStrip({
           : "Finished";
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line pb-3">
-      <span className="flex items-center gap-2 text-sm text-ink">
-        <span className={`status-dot ${tone}`} aria-hidden />
-        {label}
-      </span>
-      {session.interviewer && (
-        <span className="text-2xs text-ink-soft">
-          {session.interviewer.name}
-          <span className="text-ink-faint"> · {session.interviewer.title}</span>
+    <div className="sticky top-16 z-20 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-line bg-surface/85 px-4 py-3 shadow-raised backdrop-blur-xl">
+      <span className="flex items-center gap-3">
+        <Avatar name={session.interviewer?.name ?? "Interviewer"} />
+        <span className="leading-tight">
+          <span className="block text-sm font-medium text-ink">
+            {session.interviewer?.name ?? "Your interviewer"}
+            {session.interviewer?.title && (
+              <span className="font-normal text-ink-faint"> · {session.interviewer.title}</span>
+            )}
+          </span>
+          <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-ink-soft">
+            <span
+              className={`status-dot ${tone} ${session.status === "live" ? "status-dot-live" : ""}`}
+              style={{ color: "var(--color-session-listening)" }}
+              aria-hidden
+            />
+            {label}
+          </span>
         </span>
-      )}
-      <span className="text-2xs text-ink-faint">
+      </span>
+      <span className="rounded-full border border-line px-2.5 py-1 text-2xs text-ink-soft">
         {session.kind === "drill"
           ? "Defend drill · not scored"
           : `Question ${Math.max(session.questions_asked, 1)}`}
@@ -193,11 +213,61 @@ function StatusStrip({
   );
 }
 
-function Turn({ turn }: { turn: TurnView }) {
+/** The interviewer's face: their initials, in the brand. Personas have names
+ *  ("Priya · Senior Engineer"), so the room has someone in it. */
+function Avatar({ name, size = 36 }: { name: string; size?: number }) {
+  const letters = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+  return (
+    <span
+      aria-hidden
+      className="grid shrink-0 place-items-center rounded-full bg-brand text-xs font-semibold text-white shadow-glow"
+      style={{ width: size, height: size }}
+    >
+      {letters}
+    </span>
+  );
+}
+
+/** One line from the interviewer, beside their avatar. */
+function Said({
+  name,
+  children,
+  soft = false,
+}: {
+  name: string;
+  children: ReactNode;
+  soft?: boolean;
+}) {
+  return (
+    <div className="flex gap-3">
+      <Avatar name={name} />
+      <div className="min-w-0 flex-1 pt-0.5">
+        <p className="text-2xs font-medium text-ink-faint">{name}</p>
+        <div className={`turn-interviewer mt-1 whitespace-pre-wrap ${soft ? "text-ink-soft" : ""}`}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Turn({ turn, interviewer }: { turn: TurnView; interviewer: string }) {
   if (turn.role === "candidate") {
-    return <p className="turn-candidate whitespace-pre-wrap">{turn.text}</p>;
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[85%] rounded-2xl rounded-br-md border border-brand-line bg-brand-soft px-4 py-3">
+          <p className="text-2xs font-medium text-brand">You</p>
+          <p className="turn-candidate mt-1 whitespace-pre-wrap">{turn.text}</p>
+        </div>
+      </div>
+    );
   }
-  return <p className="turn-interviewer whitespace-pre-wrap">{turn.text}</p>;
+  return <Said name={interviewer}>{turn.text}</Said>;
 }
 
 /**
@@ -487,6 +557,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
 
   const canAnswer =
     data.status === "live" && Boolean(data.open_turn_id) && !waiting;
+  const who = data.interviewer?.name ?? "Interviewer";
 
   function submit() {
     const text = draft.trim();
@@ -499,8 +570,17 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   return (
     <div className="mx-auto max-w-(--container-conversation)">
       {data.status === "planned" ? (
-        <section>
-          <h1 className="text-xl font-semibold tracking-tight">
+        <section className="mx-auto max-w-xl py-10 text-center">
+          {data.interviewer && (
+            <div className="mb-6 flex flex-col items-center gap-3">
+              <Avatar name={data.interviewer.name} size={56} />
+              <p className="text-sm text-ink-soft">
+                <span className="font-medium text-ink">{data.interviewer.name}</span> ·{" "}
+                {data.interviewer.title}
+              </p>
+            </div>
+          )}
+          <h1 className="text-3xl font-semibold tracking-tight text-ink">
             {data.kind === "drill"
               ? "Defend one line from your resume"
               : "Ready when you are"}
@@ -558,7 +638,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             </p>
           )}
 
-          <div className="mt-6 space-y-5">
+          <div className="mt-6 space-y-6">
             {data.transcript.map((turn, index) => {
               const previous = data.transcript[index - 1];
               // A rule is drawn where the segment changes, never before the
@@ -572,34 +652,36 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               return (
                 <Fragment key={turn.turn_id}>
                   {crossed && title && <RoundRule title={title} />}
-                  <Turn turn={turn} />
+                  <Turn turn={turn} interviewer={who} />
                 </Fragment>
               );
             })}
 
             {preview && (
-              <p className="turn-interviewer whitespace-pre-wrap text-ink-soft">
+              <Said name={who} soft>
                 {preview}
-              </p>
+              </Said>
             )}
 
             {thinking && !preview && (
-              <p className="flex items-center gap-1.5" aria-hidden>
-                <span className="thinking-dot" />
-                <span className="thinking-dot" />
-                <span className="thinking-dot" />
-              </p>
+              <div className="flex gap-3" aria-hidden>
+                <Avatar name={who} />
+                <span className="mt-1 flex h-9 items-center gap-1.5 rounded-2xl rounded-tl-md bg-surface-sunken px-4">
+                  <span className="thinking-dot" />
+                  <span className="thinking-dot" />
+                  <span className="thinking-dot" />
+                </span>
+              </div>
             )}
 
             {data.status === "live" && data.idle_line && (
               // EC-6.1: beside the question, not a new one — the answer box
               // still answers what was asked.
-              <p
-                className="turn-interviewer whitespace-pre-wrap text-ink-soft"
-                role="status"
-              >
-                {data.idle_line}
-              </p>
+              <div role="status">
+                <Said name={who} soft>
+                  {data.idle_line}
+                </Said>
+              </div>
             )}
             {data.status === "live" && data.idle_offered && !keptThinking && (
               <div className="flex flex-wrap items-center gap-3">
@@ -660,7 +742,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             </div>
           ) : data.status === "live" || data.status === "paused" ? (
             <form
-              className="mt-8"
+              className="sticky bottom-4 z-10 mt-8"
               onSubmit={(event) => {
                 event.preventDefault();
                 submit();
@@ -669,6 +751,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               <label htmlFor="answer" className="sr-only">
                 Your answer
               </label>
+              <div className="overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-raised focus-within:border-brand">
               <textarea
                 id="answer"
                 value={draft}
@@ -678,7 +761,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     submit();
                 }}
                 disabled={!canAnswer}
-                rows={5}
+                rows={4}
                 maxLength={8000}
                 placeholder={
                   data.status === "paused"
@@ -689,12 +772,9 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                         ? "Ask anything — the team, the work, what happens next. Or just say that's all."
                         : "Type your answer. Say what you'd say out loud."
                 }
-                className="w-full resize-y rounded-lg border border-line bg-surface p-3 text-sm leading-relaxed text-ink placeholder:text-ink-faint focus:border-brand focus:outline-none disabled:bg-surface-sunken"
+                className="block w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[0.9375rem] leading-relaxed text-ink outline-none placeholder:text-ink-faint focus-visible:shadow-none disabled:opacity-60"
               />
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <Button type="submit" disabled={!canAnswer || !draft.trim()}>
-                  {data.in_closing ? "Ask" : "Answer"}
-                </Button>
+              <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-2">
                 {!data.in_closing && (
                   <HintButton
                     offer={data.hint}
@@ -725,11 +805,17 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     ⚑ Flag
                   </Button>
                 )}
-                <span className="text-2xs text-ink-faint">
-                  Ctrl or ⌘ + Enter sends. There is no score on this screen —
-                  the notes come at the end.
+                <span className="ml-auto hidden text-2xs text-ink-faint sm:inline">
+                  Ctrl / ⌘ + Enter
                 </span>
+                <Button type="submit" disabled={!canAnswer || !draft.trim()}>
+                  {data.in_closing ? "Ask" : "Answer"} →
+                </Button>
               </div>
+              </div>
+              <p className="mt-2 text-center text-2xs text-ink-faint">
+                There is no score on this screen — the notes come at the end.
+              </p>
               {repeated && (
                 // §7: verbatim — the words that were asked, nearest the box.
                 <p
@@ -798,8 +884,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               )}
             </form>
           ) : (
-            <section className="mt-8 rounded-xl border border-line bg-surface p-5">
-              <h2 className="text-sm font-semibold text-ink">
+            <section className="mt-10 rounded-2xl border border-brand-line bg-brand-soft p-6 text-center">
+              <h2 className="text-lg font-semibold text-ink">
                 {data.end_reason === "system_failure"
                   ? "That one's on us."
                   : data.kind === "drill"
@@ -810,7 +896,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                 Your notes are ready — what was asked, how far each question
                 went, and where it stopped.
               </p>
-              <div className="mt-4 flex gap-2">
+              <div className="mt-5 flex justify-center gap-2">
                 <Button onClick={() => navigate(`/mock/${sessionId}/report`)}>
                   See the notes
                 </Button>

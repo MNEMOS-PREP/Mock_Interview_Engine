@@ -10,6 +10,14 @@
  * "Where it stopped" is phrased as a finding, never as a failure: the spec's
  * whole argument about the graceful exit is that the same data can be
  * delivered as "that was tough but fair" or as "that was brutal".
+ *
+ * 2026-10-03: the end of a session is a moment, so it opens like one — what
+ * was done, counted (questions, follow-ups held, minutes, hints), and where to
+ * go next. And M13's "not reached" list arrives as key-point ids (`kp_3`), at
+ * times with the statement attached; a student was shown the ids. They are
+ * read back to the statements this same report lists under "what a strong
+ * answer covers", by position, and an id with no statement is left out rather
+ * than printed.
  */
 
 import { Link } from "react-router-dom";
@@ -46,6 +54,31 @@ function depthSentence(question: QuestionReport): string {
   }.`;
 }
 
+/**
+ * `kp_3`, `[kp_3] Says the worst case degrades…` → the statement, once.
+ * Key points are numbered in the order "what a strong answer covers" lists
+ * them, so `kp_N` is entry N-1 when the item carries no text of its own.
+ */
+function missingStatements(missing: string[], covers: string[]): string[] {
+  const out = new Map<string, string>();
+  for (const raw of missing) {
+    const match = /^\[?(kp_\d+)\]?\s*(.*)$/i.exec(raw.trim());
+    const id = match?.[1]?.toLowerCase() ?? raw;
+    const text = match?.[2]?.trim() || covers[Number(id.replace(/\D/g, "")) - 1] || "";
+    if (text && !out.has(id)) out.set(id, text);
+  }
+  return [...out.values()];
+}
+
+function Stat({ value, label }: { value: string | number; label: string }) {
+  return (
+    <div>
+      <p className="text-2xl font-semibold tracking-tight text-ink tabular-nums">{value}</p>
+      <p className="mt-0.5 text-2xs text-ink-faint">{label}</p>
+    </div>
+  );
+}
+
 function QuestionBlock({
   question,
   index,
@@ -73,30 +106,38 @@ function QuestionBlock({
       {question.feedback.length > 0 && (
         // M13's words, never its numbers: the display gate holds those until
         // they agree with human raters.
-        <div className="mt-4 space-y-3 rounded-lg border border-line p-3">
+        <div className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-4">
           <p className="text-2xs uppercase tracking-wide text-ink-faint">
             What the evaluator noticed
           </p>
-          {question.feedback.map((item) => (
-            <div key={item.dimension} className="space-y-1">
-              <p className="text-2xs font-medium text-ink-soft">
-                {item.dimension}
-              </p>
-              {item.reasoning && (
-                <p className="text-sm text-ink">{item.reasoning}</p>
-              )}
-              {item.quotes.map((quote) => (
-                <p key={quote} className="turn-candidate text-sm">
-                  “{quote}”
+          {question.feedback.map((item) => {
+            const notYet = missingStatements(item.missing, question.strong_answer_covers);
+            return (
+              <div key={item.dimension} className="space-y-2 pt-1">
+                <p>
+                  <span className="rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-2xs font-medium text-ink-soft capitalize">
+                    {item.dimension}
+                  </span>
                 </p>
-              ))}
-              {item.missing.length > 0 && (
-                <p className="text-2xs text-ink-faint">
-                  Not reached: {item.missing.join(" · ")}
-                </p>
-              )}
-            </div>
-          ))}
+                {item.reasoning && (
+                  <p className="text-sm leading-relaxed text-ink">{item.reasoning}</p>
+                )}
+                {item.quotes.map((quote) => (
+                  <blockquote
+                    key={quote}
+                    className="border-l-2 border-brand-line pl-3 text-sm leading-relaxed text-ink-soft"
+                  >
+                    “{quote}”
+                  </blockquote>
+                ))}
+                {notYet.length > 0 && (
+                  <p className="text-2xs leading-relaxed text-ink-faint">
+                    Not covered yet: {notYet.join(" · ")}
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -107,13 +148,16 @@ function QuestionBlock({
       )}
 
       {question.strong_answer_covers.length > 0 && (
-        <div className="mt-4 rounded-lg border border-line bg-surface-sunken p-3">
+        <div className="mt-4 rounded-xl border border-confirmed-line bg-confirmed-soft p-4">
           <p className="text-2xs uppercase tracking-wide text-ink-faint">
             What a strong answer covers
           </p>
-          <ul className="mt-1.5 space-y-1 text-sm text-ink-soft">
+          <ul className="mt-2 space-y-1.5 text-sm text-ink">
             {question.strong_answer_covers.map((point) => (
-              <li key={point}>· {point}</li>
+              <li key={point} className="flex gap-2">
+                <span aria-hidden className="text-confirmed">✓</span>
+                {point}
+              </li>
             ))}
           </ul>
         </div>
@@ -159,20 +203,53 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
   }
 
   const data = report.data;
+  const followUps = data.questions.reduce((sum, q) => sum + (q.depth_reached ?? 0), 0);
+  const hints = data.questions.reduce((sum, q) => sum + (q.hints_used ?? 0), 0);
+  const minutes =
+    data.minutes_used < 1 ? "<1" : String(Math.round(data.minutes_used));
 
   return (
     <div className="mx-auto max-w-(--container-conversation)">
-      <header>
-        <p className="text-2xs uppercase tracking-wide text-ink-faint">
-          {data.kind === "drill" ? "Defend drill" : `${data.mode} interview`} ·{" "}
-          {data.minutes_used} of {data.minutes_planned} min
+      <header className="relative overflow-hidden rounded-2xl border border-line bg-surface p-6 shadow-raised">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -top-20 -right-10 h-48 w-48 rounded-full bg-brand opacity-15 blur-3xl"
+        />
+        <p className="relative inline-flex items-center gap-1.5 rounded-full border border-confirmed-line bg-confirmed-soft px-2.5 py-1 text-2xs font-medium text-confirmed">
+          ✓ {data.kind === "drill" ? "Drill complete" : "Session complete"}
         </p>
-        <h1 className="mt-1 text-xl font-semibold tracking-tight">
+        <h1 className="relative mt-3 text-3xl font-semibold tracking-tight text-ink">
           Your notes
         </h1>
-        <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+        <p className="relative mt-2 text-sm leading-relaxed text-ink-soft">
           {data.framing}
         </p>
+        <div className="relative mt-5 grid grid-cols-2 gap-4 border-t border-line pt-5 sm:grid-cols-4">
+          <Stat value={data.questions.length} label={data.questions.length === 1 ? "question" : "questions"} />
+          <Stat value={followUps} label="follow-ups you held" />
+          <Stat value={`${minutes}/${data.minutes_planned}`} label="minutes" />
+          <Stat value={hints} label={hints === 1 ? "hint taken" : "hints taken"} />
+        </div>
+        <div className="relative mt-5 flex flex-wrap gap-2">
+          <Link
+            to="/mock"
+            className="inline-flex h-9 items-center rounded-lg bg-brand px-3.5 text-sm font-semibold text-white hover:bg-brand-hover"
+          >
+            Practise again →
+          </Link>
+          <Link
+            to="/skills"
+            className="inline-flex h-9 items-center rounded-lg border border-line px-3.5 text-sm font-medium text-ink hover:border-line-strong"
+          >
+            See your skill graph
+          </Link>
+          <Link
+            to="/"
+            className="inline-flex h-9 items-center rounded-lg px-3 text-sm text-ink-soft hover:text-ink"
+          >
+            Back to today
+          </Link>
+        </div>
       </header>
 
       {data.notes.length > 0 && (
