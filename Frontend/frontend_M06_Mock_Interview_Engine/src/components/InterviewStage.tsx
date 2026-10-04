@@ -23,6 +23,12 @@
  * the rounds, the closing — which is position, not performance. Pauses are one
  * per 15 planned minutes (FR-6.12, revised), and the button says how many are
  * left. The interviewer has a face rather than initials.
+ *
+ * 2026-10-05: the interviewer SPEAKS each line of record, in the voice
+ * the persona file names (`voice.ts` — the browser's own synthesis until M11
+ * exists), and the face's mouth moves while it does. The line on screen is
+ * still the line; the voice reads it. It stops when the mic opens, the answer
+ * is sent or the session pauses, and one button turns it off for good.
  */
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -49,6 +55,53 @@ import { fillerCount, useDictation } from "../speech";
 import { useInterviewStream } from "../stream";
 import type { HintOffer, Session, TurnView } from "../types";
 import { Face } from "../ui/Face";
+import { useInterviewerVoice } from "../voice";
+
+type Voice = ReturnType<typeof useInterviewerVoice>;
+
+/** A speaker, with sound waves when on and a stroke through it when off. */
+function SpeakerIcon({ on }: { on: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+      {on ? (
+        <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+      ) : (
+        <path d="m22 9-6 6M16 9l6 6" />
+      )}
+    </svg>
+  );
+}
+
+/** The voice's one control: on, off, or — when the browser held the sound
+ *  back until a click — play. */
+function VoiceToggle({ voice, name }: { voice: Voice; name: string }) {
+  if (!voice.supported) return null;
+  if (voice.blocked && voice.enabled)
+    return (
+      <Button size="sm" variant="secondary" onClick={voice.replay}>
+        <SpeakerIcon on /> Hear {name}
+      </Button>
+    );
+  return (
+    <button
+      type="button"
+      onClick={() => voice.setEnabled(!voice.enabled)}
+      aria-pressed={voice.enabled}
+      aria-label="Interviewer's voice"
+      title={
+        voice.enabled
+          ? `Reads each question aloud${voice.voiceName ? ` — ${voice.voiceName}` : ""}. Using a screen reader? You may prefer it off.`
+          : "Read each question aloud"
+      }
+      className={`grid h-8 w-8 place-items-center rounded-lg ${
+        voice.enabled ? "text-brand hover:bg-surface-sunken" : "text-ink-faint hover:bg-surface-sunken hover:text-ink"
+      }`}
+    >
+      <SpeakerIcon on={voice.enabled} />
+    </button>
+  );
+}
 
 const THINKING_AFTER_MS = 800;
 /** A drop shorter than this is a blip: no banner, as the server counts no
@@ -128,6 +181,7 @@ function StatusStrip({
   onResume,
   onEnd,
   busy,
+  voice,
 }: {
   session: Session;
   waiting: boolean;
@@ -136,6 +190,7 @@ function StatusStrip({
   onResume: () => void;
   onEnd: () => void;
   busy: boolean;
+  voice: Voice;
 }) {
   const tone =
     session.status === "paused"
@@ -159,7 +214,11 @@ function StatusStrip({
   return (
     <div className="sticky top-16 z-20 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-line bg-surface/85 px-4 py-3 shadow-raised backdrop-blur-xl">
       <span className="flex items-center gap-3">
-        <Avatar name={session.interviewer?.name ?? "Interviewer"} />
+        <Avatar
+          name={session.interviewer?.name ?? "Interviewer"}
+          speaking={voice.speakingKey !== null}
+          mouth={voice.mouth}
+        />
         <span className="leading-tight">
           <span className="block text-sm font-medium text-ink">
             {session.interviewer?.name ?? "Your interviewer"}
@@ -173,7 +232,7 @@ function StatusStrip({
               style={{ color: "var(--color-session-listening)" }}
               aria-hidden
             />
-            {label}
+            {voice.speakingKey !== null ? "Speaking" : label}
           </span>
         </span>
       </span>
@@ -197,6 +256,7 @@ function StatusStrip({
           </span>
         )}
       <div className="ml-auto flex items-center gap-2">
+        <VoiceToggle voice={voice} name={session.interviewer?.name ?? "the interviewer"} />
         <TimeRemaining session={session} running={connected} />
         {!connected && session.status === "live" && (
           <span
@@ -230,8 +290,18 @@ function StatusStrip({
 
 /** The interviewer's face. Personas have names ("Priya · Senior Engineer"),
  *  so the room has someone in it — drawn, not initials (ui/Face.tsx). */
-function Avatar({ name, size = 36 }: { name: string; size?: number }) {
-  return <Face name={name} size={size} />;
+function Avatar({
+  name,
+  size = 36,
+  speaking = false,
+  mouth,
+}: {
+  name: string;
+  size?: number;
+  speaking?: boolean;
+  mouth?: (now: number) => number;
+}) {
+  return <Face name={name} size={size} speaking={speaking} mouth={mouth} />;
 }
 
 /** The plan's question budget, summed — "about", because follow-ups and a
@@ -287,14 +357,18 @@ function Said({
   name,
   children,
   soft = false,
+  speaking = false,
+  mouth,
 }: {
   name: string;
   children: ReactNode;
   soft?: boolean;
+  speaking?: boolean;
+  mouth?: (now: number) => number;
 }) {
   return (
     <div className="flex gap-3">
-      <Avatar name={name} />
+      <Avatar name={name} speaking={speaking} mouth={mouth} />
       <div className="min-w-0 flex-1 pt-0.5">
         <p className="text-2xs font-medium text-ink-faint">{name}</p>
         <div className={`turn-interviewer mt-1 whitespace-pre-wrap ${soft ? "text-ink-soft" : ""}`}>
@@ -305,7 +379,17 @@ function Said({
   );
 }
 
-function Turn({ turn, interviewer }: { turn: TurnView; interviewer: string }) {
+function Turn({
+  turn,
+  interviewer,
+  speaking = false,
+  mouth,
+}: {
+  turn: TurnView;
+  interviewer: string;
+  speaking?: boolean;
+  mouth?: (now: number) => number;
+}) {
   if (turn.role === "candidate") {
     return (
       <div className="flex justify-end">
@@ -316,7 +400,11 @@ function Turn({ turn, interviewer }: { turn: TurnView; interviewer: string }) {
       </div>
     );
   }
-  return <Said name={interviewer}>{turn.text}</Said>;
+  return (
+    <Said name={interviewer} speaking={speaking} mouth={mouth}>
+      {turn.text}
+    </Said>
+  );
 }
 
 /**
@@ -487,6 +575,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const bottom = useRef<HTMLDivElement>(null);
 
   const data = session.data;
+  const voice = useInterviewerVoice(data?.interviewer?.voice_id);
   const waiting =
     answer.isPending || start.isPending || retry.isPending || moveOn.isPending;
 
@@ -502,6 +591,50 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
       },
     },
   );
+
+  // The interviewer says each new line of record — never the streaming
+  // preview, which the guard may still replace. On arrival what was already
+  // said stays said: a reload does not read the interview back. A session
+  // started from the plan screen is the exception — its opening was asked as
+  // the student arrived, so the lines since the student last spoke are said.
+  const heard = useRef<Set<string> | null>(null);
+  const idleHeard = useRef<string | null>(null);
+  const lastTurnId = data?.transcript.at(-1)?.turn_id;
+  useEffect(() => {
+    if (!data) return;
+    const lines = data.transcript.filter((turn) => turn.role === "interviewer");
+    const idleKey = data.idle_line ? `${data.open_turn_id}:${data.idle_prompts}` : null;
+    if (heard.current === null) {
+      heard.current = new Set(lines.map((turn) => turn.turn_id));
+      idleHeard.current = idleKey;
+      if (justStarted && data.status === "live") {
+        const lastStudent = data.transcript.map((turn) => turn.role).lastIndexOf("candidate");
+        const opening = data.transcript
+          .slice(lastStudent + 1)
+          .filter((turn) => turn.role === "interviewer");
+        const final = opening.at(-1);
+        if (final) voice.speak(opening.map((turn) => turn.text).join(" "), final.turn_id);
+      }
+      return;
+    }
+    const fresh = lines.filter((turn) => !heard.current!.has(turn.turn_id));
+    for (const turn of fresh) heard.current.add(turn.turn_id);
+    const final = fresh.at(-1);
+    if (final) {
+      voice.speak(fresh.map((turn) => turn.text).join(" "), final.turn_id);
+    } else if (idleKey && idleKey !== idleHeard.current && data.status === "live") {
+      // EC-6.1's prompt is the interviewer talking too.
+      voice.speak(data.idle_line!, "idle");
+    }
+    idleHeard.current = idleKey;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.transcript.length, lastTurnId, data?.idle_line, data?.idle_prompts]);
+
+  // A pause is a pause: the voice stops with the clock.
+  useEffect(() => {
+    if (data?.status === "paused") voice.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.status]);
 
   // Under 800 ms nothing changes on screen (spec §8).
   useEffect(() => {
@@ -645,6 +778,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   function submit() {
     const typed = draft.trim();
     if (!typed || !data?.open_turn_id) return;
+    voice.stop();
     if (dictation.listening) dictation.stop();
     // Fenced, so the evaluator reads code as code rather than as prose.
     const text = codeMode ? "```\n" + draft.replace(/\s+$/, "") + "\n```" : typed;
@@ -681,7 +815,11 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
           <p className="mt-4 text-sm leading-relaxed text-ink-soft">
             {data.kind === "drill"
               ? "Two minutes, typed, and not scored. I'll ask you to defend it and stop as soon as we reach the edge."
-              : `About ${data.requested_minutes} minutes. Speak or type your answers. You can pause ${
+              : `About ${data.requested_minutes} minutes. ${
+                  voice.supported && data.interviewer
+                    ? `${data.interviewer.name} reads each question aloud — the speaker button turns that off. `
+                    : ""
+                }Speak or type your answers. You can pause ${
                   (data.flags.pauses_allowed ?? 1) === 1 ? "once" : `${data.flags.pauses_allowed} times`
                 }, and ending early still gives you notes.`}
           </p>
@@ -704,7 +842,11 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             busy={pause.isPending || resume.isPending || end.isPending}
             onPause={() => pause.mutate()}
             onResume={() => resume.mutate()}
-            onEnd={() => end.mutate("ended_by_student")}
+            onEnd={() => {
+              voice.stop();
+              end.mutate("ended_by_student");
+            }}
+            voice={voice}
           />
           <Stepper session={data} />
 
@@ -747,7 +889,12 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               return (
                 <Fragment key={turn.turn_id}>
                   {crossed && title && <RoundRule title={title} />}
-                  <Turn turn={turn} interviewer={who} />
+                  <Turn
+                    turn={turn}
+                    interviewer={who}
+                    speaking={voice.speakingKey === turn.turn_id}
+                    mouth={voice.mouth}
+                  />
                 </Fragment>
               );
             })}
@@ -773,7 +920,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               // EC-6.1: beside the question, not a new one — the answer box
               // still answers what was asked.
               <div role="status">
-                <Said name={who} soft>
+                <Said name={who} soft speaking={voice.speakingKey === "idle"} mouth={voice.mouth}>
                   {data.idle_line}
                 </Said>
               </div>
@@ -897,7 +1044,13 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                 {dictation.supported && !codeMode && (
                   <button
                     type="button"
-                    onClick={() => (dictation.listening ? dictation.stop() : dictation.start())}
+                    onClick={() => {
+                      if (dictation.listening) return dictation.stop();
+                      // The student starting to speak is the interviewer's cue
+                      // to stop — the part of barge-in a browser can do.
+                      voice.stop();
+                      dictation.start();
+                    }}
                     disabled={!canAnswer}
                     aria-pressed={dictation.listening}
                     aria-label={dictation.listening ? "Stop speaking" : "Speak your answer"}
@@ -942,7 +1095,10 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     variant="ghost"
                     onClick={() =>
                       repeat.mutate(undefined, {
-                        onSuccess: (turn) => setRepeated(turn.text),
+                        onSuccess: (turn) => {
+                          setRepeated(turn.text);
+                          voice.repeat(turn.text, "repeat");
+                        },
                       })
                     }
                     disabled={repeat.isPending}

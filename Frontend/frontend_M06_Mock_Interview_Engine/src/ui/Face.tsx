@@ -6,7 +6,18 @@
  * draws the same panel. Everything is derived from the persona's name, so
  * Priya is the same person on the setup screen, the plan and in the room —
  * and nothing about how she looks says anything about how she marks.
+ *
+ * 2026-10-05: the face talks while the interviewer's voice speaks — a ring
+ * says who is speaking, and the mouth opens on each word (`voice.ts` says how
+ * far, every frame, without re-rendering the room). Under reduced motion the
+ * ring stays and the mouth does not move.
  */
+import { useEffect, useRef } from "react";
+
+const REDUCED_MOTION =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const BACKGROUNDS = ["#5b5bd6", "#0d9488", "#c2410c", "#7c3aed", "#0369a1", "#be185d"];
 const SKIN = ["#f1c7a5", "#d9a37e", "#b97c56", "#8d5a3b", "#6b4228"];
@@ -21,14 +32,42 @@ function hash(text: string): number {
   return h >>> 0;
 }
 
-export function Face({ name, size = 36 }: { name: string; size?: number }) {
+export function Face({
+  name,
+  size = 36,
+  speaking = false,
+  mouth,
+}: {
+  name: string;
+  size?: number;
+  /** The interviewer's voice is saying this person's line right now. */
+  speaking?: boolean;
+  /** How open the mouth is for a frame, 0 to 1 (`useInterviewerVoice`). */
+  mouth?: (now: number) => number;
+}) {
   const h = hash(name);
+  const mouthShape = useRef<SVGEllipseElement>(null);
+  const talking = speaking && mouth !== undefined && !REDUCED_MOTION;
+
+  useEffect(() => {
+    if (!talking || !mouth) return;
+    let frame = 0;
+    const draw = (now: number) => {
+      const open = Math.min(1, Math.max(0, mouth(now)));
+      mouthShape.current?.setAttribute("ry", (0.3 + 1.4 * open).toFixed(2));
+      mouthShape.current?.setAttribute("rx", (1.7 + 0.5 * open).toFixed(2));
+      frame = requestAnimationFrame(draw);
+    };
+    frame = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frame);
+  }, [talking, mouth]);
+
   const bg = BACKGROUNDS[h % BACKGROUNDS.length]!;
   const skin = SKIN[(h >>> 3) % SKIN.length]!;
   const hair = HAIR[(h >>> 6) % HAIR.length]!;
   const style = (h >>> 9) % 3;
   const glasses = (h >>> 12) % 4 === 0;
-  return (
+  const drawn = (
     <svg
       width={size}
       height={size}
@@ -63,9 +102,15 @@ export function Face({ name, size = 36 }: { name: string; size?: number }) {
             <path d="M19.4 19h1.2" />
           </g>
         )}
-        {/* smile */}
-        <path d="M17.6 22.6c1.4 1.3 3.4 1.3 4.8 0" fill="none" stroke="#1d1d24" strokeWidth="0.8" strokeLinecap="round" opacity="0.75" />
+        {talking ? (
+          <ellipse ref={mouthShape} cx="20" cy="23.1" rx="1.7" ry="0.3" fill="#3a1d20" opacity="0.85" />
+        ) : (
+          // smile
+          <path d="M17.6 22.6c1.4 1.3 3.4 1.3 4.8 0" fill="none" stroke="#1d1d24" strokeWidth="0.8" strokeLinecap="round" opacity="0.75" />
+        )}
       </g>
     </svg>
   );
+  if (!speaking) return drawn;
+  return <span className="inline-grid shrink-0 rounded-full ring-2 ring-brand ring-offset-2 ring-offset-surface">{drawn}</span>;
 }

@@ -365,9 +365,13 @@ def _interviewer_card(state: SessionState) -> dict | None:
     if state.plan is None:
         return None
     card = speaker(state).card()
-    # What a student may know: who, and how long they wait for an answer —
-    # the stage's idle timer reads it (EC-6.1). Never the ladder's depth.
-    return {k: card[k] for k in ("id", "name", "title", "idle_after_s", "long_answer_words")}
+    # What a student may know: who, how long they wait for an answer — the
+    # stage's idle timer reads it (EC-6.1) — and the voice they speak in, which
+    # the browser reads lines aloud with until M11 exists. Never the ladder's
+    # depth.
+    return {
+        k: card[k] for k in ("id", "name", "title", "idle_after_s", "long_answer_words", "voice_id")
+    }
 
 
 def _row_or_404(db: Session, session_id: uuid.UUID):

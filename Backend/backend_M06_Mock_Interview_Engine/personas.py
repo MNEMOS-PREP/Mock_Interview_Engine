@@ -18,9 +18,11 @@ mechanic that a test can see — never a mood the model is asked to have:
 
 `warmth` and `formality` are carried in the register choice and the authored
 lines rather than being handed to a model as numbers it would interpret
-differently on every call. `voice_id` and `domain_bias` are Phase 3 (M11, and
-company matching with M15); they are carried and validated now so a persona
-file never has to change shape.
+differently on every call. `domain_bias` is Phase 3 (company matching with
+M15), carried and validated now so a persona file never has to change shape.
+`voice_id` is read since 2026-10-05: until M11 exists, the browser speaks each
+line in the voice it names (`locale-voice-manner`, e.g. `en-IN-female-warm`),
+so it is on the card and its shape is checked at load like every other field.
 
 **Personas are data, validated at load.** A file missing a parameter, naming
 an unknown register, or carrying a line the guard refuses fails the BOOT —
@@ -98,7 +100,10 @@ class Persona(BaseModel):
     follow_up_aggression: float = Field(ge=0.0, le=1.0)
     verbosity_target: int = Field(ge=10, le=45)
     domain_bias: list[str]
-    voice_id: str
+    #: `locale-voice-manner`: `en-IN-female-warm`, `en-IN-male-brisk`. The
+    #: browser picks a voice for the locale and kind and paces it by the
+    #: manner; M11 will map the same id to its own voices.
+    voice_id: str = Field(pattern=r"^[a-z]{2}-[A-Z]{2}-[a-z]+-[a-z]+$")
     note_taking_cadence: int = Field(ge=0, le=12)
     hints_available: bool
 
@@ -172,6 +177,7 @@ class Persona(BaseModel):
             "idle_after_s": self.idle_after_s,
             "long_answer_words": self.long_answer_words,
             "hints_available": self.hints_available,
+            "voice_id": self.voice_id,
         }
 
 

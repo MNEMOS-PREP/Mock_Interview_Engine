@@ -175,10 +175,18 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
   }, [session.isSuccess, built, planned, plan]);
 
   useEffect(() => {
-    // Somebody else started it, or this tab refreshed after starting.
+    // Somebody else started it, or this tab refreshed after starting — or
+    // this page's own Start did, and the session went live before Start's
+    // own navigation ran. Which of the two lands last is not ours to choose,
+    // and this one used to drop the stage's `justStarted`: a first start was
+    // greeted "Welcome back" and its opening question went unspoken. So when
+    // the start was ours, this one says so too.
     if (session.data && !planned)
-      navigate(`/mock/${sessionId}`, { replace: true });
-  }, [session.data, planned, navigate, sessionId]);
+      navigate(`/mock/${sessionId}`, {
+        replace: true,
+        state: start.isPending || start.isSuccess ? { justStarted: true } : undefined,
+      });
+  }, [session.data, planned, navigate, sessionId, start.isPending, start.isSuccess]);
 
   if (session.isPending || (!built && plan.isPending)) {
     return <Building />;

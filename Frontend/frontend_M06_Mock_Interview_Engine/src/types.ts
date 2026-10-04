@@ -36,6 +36,9 @@ export interface InterviewerCard {
   /** EC-6.1: seconds of silence before a gentle prompt. */
   idle_after_s: number;
   long_answer_words: number;
+  /** `locale-kind-manner` from the persona file — `en-IN-female-warm`. The
+   *  browser speaks in it until M11 exists (`voice.ts`). */
+  voice_id?: string;
 }
 
 export interface ModeOption {

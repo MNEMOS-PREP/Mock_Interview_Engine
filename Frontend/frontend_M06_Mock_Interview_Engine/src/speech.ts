@@ -48,6 +48,8 @@ function recognitionCtor(): RecognitionCtor | null {
 
 export const SPEECH_SUPPORTED = recognitionCtor() !== null;
 
+export const RECOGNITION_LANG = "en-IN";
+
 /** The words people reach for while thinking. Counted, never removed. */
 const FILLERS = ["um", "umm", "uh", "uhh", "er", "erm", "like", "basically", "actually", "you know"];
 
@@ -83,7 +85,10 @@ export function useDictation(onText: (text: string) => void) {
     const Ctor = recognitionCtor();
     if (!Ctor) return;
     const r = new Ctor();
-    r.lang = navigator.language || "en-IN";
+    // Indian English, whatever the laptop reports: most report en-US even in
+    // India, and en-US recognition mishears Indian-accented English more. The
+    // interview is in English, so a Hindi or Tamil locale is not used either.
+    r.lang = RECOGNITION_LANG;
     r.continuous = true;
     r.interimResults = true;
     r.onresult = (event) => {

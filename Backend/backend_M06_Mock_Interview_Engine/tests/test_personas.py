@@ -190,3 +190,21 @@ def test_the_card_a_browser_sees_carries_no_ladder_parameters():
     interviewer goes — that would tell a student when to stop trying."""
     card = persona("bar_raiser").card()
     assert "max_depth" not in card and "follow_up_aggression" not in card
+
+
+def test_the_card_names_the_voice_the_browser_speaks_in():
+    """Until M11 exists the browser reads each line aloud in the voice the
+    persona file names, so the card carries it — authored, never guessed from
+    a name — and every one of the seven is an Indian-English voice."""
+    for p in personas().values():
+        card = p.card()
+        assert card["voice_id"] == p.voice_id
+        locale, _, rest = card["voice_id"].partition("-IN-")
+        assert locale == "en" and rest, card["voice_id"]
+
+
+def test_a_voice_id_the_browser_cannot_read_fails_the_load(tmp_path):
+    """`locale-voice-manner` or the boot refuses — not a session that falls
+    silent at minute one because "a nice voice" names no voice."""
+    with pytest.raises(PersonaError, match="voice_id"):
+        load_personas(_dir_with(tmp_path, voice_id="a nice voice"))
