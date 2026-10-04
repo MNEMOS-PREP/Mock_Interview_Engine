@@ -8,7 +8,7 @@
 >
 > _Day 6 moved no requirement across a line, and the number is right not to move: it deepened FR-6.3 (rounds now end, begin and say so) without completing it, because per-segment personas wait on day 9. The measure counts requirements, not work — which is the point of having one._
 >
-> _Method: `(met + ½ × partial) ÷ total`, audited against shipped code, 2026-09-17. One measure applied the same way to all nineteen modules so they compare; it counts requirements, not screens or gates._
+> _Method: `(met + ½ × partial) ÷ total`, audited against shipped code, 2026-09-17; re-checked 2026-10-04: unchanged. One measure applied the same way to all nineteen modules so they compare; it counts requirements, not screens or gates._
 
 Task list for taking **M6 — Mock Interview Engine** to 100% of [M06_Mock_Interview_Engine.md](M06_Mock_Interview_Engine.md) (Revision 2).
 
@@ -19,7 +19,7 @@ Task list for taking **M6 — Mock Interview Engine** to 100% of [M06_Mock_Inter
 
 - **Phase:** 1–2 · **Owner:** E2 · **Ports:** API `8106`, web `5206`
 - **Repo:** `Mock_Interview_Engine` — on disk at `projects\Mock_Interview_Engine` (the folder must equal the repo name, or `launch.ps1` skips it)
-- **Platform_Core:** v0.12.0 (backend and frontend, since 2026-10-03). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
+- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.13.0 on the frontend (since 2026-10-04). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
 
 Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked on another module
 
@@ -818,12 +818,42 @@ them is theirs to do.
   product's `practice` does not cover;
 - what to export on the day, and how a reported moment is found in the trace.
 
+### 2026-10-04 — the interview room, for a student
+
+- ✅ **The room is a conversation**: the interviewer's lines sit beside their
+  face, the student's words in their own bubble; the header holds persona,
+  status and clock; the answer box stays in reach. Still no score, no marker,
+  no bar (§2.2). The notes open with "Session complete".
+- ✅ **Answers can be spoken** — the browser's speech recognition (Web Speech
+  API) puts words into the same answer box, edited before sending; filler
+  words are counted, not judged. **Input only**: the interviewer does not
+  speak, and the spec's voice (FR-6.10, FR-6.22) is still M11's. A code mode
+  too: monospace, Tab indents, sent fenced.
+- ✅ **A focused interview focuses**: `POST /v1/interviews` takes
+  `focus_concepts` (up to three) and a label. With no job description the plan
+  is one segment on them; they become M05's coverage debt and M04's posterior
+  is seeded for them.
+- ✅ **Pauses: one per 15 planned minutes**, each ≤ 5 min — a deliberate change
+  from FR-6.12's "once"; the spec row has not been revised. Each pause and
+  resume has its own event key (the second pause returned the first's
+  idempotent event).
+- ✅ `GET /v1/interviews/stats` counts this week's interviews and students,
+  never anyone. The report carries each question's concept, topic and first
+  turn, so the notes offer "practise this topic again".
+- ✅ The notes give each answer Strong / Partly there / Not yet from the key
+  points it reached; M13's "not reached" ids are read back to their statements.
+- ✅ A first interview defaults to 15 minutes of Practice; `?minutes=` and
+  `?mode=` are honoured. A screen reader hears each new interviewer line, and
+  the room has a heading. The personas have drawn faces.
+- No requirement moves; FR-6.10 gains an interim input half.
+
 ### What is left — and whose it is
 
 **Waiting on another module:**
 - FR-6.20 (steelman) waits on M13's `push_back` rubric.
 - FR-6.21's scoring waits on a rubric for questions.
-- Voice (FR-6.10 and FR-6.22's voice half) waits on M11; the editor on M07;
+- Voice (FR-6.10 and FR-6.22's voice half) waits on M11 — the browser mic
+  since 2026-10-04 covers spoken answers only; the editor on M07;
   the canvas on M08; the camera on M12.
 - FR-6.11 has nothing to switch to until one of those lands.
 
@@ -867,9 +897,9 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.7 | ✅ M05's ladder served, `POST /hint` takes one, M13's published factor shown BEFORE it is taken and frozen at plan time, `hint_level_used` carried to M13 | P0 | 1 |
 | FR-6.8 | ✅ Four modes as one table (`modes.py`): personas per segment kind, hints, ensemble, overrun allowance, retry, steelman flag; `GET /v1/interviews/modes` serves only true mechanics | P0 | 1 |
 | FR-6.9 | ✅ No hints, the deepest ladder, the shortest patience, a `RUDE` screen on every line, and the hard clock — 0% overrun, enforced at the next question boundary | P0 | 1 |
-| FR-6.10 | 🟡 Text runs; the turn contract carries `modality` | P0 | 1·text · voice ⛔ M11 · coding ⛔ M07 · canvas ⛔ M08 |
+| FR-6.10 | 🟡 Text runs; the turn contract carries `modality`. Spoken answers through the browser's recognition since 2026-10-04 — input only, an interim until M11 | P0 | 1·text · voice ⛔ M11 · coding ⛔ M07 · canvas ⛔ M08 |
 | FR-6.11 | 🟡 Contract fixed and carried, and `POST /switch-modality` exists (day 13): text is a no-op, anything else names the module it waits on — nothing to switch to yet | P0 | 1·text |
-| FR-6.12 | ✅ Pause once ≤ 5 min, resume. The cap is applied on `/resume` for a student who comes back, and by the sweeper (EC-6.14) for one who does not — which used to lock them out of every future interview | P1 | 1 |
+| FR-6.12 | ✅ Pauses of ≤ 5 min, one per 15 planned minutes (2026-10-04; the spec's row still says once), and resume. The cap is applied on `/resume` for a student who comes back, and by the sweeper (EC-6.14) for one who does not — which used to lock them out of every future interview | P1 | 1 |
 | FR-6.13 | ✅ Reconnect and resume: checkpoint recovery (stale, unreadable, failed write); presence — a disconnect stops the clock, a return restarts it after a 30 s grace; `GET /resume-state` with "welcome back, we were on question N"; the stage re-attaches | P0 | 1 |
 | FR-6.14 | ✅ Evaluation never blocks the hot path — outbox written with the turn, delivered by a background task, an explicit drain, or the sweeper; claimed before sending; a status returns, never a number. Three obligations now: the answer text to M04 (so evidence resolves), the evaluation to M13, the coverage row to M02 — and the artifact goes first | P0 | 1 |
 | FR-6.15 | ✅ Interviewer cannot read scores, band or θ — `InterviewerView` + the type-graph gate | P0 | 1 |
