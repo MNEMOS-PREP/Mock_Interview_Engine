@@ -221,6 +221,8 @@ export interface QuestionReport {
   source: string;
   scored: boolean;
   not_scored_reason: string | null;
+  /** `queued` while M13 marks the answer; `scored` once it has. Never a number. */
+  scoring_status: "not_scored" | "queued" | "scored";
   exchanges: Exchange[];
   depth_reached: number;
   break_depth: number | null;

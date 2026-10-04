@@ -15,7 +15,7 @@
  * what it now is: one per 15 planned minutes.
  */
 
-import { useContext, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { ErrorNote, Icon, PageHeader, SkeletonRows, relativeDays } from "@ai/core";
@@ -32,6 +32,8 @@ const LENGTHS = [
 ];
 
 const LIVE = new Set(["planned", "live", "paused"]);
+
+const MODES: readonly Mode[] = ["practice", "mock", "real_drive", "final_boss"];
 
 /** The same pause rule the backend enforces (state.pause_allowance). */
 function pausesFor(minutes: number): number {
@@ -101,12 +103,21 @@ function HistoryRow({ session }: { session: SessionSummary }) {
 }
 
 export function MockHome() {
-  const [minutes, setMinutes] = useState(30);
-  const [mode, setMode] = useState<Mode>("mock");
+  const [params, setParams] = useSearchParams();
+  // `?minutes=15&mode=practice` — what Today and the welcome step send for a
+  // first interview. Anything else falls back to a 30-minute Mock.
+  const asked = { minutes: Number(params.get("minutes")), mode: params.get("mode") as Mode | null };
+  const [minutes, setMinutes] = useState(() =>
+    LENGTHS.some((l) => l.minutes === asked.minutes) ? asked.minutes : 30,
+  );
+  const [mode, setMode] = useState<Mode>(() =>
+    asked.mode && MODES.includes(asked.mode) ? asked.mode : "mock",
+  );
+  // Once the student (or a link) has chosen, the defaults below stand down.
+  const chosen = useRef(Boolean(params.get("minutes") || params.get("mode")));
   const modes = useModes();
   const personas = usePersonas();
   const targets = useContext(MockTargetsContext);
-  const [params, setParams] = useSearchParams();
   const jd = params.get("jd");
   // From M15's "Practise this format": a company and the drive being sat.
   // The backend asks M02 for that drive's requirement set (§2.3 door 1).
@@ -118,6 +129,17 @@ export function MockHome() {
   const create = useCreateSession();
   const history = useHistory();
   const navigate = useNavigate();
+
+  // A student who has never sat one gets the gentlest real start: 15 minutes
+  // of Practice — hints on, a retry allowed — rather than 30 of Mock.
+  useEffect(() => {
+    if (chosen.current || !history.data) return;
+    chosen.current = true;
+    if (!history.data.some((s) => s.started_at)) {
+      setMinutes(15);
+      setMode("practice");
+    }
+  }, [history.data]);
 
   const unfinished = (history.data ?? []).find((session) => LIVE.has(session.status));
 
@@ -200,7 +222,10 @@ export function MockHome() {
                 key={option.minutes}
                 type="button"
                 aria-pressed={minutes === option.minutes}
-                onClick={() => setMinutes(option.minutes)}
+                onClick={() => {
+                  chosen.current = true;
+                  setMinutes(option.minutes);
+                }}
                 className={`rounded-xl border px-3.5 py-2 text-left transition-colors ${
                   minutes === option.minutes
                     ? "border-brand bg-brand-soft text-ink"
@@ -223,7 +248,10 @@ export function MockHome() {
                   key={option.id}
                   type="button"
                   aria-pressed={mode === option.id}
-                  onClick={() => setMode(option.id)}
+                  onClick={() => {
+                    chosen.current = true;
+                    setMode(option.id);
+                  }}
                   className={`rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
                     mode === option.id
                       ? "border-brand bg-brand-soft text-ink"
