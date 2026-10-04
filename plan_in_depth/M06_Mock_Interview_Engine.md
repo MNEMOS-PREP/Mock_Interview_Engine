@@ -891,6 +891,7 @@ Revision 2, **15 days** over a smaller scope than Revision 1's 14 (no voice, cod
 ## 15. Open decisions
 
 1. **Avatar: static image, animated, or none?** Recommendation: **a simple animated presence indicator, not a face.** An uncanny 3D face is worse than no face, and a real photo raises questions about whose face it is. Revisit if a student panel disagrees.
+   **Update 2026-10-05:** the drawn faces now talk while the interviewer's voice speaks (a ring, and the mouth on each word) — the animated presence recommended here. The user asked on 2026-10-04 for realistic faces; free options, including a realistic 3D head from one photo that runs in the browser, are in M11's spec §15.6. The decision stays open, and the condition above stands: a student panel.
 2. **Should the timer be hideable?** Some students say it stresses them. Proposal: a "focus mode" that dims but never removes it — hiding elapsed time entirely creates worse anxiety at the end.
 3. **How many pauses?** Currently one × 5 min. If completion data shows abandonment at pause exhaustion, raise it — completion beats realism.
 4. **Do we let students retry a question?** Real interviews don't. But a "let me try that again" in Practice mode is genuinely valuable for learning. Proposal: allow in Practice only, mark the retry in the data, score the first attempt.

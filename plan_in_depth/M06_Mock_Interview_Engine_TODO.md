@@ -847,13 +847,51 @@ them is theirs to do.
   the room has a heading. The personas have drawn faces.
 - No requirement moves; FR-6.10 gains an interim input half.
 
+### 2026-10-05 — the interviewer speaks
+
+- ✅ **Each line of record is read aloud** in the voice its persona file names
+  (`voice_id`, `en-IN-female-warm`): the browser's own speech synthesis, which
+  in Edge includes neural Indian-English voices. `voice-core.ts` chooses the
+  voice — exact locale, then neural over robotic, then the persona's kind
+  before its accent — and makes text speakable (code and links are on screen;
+  O(n log n) is "O of n log n"); `voice.ts` speaks it a sentence at a time
+  (Chrome cuts a long utterance off), queues lines so an acknowledgement is
+  not cut off by the question behind it, and stops when the mic opens, the
+  answer is sent, the session pauses or the student ends it. One button turns
+  it off, remembered for the browser; a browser that blocks sound until a
+  click gets a "Hear Meera" button. `npm test` pins the logic (11 tests).
+- ✅ **The face talks**: a ring while the interviewer speaks, and the mouth
+  opens on each word the voice reports (a gentle loop for voices that report
+  none), drawn per frame without re-rendering the room. Reduced motion keeps
+  the ring and stills the mouth.
+- ✅ **The persona card carries `voice_id`**, and its shape is checked at load
+  (`locale-kind-manner`) — two tests. The seven personas' ids were authored in
+  August and read by nothing until now.
+- ✅ **Speech recognition is Indian English** whatever the laptop reports —
+  most report en-US even in India.
+- ✅ **Fixed: a first start was greeted "Welcome back" and its opening went
+  unspoken.** The plan screen's redirect (session went live) raced Start's own
+  navigation and dropped `justStarted` when it landed second; 2026-10-04's fix
+  covered only the other order. Both navigations now carry it when the start
+  was this page's.
+- Verified in a headless Edge: Meera → "Microsoft Neerja Online (Natural) -
+  English (India)" at 0.97; first audio ~1.1 s after the line lands (the online
+  voice's fetch); word boundaries reported; the mic, End and the off switch
+  silence it.
+- **A caveat recorded for M12:** recognisers delete filler words, the browser's
+  included, so the live filler count (2026-10-04) is a floor. It is said as a
+  count, never a judgement, which keeps it honest; the measure is M12's.
+- What stays M11's: streaming the first clause, a VAD-driven barge-in within
+  350 ms, server ASR with word timestamps, Kokoro for browsers without a neural
+  voice, lip-sync from the audio itself. See M11's Revision 2.
+
 ### What is left — and whose it is
 
 **Waiting on another module:**
 - FR-6.20 (steelman) waits on M13's `push_back` rubric.
 - FR-6.21's scoring waits on a rubric for questions.
 - Voice (FR-6.10 and FR-6.22's voice half) waits on M11 — the browser mic
-  since 2026-10-04 covers spoken answers only; the editor on M07;
+  (2026-10-04) and the browser voice (2026-10-05) are interims; the editor on M07;
   the canvas on M08; the camera on M12.
 - FR-6.11 has nothing to switch to until one of those lands.
 
@@ -897,7 +935,7 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.7 | ✅ M05's ladder served, `POST /hint` takes one, M13's published factor shown BEFORE it is taken and frozen at plan time, `hint_level_used` carried to M13 | P0 | 1 |
 | FR-6.8 | ✅ Four modes as one table (`modes.py`): personas per segment kind, hints, ensemble, overrun allowance, retry, steelman flag; `GET /v1/interviews/modes` serves only true mechanics | P0 | 1 |
 | FR-6.9 | ✅ No hints, the deepest ladder, the shortest patience, a `RUDE` screen on every line, and the hard clock — 0% overrun, enforced at the next question boundary | P0 | 1 |
-| FR-6.10 | 🟡 Text runs; the turn contract carries `modality`. Spoken answers through the browser's recognition since 2026-10-04 — input only, an interim until M11 | P0 | 1·text · voice ⛔ M11 · coding ⛔ M07 · canvas ⛔ M08 |
+| FR-6.10 | 🟡 Text runs; the turn contract carries `modality`. Spoken answers through the browser's recognition since 2026-10-04, and the interviewer speaks each line in its persona's `voice_id` since 2026-10-05 — both interims until M11 | P0 | 1·text · voice ⛔ M11 · coding ⛔ M07 · canvas ⛔ M08 |
 | FR-6.11 | 🟡 Contract fixed and carried, and `POST /switch-modality` exists (day 13): text is a no-op, anything else names the module it waits on — nothing to switch to yet | P0 | 1·text |
 | FR-6.12 | ✅ Pauses of ≤ 5 min, one per 15 planned minutes (2026-10-04; the spec's row still says once), and resume. The cap is applied on `/resume` for a student who comes back, and by the sweeper (EC-6.14) for one who does not — which used to lock them out of every future interview | P1 | 1 |
 | FR-6.13 | ✅ Reconnect and resume: checkpoint recovery (stale, unreadable, failed write); presence — a disconnect stops the clock, a return restarts it after a 30 s grace; `GET /resume-state` with "welcome back, we were on question N"; the stage re-attaches | P0 | 1 |
