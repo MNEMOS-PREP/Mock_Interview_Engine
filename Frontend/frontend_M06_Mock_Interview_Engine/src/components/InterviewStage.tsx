@@ -581,14 +581,19 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const bottom = useRef<HTMLDivElement>(null);
 
   const data = session.data;
-  const voice = useInterviewerVoice(data?.interviewer?.voice_id);
+  // Each line it speaks is measured and posted to M11's latency ledger
+  // (`@ai/core` v0.15.0); the room adds the two marks only it knows.
+  const voice = useInterviewerVoice(data?.interviewer?.voice_id, { sessionId });
   const waiting =
     answer.isPending || start.isPending || retry.isPending || moveOn.isPending;
 
   const { connected } = useInterviewStream(
     data?.status === "live" ? sessionId : undefined,
     {
-      onToken: (text) => setPreview((current) => current + text),
+      onToken: (text) => {
+        voice.mark("first_token");
+        setPreview((current) => current + text);
+      },
       onEvent: (event) => {
         // The text of record has landed; the preview has served its purpose.
         if (event.kind === "question.asked" || event.kind === "session.ended")
@@ -638,7 +643,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
 
   // A pause is a pause: the voice stops with the clock.
   useEffect(() => {
-    if (data?.status === "paused") voice.stop();
+    if (data?.status === "paused") voice.stop("pause");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.status]);
 
@@ -784,7 +789,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   function submit() {
     const typed = draft.trim();
     if (!typed || !data?.open_turn_id) return;
-    voice.stop();
+    voice.stop("send");
+    voice.mark("answer_sent");
     if (dictation.listening) dictation.stop();
     // Fenced, so the evaluator reads code as code rather than as prose.
     const text = codeMode ? "```\n" + draft.replace(/\s+$/, "") + "\n```" : typed;
@@ -849,7 +855,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             onPause={() => pause.mutate()}
             onResume={() => resume.mutate()}
             onEnd={() => {
-              voice.stop();
+              voice.stop("end");
               end.mutate("ended_by_student");
             }}
             voice={voice}
@@ -1054,7 +1060,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                       if (dictation.listening) return dictation.stop();
                       // The student starting to speak is the interviewer's cue
                       // to stop — the part of barge-in a browser can do.
-                      voice.stop();
+                      voice.stop("mic");
                       dictation.start();
                     }}
                     disabled={!canAnswer}
