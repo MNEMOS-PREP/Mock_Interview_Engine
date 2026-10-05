@@ -534,10 +534,20 @@ def modes() -> list[dict]:
 
 @router.get("/interviews/personas", tags=["meta"])
 def persona_cards() -> list[dict]:
-    """§6.7 — who might interview a student, for the plan preview."""
+    """§6.7 — who might interview a student, for the plan preview.
+
+    With the voice each speaks in and the line each opens with, so M11's voice
+    check can play every interviewer in the voice this browser would choose —
+    read from the persona files rather than a second list in M11 that would
+    fall behind the next persona added here.
+    """
     return [
-        {k: card[k] for k in ("id", "name", "title", "style")}
-        for card in (p.card() for p in personas().values())
+        {
+            **{k: card[k] for k in ("id", "name", "title", "style", "voice_id")},
+            "greeting": p.said().greeting,
+        }
+        for p in personas().values()
+        for card in (p.card(),)
     ]
 
 

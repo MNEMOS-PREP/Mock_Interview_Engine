@@ -203,6 +203,19 @@ def test_the_card_names_the_voice_the_browser_speaks_in():
         assert locale == "en" and rest, card["voice_id"]
 
 
+def test_the_persona_list_carries_each_voice_and_its_opening_line():
+    """M11's voice check plays every interviewer from this list, so it carries
+    the voice and the line each opens with — and still no ladder parameter."""
+    from backend_M06_Mock_Interview_Engine.router import persona_cards
+
+    cards = {c["id"]: c for c in persona_cards()}
+    assert set(cards) == set(personas())
+    for pid, p in personas().items():
+        assert cards[pid]["voice_id"] == p.voice_id
+        assert cards[pid]["greeting"] == p.said().greeting
+        assert "max_depth" not in cards[pid] and "follow_up_aggression" not in cards[pid]
+
+
 def test_a_voice_id_the_browser_cannot_read_fails_the_load(tmp_path):
     """`locale-voice-manner` or the boot refuses — not a session that falls
     silent at minute one because "a nice voice" names no voice."""

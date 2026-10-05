@@ -25,8 +25,8 @@
  * left. The interviewer has a face rather than initials.
  *
  * 2026-10-05: the interviewer SPEAKS each line of record, in the voice
- * the persona file names (`voice.ts` — the browser's own synthesis until M11
- * exists), and the face's mouth moves while it does. The line on screen is
+ * the persona file names (`useInterviewerVoice` — M11's, in `@ai/core` since
+ * v0.14.0), and the face's mouth moves while it does. The line on screen is
  * still the line; the voice reads it. It stops when the mic opens, the answer
  * is sent or the session pauses, and one button turns it off for good.
  */
@@ -34,7 +34,14 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
-import { Button, ErrorNote, Icon, Skeleton } from "@ai/core";
+import {
+  Button,
+  ErrorNote,
+  Icon,
+  Skeleton,
+  useInterviewerVoice,
+  type InterviewerVoice,
+} from "@ai/core";
 
 import {
   useAnswer,
@@ -55,9 +62,8 @@ import { fillerCount, useDictation } from "../speech";
 import { useInterviewStream } from "../stream";
 import type { HintOffer, Session, TurnView } from "../types";
 import { Face } from "../ui/Face";
-import { useInterviewerVoice } from "../voice";
 
-type Voice = ReturnType<typeof useInterviewerVoice>;
+type Voice = InterviewerVoice;
 
 /** A speaker, with sound waves when on and a stroke through it when off. */
 function SpeakerIcon({ on }: { on: boolean }) {

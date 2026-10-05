@@ -10,10 +10,9 @@
   "scripts": {
     "dev": "vite --port 5206",
     "build": "vite build",
-    "preview": "vite preview --port 5206",
-    "test": "node --experimental-strip-types --no-warnings tests/voice.test.ts"
+    "preview": "vite preview --port 5206"
   },
   "dependencies": {
-    "@ai/core": "github:MNEMOS-PREP/Platform_Core#v0.12.0"
+    "@ai/core": "github:MNEMOS-PREP/Platform_Core#v0.14.0"
   }
 }

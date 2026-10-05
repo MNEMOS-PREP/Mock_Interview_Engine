@@ -56,6 +56,10 @@ export interface PersonaCard {
   name: string;
   title: string;
   style: string;
+  /** `locale-kind-manner`, e.g. `en-IN-female-warm` — what M11 speaks in. */
+  voice_id: string;
+  /** The line this interviewer opens with — M11's voice check plays it. */
+  greeting: string;
 }
 
 export interface SessionFlags {
