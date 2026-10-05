@@ -36,8 +36,9 @@ export interface InterviewerCard {
   /** EC-6.1: seconds of silence before a gentle prompt. */
   idle_after_s: number;
   long_answer_words: number;
-  /** `locale-kind-manner` from the persona file — `en-IN-female-warm`. The
-   *  browser speaks in it until M11 exists (`voice.ts`). */
+  /** `locale-kind-manner` from the persona file — `en-IN-female-warm`. M11
+   *  casts a voice for this interviewer by `id`; when M11 is down the browser
+   *  speaks in the closest voice to this (`@ai/core`). */
   voice_id?: string;
 }
 

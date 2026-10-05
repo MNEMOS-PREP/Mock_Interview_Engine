@@ -582,8 +582,13 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
 
   const data = session.data;
   // Each line it speaks is measured and posted to M11's latency ledger
-  // (`@ai/core` v0.15.0); the room adds the two marks only it knows.
-  const voice = useInterviewerVoice(data?.interviewer?.voice_id, { sessionId });
+  // (`@ai/core` v0.15.0); the room adds the two marks only it knows. Since
+  // v0.16.0 it speaks in the voice M11 casts for this interviewer when M11 is
+  // running, and in the browser's own voice when it is not.
+  const voice = useInterviewerVoice(data?.interviewer?.voice_id, {
+    sessionId,
+    personaId: data?.interviewer?.id,
+  });
   const waiting =
     answer.isPending || start.isPending || retry.isPending || moveOn.isPending;
 
