@@ -17,6 +17,7 @@ import queue
 import uuid
 from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timedelta
+from typing import Annotated
 
 from ai_core.db import engine as db_engine
 from ai_core.db import get_session
@@ -26,7 +27,7 @@ from ai_core.identity import Principal, Role
 from ai_core.timeutil import utcnow
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 from sqlmodel import Session, select
 
 from . import degrade, outbox, presence, store
@@ -134,7 +135,16 @@ class SessionCreate(BaseModel):
 class DrillProbe(BaseModel):
     depth: int = Field(ge=0, le=5)
     question: str = Field(min_length=1, max_length=500)
-    expects: str | None = Field(default=None, max_length=500)
+    #: What a good answer at this rung covers. M01 sends a list of points
+    #: (`ProbeQuestion.expects`); one string is still taken.
+    expects: list[Annotated[str, StringConstraints(max_length=500)]] | None = Field(
+        default=None, max_length=6
+    )
+
+    @field_validator("expects", mode="before")
+    @classmethod
+    def _one_point_is_a_list(cls, value: object) -> object:
+        return [value] if isinstance(value, str) else value
 
 
 class DrillCreate(BaseModel):

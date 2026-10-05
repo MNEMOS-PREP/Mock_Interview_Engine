@@ -38,8 +38,9 @@ class Item:
     key_points: tuple[KeyPoint, ...] = ()
     #: depth → the question's own wording for that rung.
     follow_ups: dict[int, str] = field(default_factory=dict)
-    #: depth → what a good answer at that rung contains (M01 `expects`).
-    expects: dict[int, str] = field(default_factory=dict)
+    #: depth → what a good answer at that rung contains (M01 `expects`, a
+    #: list of points — see `_points`).
+    expects: dict[int, tuple[str, ...]] = field(default_factory=dict)
     hint_ladder: tuple[str, ...] = ()
     time_budget_s: int = 300
     label: str = ""
@@ -58,8 +59,36 @@ class Item:
     def expected_at(self, depth: int) -> list[str]:
         """What the strategist is told a good answer contains at this depth."""
         if depth in self.expects:
-            return [self.expects[depth]]
+            return list(self.expects[depth])
         return [kp.statement for kp in self.key_points]
+
+
+def _points(value: Any) -> tuple[str, ...]:
+    """M01's `expects` for one rung, as points.
+
+    M01 sends a list of strings (`claims.py`, `ProbeQuestion.expects`, since
+    2026-08-23). M06 was written against a stub that sent one string, so a
+    resume question's rungs were stored as lists inside a field typed `str`,
+    and the notes failed for every session that asked one. Both shapes are
+    read, so events stored either way still open.
+    """
+    if isinstance(value, str):
+        value = [value]
+    return tuple(s.strip() for s in value or () if isinstance(s, str) and s.strip())
+
+
+def _expects(raw: dict[Any, Any] | None) -> dict[int, tuple[str, ...]]:
+    out = {int(d): _points(v) for d, v in (raw or {}).items()}
+    return {d: points for d, points in out.items() if points}
+
+
+def expected_statements(raw: dict[Any, Any] | None) -> list[str]:
+    """Every rung's points from a stored item's `expects`, opening rung first,
+    each once — what the notes list under "what a strong answer covers"."""
+    seen: dict[str, None] = {}
+    for _, points in sorted(_expects(raw).items()):
+        seen.update(dict.fromkeys(points))
+    return list(seen)
 
 
 def _primary_concept(concepts: list[dict[str, Any]]) -> str:
@@ -105,7 +134,7 @@ def from_drill(drill: dict[str, Any]) -> Item:
         concept_id=f"claim:{drill.get('claim_id', '')}",
         rubric_round_type=None,
         follow_ups={int(p["depth"]): p["question"] for p in probes[1:] if int(p["depth"]) >= 1},
-        expects={int(p["depth"]): p["expects"] for p in probes if p.get("expects")},
+        expects=_expects({p["depth"]: p.get("expects") for p in probes}),
         time_budget_s=120,
         label=str(drill.get("claim_text", ""))[:80],
     )
@@ -126,7 +155,7 @@ def to_dict(item: Item) -> dict[str, Any]:
         ],
         # JSON object keys are strings; `from_dict` turns them back.
         "follow_ups": {str(d): t for d, t in item.follow_ups.items()},
-        "expects": {str(d): t for d, t in item.expects.items()},
+        "expects": {str(d): list(points) for d, points in item.expects.items()},
         "hint_ladder": list(item.hint_ladder),
         "time_budget_s": item.time_budget_s,
         "label": item.label,
@@ -142,11 +171,19 @@ def from_dict(data: dict[str, Any]) -> Item:
         rubric_round_type=data.get("rubric_round_type"),
         key_points=tuple(KeyPoint(**kp) for kp in data.get("key_points", [])),
         follow_ups={int(d): t for d, t in (data.get("follow_ups") or {}).items()},
-        expects={int(d): t for d, t in (data.get("expects") or {}).items()},
+        expects=_expects(data.get("expects")),
         hint_ladder=tuple(data.get("hint_ladder") or ()),
         time_budget_s=int(data.get("time_budget_s", 300)),
         label=data.get("label", ""),
     )
 
 
-__all__ = ["Item", "KeyPoint", "from_dict", "from_drill", "from_m05", "to_dict"]
+__all__ = [
+    "Item",
+    "KeyPoint",
+    "expected_statements",
+    "from_dict",
+    "from_drill",
+    "from_m05",
+    "to_dict",
+]

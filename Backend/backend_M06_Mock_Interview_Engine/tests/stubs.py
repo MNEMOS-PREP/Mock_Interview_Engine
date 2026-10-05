@@ -193,13 +193,13 @@ def drill_body(candidate: uuid.UUID) -> dict[str, Any]:
             {
                 "depth": 0,
                 "question": "Walk me through the classifier.",
-                "expects": "names model and data",
+                "expects": ["names model and data"],
             },
             {
                 "depth": 1,
                 "question": "How did you split the data?",
-                "expects": "a held-out test set",
+                "expects": ["a held-out test set"],
             },
-            {"depth": 2, "question": "What baseline does 94% beat?", "expects": "a named baseline"},
+            {"depth": 2, "question": "What baseline does 94% beat?", "expects": ["a named baseline"]},
         ],
     }

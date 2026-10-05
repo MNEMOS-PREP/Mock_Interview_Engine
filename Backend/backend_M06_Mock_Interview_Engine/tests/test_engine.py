@@ -8,7 +8,7 @@ import uuid
 import pytest
 from sqlmodel import select
 
-from backend_M06_Mock_Interview_Engine import adapters, planner, store
+from backend_M06_Mock_Interview_Engine import adapters, items, planner, report, store
 from backend_M06_Mock_Interview_Engine.contracts import SessionStatus
 from backend_M06_Mock_Interview_Engine.engine import (
     AnswerRejected,
@@ -718,3 +718,31 @@ def test_the_project_segment_asks_about_the_students_own_resume(db):
     assert len(queued) == 1
     assert answered_in[queued[0].turn_id] != project_index
     assert queued[0].payload["round_type"] == "dsa_verbal"
+
+
+def test_the_notes_open_after_a_question_about_the_resume(db):
+    """M01 sends each rung's `expects` as a list of points. M06 stored them as
+    one string per rung, so "what a strong answer covers" became a list of
+    lists, and every session that asked about the resume ended in a 500 where
+    its notes should be (found live, 2026-10-05)."""
+    engine = make(
+        db, llm=StubLLM([verdict(justification="failed", band="below")]), m05=BankQuestions()
+    )
+    row = mock(engine, minutes=30)
+    engine.start(row.id)
+    say(engine, row, "I do not know.")
+    say(engine, row, "I do not know.")
+    engine.end(row.id, "ended_by_student")
+
+    built = report.build(engine.state(row.id), store.events_for(db, row.id), engine.clock())
+    probe = next(q for q in built.questions if q.source == "m01_probe")
+    assert probe.strong_answer_covers[0] == "names the model and the data"
+    assert all(isinstance(point, str) for point in probe.strong_answer_covers)
+
+
+def test_a_rung_stored_as_one_string_still_reads():
+    """Events written before the fix hold the old shape; they still open."""
+    old = items.from_dict({"stem": "q", "source": "m01_probe", "expects": {"0": "a baseline"}})
+    new = items.from_dict({"stem": "q", "source": "m01_probe", "expects": {"0": ["a baseline", " "]}})
+    assert old.expected_at(0) == new.expected_at(0) == ["a baseline"]
+    assert items.expected_statements({"1": ["b", "a"], "0": ["a"]}) == ["a", "b"]

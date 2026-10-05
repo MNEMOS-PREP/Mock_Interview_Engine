@@ -17,6 +17,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from .contracts import M05_OWNED, SessionStatus
+from .items import expected_statements
 from .models import SessionEvent
 from .modes import mode_config
 from .personas import persona
@@ -210,7 +211,7 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
                     else NOT_SCORED.get(source, NOT_SCORED["template"]),
                     strong_answer_covers=(
                         [kp["statement"] for kp in item.get("key_points", [])]
-                        or list((item.get("expects") or {}).values())
+                        or expected_statements(item.get("expects"))
                     )
                     if final
                     else [],

@@ -422,17 +422,17 @@ class FixtureResumes:
                 {
                     "depth": 0,
                     "question": "Walk me through the classifier you built.",
-                    "expects": "names the model and the data",
+                    "expects": ["names the model and the data"],
                 },
                 {
                     "depth": 1,
                     "question": "How did you split the data for that 94%?",
-                    "expects": "a held-out test set",
+                    "expects": ["a held-out test set"],
                 },
                 {
                     "depth": 2,
                     "question": "What was the baseline that 94% beats?",
-                    "expects": "a named baseline and its score",
+                    "expects": ["a named baseline and its score"],
                 },
             ],
         }
