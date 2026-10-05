@@ -20,3 +20,4 @@ lines:
   graceful_exit: "That's where it gets subtle. Let's leave it there for now."
   bridge_to: "Let's turn to the next part: {topic}."
   note_taking: "Let me write that down."
+  panel_hello: "Good to meet you. I'll be asking about {topics}."

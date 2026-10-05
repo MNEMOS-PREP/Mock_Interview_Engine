@@ -40,6 +40,7 @@ from .contracts import (
     ProbeLadderState,
     SessionFlags,
     SessionStatus,
+    SpokenPart,
     TurnView,
 )
 
@@ -253,6 +254,19 @@ def _started(s: SessionState, p: dict, at: datetime) -> None:
     s.profile_prefix = p.get("profile_prefix", "")
 
 
+def _persona_at(s: SessionState, segment_index: int) -> str | None:
+    """Who runs a segment — the speaker of a line whose event predates
+    `speaker_id` (2026-10-06), and of every line one person said whole."""
+    if s.plan is None:
+        return None
+    found = next((seg for seg in s.plan.segments if seg.index == segment_index), None)
+    return found.persona_id if found is not None else None
+
+
+def _parts(p: dict, key: str = "parts") -> list[SpokenPart]:
+    return [SpokenPart.model_validate(part) for part in p.get(key) or []]
+
+
 def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
     _require_open(s, "question.asked")
     turn_id = UUID(str(p["turn_id"]))
@@ -295,6 +309,9 @@ def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
             probe_depth=int(p.get("probe_depth", 0)),
             probe_move=move,
             retry=retry or s.ladder_is_retry,
+            speaker_id=p.get("speaker_id")
+            or _persona_at(s, int(p.get("segment_index", s.current_segment))),
+            parts=_parts(p),
             at=at,
         )
     )
@@ -414,6 +431,8 @@ def _retry_offered(s: SessionState, p: dict, at: datetime) -> None:
             segment_index=int(p.get("segment_index", s.current_segment)),
             role="interviewer",
             text=p["text"],
+            speaker_id=p.get("speaker_id")
+            or _persona_at(s, int(p.get("segment_index", s.current_segment))),
             at=at,
         )
     )
@@ -531,6 +550,8 @@ def _closing_line(s: SessionState, p: dict, at: datetime) -> None:
                 segment_index=s.current_segment,
                 role="interviewer",
                 text=p["closing_text"],
+                speaker_id=p.get("closing_speaker_id") or _persona_at(s, s.current_segment),
+                parts=_parts(p, "closing_parts"),
                 at=at,
             )
         )

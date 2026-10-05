@@ -20,3 +20,4 @@ lines:
   greeting: "Hey, I'm Kabir — thanks for coming in. Let's jump straight in."
   next_question_lead: "Okay, next."
   moving_on: "Cool. Moving on."
+  panel_hello: "Hey! I'll be asking about {topics}."

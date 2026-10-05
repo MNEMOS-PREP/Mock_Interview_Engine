@@ -97,6 +97,24 @@ class Lines:
     idle_offer: str
     #: EC-6.1 at the closing: nothing to ask is a fine answer.
     idle_offer_closing: str
+    # ── the panel (FR-6.3, `panel.py`) ──────────────────────────────────
+    #: A real panel says who is in the room before anyone asks. The lead
+    #: greets and names the others ("I'm joined by Dr. Raghavan and Sunita")…
+    panel_greeting: str
+    #: …and each of the others says hello and what they will ask about, in
+    #: their own voice — which is how a student learns whose voice is whose.
+    panel_hello: str
+    #: At a round's end, the panelist leaving names the one arriving…
+    hand_over: str
+    #: …and the one arriving thanks them before the bridge. Said too by an
+    #: asker taking a question back after someone else cut in.
+    take_over: str
+    #: One follow-up from a panelist who knows the topic clearly better than
+    #: the one asking (`panel.interjector`). The asker takes it back after.
+    interject: str
+    #: The closing of a panel: "we" and "us", not "I" and "me".
+    panel_to_closing: str
+    panel_to_closing_early: str
 
 
 LINES: dict[Register, Lines] = {
@@ -140,6 +158,18 @@ LINES: dict[Register, Lines] = {
         idle_second="No rush. Even a first step is a fine place to start.",
         idle_offer="Want to leave this one and move on? That's completely fine.",
         idle_offer_closing="No worries if nothing comes to mind — shall we wrap up?",
+        panel_greeting=(
+            "Hi, I'm {name} — thanks for making the time. I'm joined by {others}, "
+            "and we'll keep this conversational."
+        ),
+        panel_hello="Hi! I'll be asking about {topics}.",
+        hand_over="{name}, over to you.",
+        take_over="Thanks, {name}.",
+        interject="Can I jump in with one?",
+        panel_to_closing="That's everything we wanted to ask. Anything you'd like to ask us?",
+        panel_to_closing_early=(
+            "We're close to time, so let's stop there. Anything you'd like to ask us?"
+        ),
     ),
     "neutral": Lines(
         greeting="Hello. Let's begin.",
@@ -179,6 +209,15 @@ LINES: dict[Register, Lines] = {
         idle_second="A first step is a fine place to start.",
         idle_offer="Shall we move on to the next one?",
         idle_offer_closing="Shall we wrap up here?",
+        panel_greeting="Hello, I'm {name}. I'm joined by {others}.",
+        panel_hello="Hello. I'll be asking about {topics}.",
+        hand_over="{name}, over to you.",
+        take_over="Thanks, {name}.",
+        interject="One question from me on that.",
+        panel_to_closing="That's our questions. Do you have any for us?",
+        panel_to_closing_early=(
+            "We're close to time, so we'll stop there. Do you have any questions for us?"
+        ),
     ),
     "bar_raiser": Lines(
         greeting="Let's get started.",
@@ -219,6 +258,13 @@ LINES: dict[Register, Lines] = {
         idle_second="Start with what you know.",
         idle_offer="Move on?",
         idle_offer_closing="Wrap up?",
+        panel_greeting="I'm {name}. With me: {others}.",
+        panel_hello="I'll take {topics}.",
+        hand_over="{name}, go ahead.",
+        take_over="Thanks, {name}.",
+        interject="Let me come in here.",
+        panel_to_closing="That's our questions. Yours?",
+        panel_to_closing_early="Close to time. Your questions?",
     ),
 }
 

@@ -139,15 +139,33 @@ def test_a_drill_is_never_scored_and_never_moves_theta(db):
 # ── mocks ────────────────────────────────────────────────────────────────
 
 
-def test_a_mock_opens_with_a_greeting_and_a_verbatim_stem(db):
+def test_a_mock_opens_with_the_panel_and_a_verbatim_stem(db):
+    """FR-6.3: a panel says who is in the room before anyone asks. The lead
+    greets and names the others, each says hello in their own voice, and the
+    lead asks the first question — M05's, word for word."""
+    from backend_M06_Mock_Interview_Engine.personas import persona
+
     engine = make(db, m05=BankQuestions())
     row = mock(engine)
     state = engine.start(row.id)
-    first = interviewer_lines(state)[0]
-    assert first.startswith("Hello, I'm Priya. Let's begin. First question.")
-    assert "single loop over an array" in first
-    assert state.transcript[0].question_source == "m05_bank"
-    assert state.transcript[0].rubric_round_type == "dsa_verbal"
+    opening = state.transcript[0]
+    lead = persona(state.plan.segments[0].persona_id)
+    others = [
+        persona(pid)
+        for pid in dict.fromkeys(s.persona_id for s in state.plan.segments)
+        if pid != lead.id
+    ]
+    assert others, "a ten-minute mock seats a panel"
+    voices = [part.speaker_id for part in opening.parts]
+    assert voices[0] == voices[-1] == opening.speaker_id == lead.id
+    assert set(voices[1:-1]) == {p.id for p in others}
+    assert opening.parts[0].text.startswith(f"Hello, I'm {lead.name}. I'm joined by")
+    assert all(p.name in opening.parts[0].text for p in others)
+    assert opening.parts[-1].text.startswith("First question.")
+    assert "single loop over an array" in opening.parts[-1].text
+    assert opening.text == " ".join(part.text for part in opening.parts)
+    assert opening.question_source == "m05_bank"
+    assert opening.rubric_round_type == "dsa_verbal"
 
 
 def test_a_mock_runs_to_its_budget_and_closes(db):
@@ -381,7 +399,7 @@ def test_repeating_a_question_does_not_repeat_the_hand_off(db):
     state = engine.start(row.id)
     asked = interviewer_lines(state)[-1]
     stem = state.current_item["stem"]
-    assert asked.startswith("Hello, I'm Priya. Let's begin. First question.")  # the lead
+    assert asked.startswith("Hello, I'm Priya.")  # the lead, with the panel
 
     state = say(engine, row, "Something about a different question entirely.")
     repeat = interviewer_lines(state)[-1]
@@ -743,6 +761,8 @@ def test_the_notes_open_after_a_question_about_the_resume(db):
 def test_a_rung_stored_as_one_string_still_reads():
     """Events written before the fix hold the old shape; they still open."""
     old = items.from_dict({"stem": "q", "source": "m01_probe", "expects": {"0": "a baseline"}})
-    new = items.from_dict({"stem": "q", "source": "m01_probe", "expects": {"0": ["a baseline", " "]}})
+    new = items.from_dict(
+        {"stem": "q", "source": "m01_probe", "expects": {"0": ["a baseline", " "]}}
+    )
     assert old.expected_at(0) == new.expected_at(0) == ["a baseline"]
     assert items.expected_statements({"1": ["b", "a"], "0": ["a"]}) == ["a", "b"]

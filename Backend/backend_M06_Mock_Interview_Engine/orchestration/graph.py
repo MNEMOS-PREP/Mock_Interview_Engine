@@ -48,6 +48,7 @@ from typing import Annotated, Any, TypedDict
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
+from .. import panel as seating
 from ..agents.guard import AnswerScreen, SafetyGuard, neutralise, rule_screen
 from ..agents.interviewer import Interviewer, Utterance
 from ..agents.strategist import ProbeStrategist
@@ -207,6 +208,9 @@ class Deps:
     question_budget: Callable[[SessionState], int]
     #: §15.4: whether a Practice retry may be offered for the open question.
     retry_allowed: Callable[[SessionState], bool] = lambda _state: False
+    #: Everyone on the panel (FR-6.3, `panel.py`), the lead first: who is
+    #: introduced at the start, who may cut in, who closes.
+    panel_for: Callable[[SessionState], list[Persona]] = lambda _state: []
 
 
 def _question_to_repeat(state: SessionState) -> str:
@@ -259,12 +263,136 @@ def _emit(text: str) -> None:
         pass
 
 
-def _nudge_due(state: SessionState, persona: Persona, answer: str | None) -> bool:
-    """§6.7 `interruption_threshold`, in text: once per round, for an answer
-    longer than the persona will sit through."""
+def _nudger(
+    state: SessionState, panel: list[Persona], owner: Persona, answer: str | None
+) -> Persona | None:
+    """§6.7 `interruption_threshold`, in text: once per round, an answer
+    longer than someone on the panel will sit through is cut short — by the
+    least patient of them, who need not be the one asking. One person's
+    question, another's watch: that is what makes it feel like a panel."""
     if not answer or state.current_segment in state.nudged_segments:
-        return False
-    return len(answer.split()) > persona.long_answer_words
+        return None
+    words = len(answer.split())
+    impatient = [p for p in (panel or [owner]) if words > p.long_answer_words]
+    if not impatient:
+        return None
+    return min(impatient, key=lambda p: (p.long_answer_words, p.id != owner.id, p.id))
+
+
+def _join(names: list[str]) -> str:
+    """"A", "A and B", "A, B and C" — how a person lists people or topics."""
+    if len(names) <= 1:
+        return "".join(names)
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def _spoken(title: str) -> str:
+    """A round's title as said mid-sentence: "Your projects" becomes "your
+    projects"; "SQL" and "Spring Boot" keep their capitals."""
+    words = title.split()
+    if (
+        len(words) >= 2
+        and words[0][:1].isupper()
+        and words[0][1:].islower()
+        and words[1][:1].islower()
+    ):
+        return title[:1].lower() + title[1:]
+    return title
+
+
+def _topics_of(state: SessionState, persona_id: str) -> list[str]:
+    """The rounds a panelist runs, as they would say them."""
+    if state.plan is None:
+        return []
+    topics: list[str] = []
+    for segment in state.plan.segments:
+        if segment.dropped_reason is not None or segment.persona_id != persona_id:
+            continue
+        if segment.kind in ("warmup", "closing") or not segment.title:
+            continue
+        topic = _spoken(segment.title)
+        if topic not in topics:
+            topics.append(topic)
+    return topics
+
+
+def _panel_opening(
+    state: SessionState, lead: Persona, panel: list[Persona]
+) -> tuple[list[tuple[str, str]], str]:
+    """FR-6.3: a panel introduces itself before anyone asks. The lead greets
+    and names the others; each says hello and what they will ask about, in
+    their own voice; then the lead asks. One interviewer simply greets."""
+    said = lead.said()
+    others = [p for p in panel if p.id != lead.id]
+    if not others:
+        return [], f"{said.greeting} {said.first_question_lead}".strip()
+    names = _join([p.name for p in others])
+    parts = [(lead.id, said.panel_greeting.format(name=lead.name, others=names))]
+    for other in others:
+        topics = _topics_of(state, other.id)
+        if topics:
+            parts.append((other.id, other.said().panel_hello.format(topics=_join(topics))))
+    return parts, said.first_question_lead
+
+
+def _interjection(
+    state: SessionState, panel: list[Persona], owner: Persona, item: Item, depth: int
+) -> Persona | None:
+    """FR-6.3: someone else on the panel comes in with one follow-up — a
+    panelist who knows this question's topic clearly better than the one
+    asking (`panel.interjector`). At the second rung, after the asker's own
+    first follow-up, and once a round at most; the asker takes it back."""
+    if state.kind == "drill" or depth != 2 or len(panel) < 2 or state.plan is None:
+        return None
+    here = [
+        t
+        for t in state.transcript
+        if t.role == "interviewer" and t.segment_index == state.current_segment
+    ]
+    if any(t.speaker_id not in (None, owner.id) for t in here):
+        return None  # someone has already come in this round
+    segment = next((s for s in state.plan.segments if s.index == state.current_segment), None)
+    title = segment.title if segment is not None and segment.title else ""
+    topic = seating.words(item.concept_id, item.label, title)
+    chosen = seating.interjector([p.id for p in panel], owner.id, topic, {p.id: p for p in panel})
+    return next((p for p in panel if p.id == chosen), None)
+
+
+def _taken_back(state: SessionState, owner: Persona, panel: list[Persona]) -> str:
+    """The asker's "Thanks, Vikram." after someone else's follow-up."""
+    last = next((t for t in reversed(state.transcript) if t.role == "interviewer"), None)
+    if last is None or last.speaker_id in (None, owner.id):
+        return ""
+    other = next((p for p in panel if p.id == last.speaker_id), None)
+    return f"{owner.said().take_over.format(name=other.name)} " if other is not None else ""
+
+
+def _merge_voices(parts: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Adjacent words by one voice are one part; empty ones are dropped."""
+    out: list[tuple[str, str]] = []
+    for who, text in parts:
+        text = text.strip()
+        if not text:
+            continue
+        if out and out[-1][0] == who:
+            out[-1] = (who, f"{out[-1][1]} {text}")
+        else:
+            out.append((who, text))
+    return out
+
+
+def _voiced(utterance: Utterance, parts: list[tuple[str, str]]) -> Utterance:
+    """The utterance as its voices say it: the text is every part in order;
+    the question (what a repeat says) is the asker's question alone."""
+    merged = _merge_voices(parts)
+    return Utterance(
+        " ".join(text for _, text in merged),
+        utterance.source,
+        call=utterance.call,
+        fallback_reason=utterance.fallback_reason,
+        question=utterance.question or utterance.text,
+        parts=tuple(merged),
+    )
 
 
 def build(deps: Deps):
@@ -352,6 +480,7 @@ def build(deps: Deps):
         move: Move = outcome.move
         persona = deps.persona_for(inp.state)
         lines = persona.said()
+        seated = deps.panel_for(inp.state)
         repeat_q = _question_to_repeat(inp.state)
         last_answer = next(
             (t.text for t in reversed(inp.state.transcript) if t.role == "candidate"),
@@ -360,12 +489,30 @@ def build(deps: Deps):
         out: dict[str, Any] = {"item": item, "new_question": False}
         # One "keep it moving" per round, and only before a follow-up or a
         # redirect: before a hint or a request to rephrase it would read as
-        # impatience with a student who asked for help.
-        nudge = move.kind in NUDGEABLE and _nudge_due(inp.state, persona, inp.answer)
-        prefix = f"{lines.keep_moving} " if nudge else ""
-        if nudge:
+        # impatience with a student who asked for help. In a panel it comes
+        # from whoever on it ran out of patience first.
+        nudger = (
+            _nudger(inp.state, seated, persona, inp.answer) if move.kind in NUDGEABLE else None
+        )
+        before: list[tuple[str, str]] = []
+        prefix = ""
+        if nudger is not None:
             out["nudged"] = True
+            if nudger.id == persona.id:
+                prefix = f"{lines.keep_moving} "
+            else:
+                before.append((nudger.id, nudger.said().keep_moving))
+            _emit(f"{nudger.said().keep_moving} ")
+        # FR-6.3: an expert on the panel may come in with this follow-up.
+        asker = persona
+        if move.kind == "rung" and nudger is None and move.depth is not None:
+            asker = _interjection(inp.state, seated, persona, item, move.depth) or persona
+        if asker.id != persona.id:
+            prefix = f"{asker.said().interject} "
             _emit(prefix)
+        back = _taken_back(inp.state, persona, seated) if asker.id == persona.id else ""
+        if back:
+            _emit(back)
         if move.kind == "rung":
             assert move.depth is not None
             view = project_for_interviewer(
@@ -378,9 +525,9 @@ def build(deps: Deps):
                 # long round asks about hashing twice, because everything
                 # older than six turns simply is not there.
                 round_summary=inp.state.round_summary,
-                register=persona.speech,
-                persona_style=persona.style,
-                max_words=persona.verbosity_target,
+                register=asker.speech,
+                persona_style=asker.style,
+                max_words=asker.verbosity_target,
             )
             utterance = deps.interviewer.probe(
                 item, move.depth, view=view, last_answer=last_answer, on_token=_emit
@@ -408,15 +555,9 @@ def build(deps: Deps):
             raise RuntimeError(f"move {move.kind} has no utterance in Phase 1")
         if move.kind != "rung":
             _emit(utterance.text)
-        if prefix:
-            utterance = Utterance(
-                prefix + utterance.text,
-                utterance.source,
-                call=utterance.call,
-                fallback_reason=utterance.fallback_reason,
-                question=utterance.question or utterance.text,
-            )
-        out["utterance"] = utterance
+        out["utterance"] = _voiced(
+            utterance, [*before, (asker.id, f"{back}{prefix}{utterance.text}")]
+        )
         return out
 
     def offer_retry(s: StepState) -> dict[str, Any]:
@@ -468,8 +609,9 @@ def build(deps: Deps):
     def after_select(s: StepState) -> str:
         return "finish" if s.get("finish") else "phrase"
 
-    def lead_for(s: StepState) -> tuple[str, bool]:
-        """What is said before the question, and whether that includes the
+    def lead_for(s: StepState) -> tuple[list[tuple[str, str]], str, bool]:
+        """What is said before the question: what others on the panel say
+        first, the asker's own words before it, and whether that includes the
         once-per-round "keep it moving"."""
         inp = s["inp"]
         outcome = s.get("outcome")
@@ -480,19 +622,26 @@ def build(deps: Deps):
         leaving = deps.persona_for(inp.state)
         arriving = s.get("persona") or leaving
         said_leaving, said_arriving = leaving.said(), arriving.said()
+        seated = deps.panel_for(inp.state)
         if inp.state.questions_asked == 0:
-            opening = (
-                said_arriving.drill_open if inp.state.kind == "drill" else said_arriving.greeting
-            )
-            return f"{opening} {said_arriving.first_question_lead}".strip(), False
+            if inp.state.kind == "drill":
+                opening = f"{said_arriving.drill_open} {said_arriving.first_question_lead}"
+                return [], opening.strip(), False
+            before, lead = _panel_opening(inp.state, arriving, seated)
+            return before, lead, False
         graceful = outcome is not None and outcome.move.graceful
-        nudge = not graceful and _nudge_due(inp.state, leaving, inp.answer)
+        nudger = None if graceful else _nudger(inp.state, seated, leaving, inp.answer)
+        nudge = nudger is not None
+        before: list[tuple[str, str]] = []
+        if nudger is not None and nudger.id != leaving.id:
+            # Someone else on the panel cuts a long answer short (§6.7).
+            before.append((nudger.id, nudger.said().keep_moving))
         # §2.3's pace line rides with the next question, like a bridge — but
         # not into the closing, which supersedes whatever it promised.
         next_item = s.get("item")
         closing_next = next_item is not None and next_item.source == "closing"
         pace = "" if closing_next else (s.get("pace_line") or inp.state.pending_pace_line or "")
-        if outcome is None:
+        if outcome is None or (nudger is not None and nudger.id != leaving.id):
             exit_line = ""
         elif nudge:
             exit_line = said_leaving.keep_moving
@@ -512,22 +661,32 @@ def build(deps: Deps):
                 exit_line = f"{said_leaving.note_taking} {exit_line}"
         exit_line = f"{exit_line} {pace}".strip()
         bridge = s.get("bridge") or inp.state.pending_bridge
+        if bridge and arriving.id != leaving.id:
+            # A hand-over (FR-6.3): the one leaving names the one arriving,
+            # who thanks them and takes the round — two voices, not a cut.
+            handing = f"{exit_line} {said_leaving.hand_over.format(name=arriving.name)}"
+            taking = f"{said_arriving.take_over.format(name=leaving.name)} {bridge}"
+            return [*before, (leaving.id, handing)], taking, nudge
+        # After someone else's follow-up, the asker takes the question back.
+        back = _taken_back(inp.state, leaving, seated)
         if bridge:
             # A new round starts. The bridge replaces "next question", because
             # saying both ("Okay, let's leave that there. Next question. Let's
             # move to the next part: SQL.") is three transitions for one.
-            return f"{exit_line} {bridge}".strip(), nudge
+            return before, f"{back}{exit_line} {bridge}".strip(), nudge
         item = s.get("item")
         if item is not None and item.source == "closing":
             # The closing without a bridge (a crash replayed): it still asks.
-            return f"{exit_line} {said_arriving.bridge_to_closing}".strip(), nudge
-        return f"{exit_line} {said_arriving.next_question_lead}".strip(), nudge
+            return before, f"{back}{exit_line} {said_arriving.bridge_to_closing}".strip(), nudge
+        return before, f"{back}{exit_line} {said_arriving.next_question_lead}".strip(), nudge
 
     def phrase(s: StepState) -> dict[str, Any]:
         item = s["item"]
         assert item is not None
-        lead, nudged = lead_for(s)
-        utterance = deps.interviewer.open_question(item, lead=lead)
+        before, lead, nudged = lead_for(s)
+        asker = s.get("persona") or deps.persona_for(s["inp"].state)
+        asked = deps.interviewer.open_question(item, lead=lead)
+        utterance = _voiced(asked, [*before, (asker.id, asked.text)])
         _emit(utterance.text)
         return {"utterance": utterance, "nudged": nudged}
 
@@ -569,25 +728,34 @@ def build(deps: Deps):
         inp = s["inp"]
         outcome = s.get("outcome")
         reason = s["finish"]
-        lines = deps.persona_for(inp.state).said()
+        owner = deps.persona_for(inp.state)
+        lines = owner.said()
         if reason == "conduct":
             # EC-6.4: polite, and says what happens next rather than why.
             text = lines.conduct_close
             _emit(text)
             return {"utterance": Utterance(text, "template")}
-        parts = []
+        # The lead closes, as they opened: an interview that ends inside
+        # someone else's round has them close their question, then the lead
+        # says goodbye.
+        seated = deps.panel_for(inp.state)
+        lead = seated[0] if seated else owner
+        closing = lead.said()
+        parts: list[tuple[str, str]] = []
         if outcome is not None:
-            parts.append(
-                Interviewer.exit_then(
-                    lines, graceful=outcome.move.graceful, ceiling=outcome.ceiling is not None
-                )
+            exit_line = Interviewer.exit_then(
+                lines, graceful=outcome.move.graceful, ceiling=outcome.ceiling is not None
             )
+            parts.append((owner.id, exit_line))
         if reason == "time":
-            parts.append(lines.time_up)
-        parts.append(lines.drill_close if inp.state.kind == "drill" else lines.session_close)
-        text = " ".join(p for p in parts if p)
-        _emit(text)
-        return {"utterance": Utterance(text, "template")}
+            parts.append((lead.id, closing.time_up))
+        parts.append(
+            (lead.id, closing.drill_close if inp.state.kind == "drill" else closing.session_close)
+        )
+        utterance = _voiced(Utterance("", "template"), parts)
+        utterance.question = None
+        _emit(utterance.text)
+        return {"utterance": utterance}
 
     graph = StateGraph(StepState)
     graph.add_node("strategist", strategist)

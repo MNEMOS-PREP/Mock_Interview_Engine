@@ -64,6 +64,10 @@ class Utterance:
     #: repeated when a student answers a different question, so that repeating
     #: does not also repeat "Okay, let's leave that there. Next question."
     question: str | None = None
+    #: (persona id, words) per voice, in order, when more than one panelist
+    #: says this line — or when the graph names who says it. Empty means the
+    #: segment's interviewer said all of it.
+    parts: tuple[tuple[str, str], ...] = ()
 
 
 TokenSink = Callable[[str], None]

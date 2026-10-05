@@ -19,3 +19,4 @@ lines:
   greeting: "Hello, I'm Sunita from HR. I'd like to hear how you work with people."
   bridge_to: "Now I'd like to talk about {topic}."
   graceful_exit: "That's alright — let's talk about something else."
+  panel_hello: "Hello, I'm from HR — I'd like to hear about {topics}."

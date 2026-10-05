@@ -276,6 +276,15 @@ class StrategistVerdict(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────
 
 
+class SpokenPart(BaseModel):
+    """One person's words within an interviewer line. A panel's line can be
+    several people: at a hand-over the panelist leaving names the one
+    arriving, who then asks; at the opening everyone says hello."""
+
+    speaker_id: str
+    text: str
+
+
 class TurnView(BaseModel):
     """One line of the transcript as the session state holds it."""
 
@@ -302,6 +311,13 @@ class TurnView(BaseModel):
     #: §15.4: a Practice retry of a question already asked. Recorded, never
     #: scored — the first attempt is the one that counts.
     retry: bool = False
+    #: Interviewer turns: the persona who asks — the last voice of the line,
+    #: the one the student answers. Before 2026-10-06 events did not say;
+    #: the fold reads it off the segment then, which is who asked.
+    speaker_id: str | None = None
+    #: Interviewer turns: the line as each panelist said it, in order. Empty
+    #: for a line one person said whole — `text` and `speaker_id` are it.
+    parts: list[SpokenPart] = Field(default_factory=list)
     at: datetime
 
 

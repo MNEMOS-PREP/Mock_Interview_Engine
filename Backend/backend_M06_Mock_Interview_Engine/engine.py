@@ -162,6 +162,31 @@ def speaker(state: SessionState) -> Persona:
     return persona(mode_config(state.mode).persona_for("default"))
 
 
+def arriving_speaker(state: SessionState) -> Persona:
+    """Who asks the NEXT question: the interviewer of the segment now running.
+
+    `speaker` is who asked the last one, on purpose (see there). Across a
+    crossing the two differ, and the step's line needs both — the one leaving
+    closes their question and hands over, the one arriving asks. Until
+    2026-10-06 the selector named `speaker` for both, so an arriving
+    interviewer's own lead-in was never said and their first question was
+    shown under the previous interviewer's name.
+    """
+    segment = current_segment(state)
+    if segment is not None and segment.persona_id:
+        return persona(segment.persona_id)
+    return speaker(state)
+
+
+def seated(state: SessionState) -> list[Persona]:
+    """The panel (FR-6.3, `panel.py`): everyone this plan seats, in the order
+    the student meets them — the lead first. One person for a drill."""
+    if state.plan is None or state.kind == SessionKind.drill.value:
+        return [speaker(state)]
+    ids = dict.fromkeys(s.persona_id for s in planner.live_segments(state.plan) if s.persona_id)
+    return [persona(i) for i in ids] or [speaker(state)]
+
+
 def ladder_config(state: SessionState) -> LadderConfig:
     """The ladder's rules for this state — the persona's depth, the mode's
     hints and steelman flag.
@@ -199,11 +224,19 @@ def retry_allowed(state: SessionState) -> bool:
 
 
 def introduced(state: SessionState) -> frozenset[str]:
-    """The personas who have already spoken in this session."""
+    """The personas who have already spoken in this session — anyone who
+    said part of an interviewer line, which includes everyone the panel's
+    opening introduced."""
     if state.plan is None:
         return frozenset()
-    spoke = {t.segment_index for t in state.transcript if t.role == "interviewer"}
-    return frozenset(s.persona_id for s in state.plan.segments if s.index in spoke)
+    spoke: set[str] = set()
+    for turn in state.transcript:
+        if turn.role != "interviewer":
+            continue
+        spoke.update(part.speaker_id for part in turn.parts)
+        if turn.speaker_id:
+            spoke.add(turn.speaker_id)
+    return frozenset(spoke)
 
 
 def bridge_line(
@@ -211,6 +244,7 @@ def bridge_line(
     introduced: frozenset[str] | None = None,
     *,
     forced_by_time: bool = False,
+    panel: bool = False,
 ) -> str:
     """§3.2.3 — what is said between two rounds.
 
@@ -223,19 +257,29 @@ def bridge_line(
     is the one who picks the conversation up — and one the student has not
     met yet introduces themselves instead, with their own greeting, the way
     a real panel hands over. `introduced` is who has spoken so far; None
-    means "do not introduce anybody".
+    means "do not introduce anybody". A `panel` closes as "we", asking the
+    student what they would like to ask any of us.
     """
     who = persona(arriving.persona_id)
     said = who.said()
     if introduced is not None and arriving.kind != "closing" and who.id not in introduced:
         return said.greeting
     if arriving.kind == "closing":
+        if panel:
+            return said.panel_to_closing_early if forced_by_time else said.panel_to_closing
         if forced_by_time:
             return said.bridge_to_closing_early
         return said.bridge_to_closing
     if arriving.kind == "warmup" or not arriving.title:
         return said.bridge
     return said.bridge_to.format(topic=arriving.title)
+
+
+def _parts_payload(spoken: list[tuple[str, str]]) -> list[dict[str, str]]:
+    """A line's voices for its event — none for a line one person said."""
+    if len(spoken) < 2:
+        return []
+    return [{"speaker_id": who, "text": text} for who, text in spoken]
 
 
 #: EC-6.1: a gentle prompt, a second, then the offer to move on.
@@ -366,6 +410,7 @@ def compiled_step(llm: LLM):
             interviewer=Interviewer(llm, enabled=key[2]),
             guard=SafetyGuard(llm, enabled=key[3]),
             persona_for=speaker,
+            panel_for=seated,
             ladder_for=ladder_config,
             question_budget=question_budget,
             retry_allowed=retry_allowed,
@@ -844,6 +889,7 @@ class Engine:
                 "closing_text": self._closing_for(state),
                 "closing_turn_id": str(_turn_id(row.id, index)),
                 "closing_turn_index": index,
+                "closing_speaker_id": seated(state)[0].id,
             }
         store.record(
             self.db,
@@ -856,7 +902,8 @@ class Engine:
         return self.state(session_id)
 
     def _closing_for(self, state: SessionState) -> str:
-        said = speaker(state).said()
+        # The lead says goodbye, as they said hello — whoever was asking.
+        said = seated(state)[0].said()
         return said.drill_close if state.kind == SessionKind.drill.value else said.session_close
 
     def _close_m05(self, row: InterviewSession, state: SessionState) -> None:
@@ -1306,6 +1353,7 @@ class Engine:
         utterance = result.utterance
         if result.finish:
             index = state.next_turn_index
+            spoken = list(utterance.parts) if utterance else []
             store.record(
                 self.db,
                 row,
@@ -1316,6 +1364,8 @@ class Engine:
                     "closing_text": utterance.text if utterance else "",
                     "closing_turn_id": str(_turn_id(row.id, index)),
                     "closing_turn_index": index,
+                    "closing_speaker_id": spoken[-1][0] if spoken else speaker(state).id,
+                    "closing_parts": _parts_payload(spoken),
                 },
             )
             self._close_m05(row, state)
@@ -1337,6 +1387,15 @@ class Engine:
             if state.plan is not None and state.current_segment < len(state.plan.segments)
             else None
         )
+        # Who says it (FR-6.3): the graph names each voice of a panel line;
+        # a line it did not split is the segment's interviewer's.
+        spoken = list(utterance.parts)
+        if spoken:
+            speaker_id = spoken[-1][0]
+        elif segment is not None and segment.persona_id:
+            speaker_id = segment.persona_id
+        else:
+            speaker_id = speaker(state).id
         if result.new_question and segment is not None:
             outbox.enqueue_ledger(
                 self.db,
@@ -1370,6 +1429,8 @@ class Engine:
                 "utterance_fallback": utterance.fallback_reason,
                 "selection_reason": (result.selection or {}).get("reason"),
                 "nudged": result.nudged,
+                "speaker_id": speaker_id,
+                "parts": _parts_payload(spoken),
             },
         )
 
@@ -1393,6 +1454,7 @@ class Engine:
                 "text": result.utterance.text,
                 "of": str(asked.turn_id),
                 "item": state.current_item,
+                "speaker_id": speaker(state).id,
             },
         )
 
@@ -1710,7 +1772,12 @@ class Engine:
                 "to": arriving.index,
                 "from_title": leaving.title,
                 "to_title": arriving.title,
-                "line": bridge_line(arriving, introduced(state), forced_by_time=forced_by_time),
+                "line": bridge_line(
+                    arriving,
+                    introduced(state),
+                    forced_by_time=forced_by_time,
+                    panel=len(seated(state)) > 1,
+                ),
                 "reason": reason,
                 # The round's own clock starts here (EC-6.9). The writer
                 # supplies it: the fold has no clock.
@@ -1947,7 +2014,9 @@ class Engine:
         if state.closing_asked > 0:
             return Selected(None, empty_reason="plan_complete", bridge=bridge)
         item = Item(stem="", source="closing", concept_id="closing", label="Your questions")
-        return Selected(item, {"reason": "closing"}, bridge=bridge, persona=speaker(state))
+        return Selected(
+            item, {"reason": "closing"}, bridge=bridge, persona=arriving_speaker(state)
+        )
 
     def _round_type(self, state: SessionState) -> str:
         """The plan's answer, because the plan already asked M05 at plan time.
@@ -2006,7 +2075,7 @@ class Engine:
                 return replace(
                     found,
                     bridge=bridge or found.bridge,
-                    persona=speaker(state),
+                    persona=arriving_speaker(state),
                     pace_line=state.pending_pace_line,
                 )
             moved, state, next_bridge = self._abandon_segment(row, state, found.empty_reason)
