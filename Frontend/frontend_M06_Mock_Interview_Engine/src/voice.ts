@@ -166,8 +166,21 @@ export function useInterviewerVoice(voiceId: string | null | undefined) {
     [sayNow, stop],
   );
 
-  // Leaving the room silences it.
-  useEffect(() => () => synth?.cancel(), []);
+  // Leaving the room silences it — a tick later, and only if the room is
+  // really gone. React's StrictMode runs this cleanup between its two mounts
+  // in development, and cancelling at once dropped the opening question the
+  // millisecond it was queued: on a first start the student heard nothing
+  // until their first answer (found 2026-10-05, a speak/cancel trace).
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      window.setTimeout(() => {
+        if (!mounted.current) synth?.cancel();
+      }, 0);
+    };
+  }, []);
 
   /**
    * How open the mouth is, 0 to 1, for this frame. Opens on each word and
