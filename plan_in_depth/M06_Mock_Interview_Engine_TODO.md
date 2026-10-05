@@ -885,6 +885,74 @@ them is theirs to do.
   350 ms, server ASR with word timestamps, Kokoro for browsers without a neural
   voice, lip-sync from the audio itself. See M11's Revision 2.
 
+### 2026-10-06 — the panel: seated from data, and talking
+
+The user's words: *"intro from all the panelists at once, then one of them
+starts, hands control to another, hands back to the previous if needed, else
+continues with the flow as planned — a multi-interview experience, not
+hardcoded, smartly managed"*, and *"sometimes another interviewer interrupts
+while you're answering — realism is the key to victory"*.
+
+- ✅ **The panel is seated from the personas' own data, not a table per mode**
+  (`panel.py`). Each mode says what kind of panel it is as numbers — a target
+  warmth / patience / follow-up aggression, with bounds nobody outside may
+  cross (Practice never pushy, Final Boss never warm); each persona says what
+  it knows (`domain_bias`, title, style); each part says what it is about (its
+  kind, title, rubric, concepts). The lead — closest to the mode's temperament
+  — opens and closes; an expert the panel lacks joins for the part they know;
+  the panel grows with the interview (2 at 15 minutes, up to 4 for an hour);
+  two or more parts always seat at least two people. Authoring a persona
+  changes the panel; a test authors one (a database engineer) and watches her
+  take the SQL round.
+- ✅ **A panel of one gets someone sitting in** (`panel.sit_in`). A plan with
+  one round of its own — no job description, a focus session — seated one
+  interviewer for half an hour, which reads as one bot. A real round is often
+  two at the table: the second persona that fits the mode is introduced and
+  comes in with a follow-up on about every other question. The plan records
+  its `panel`; the preview names anyone sitting in.
+- ✅ **The panel talks.** The opening introduces everyone before the first
+  question (the lead greets and names the others; each says hello and what
+  they will ask about, in their own voice). A round's end is a hand-over in two
+  voices ("Dr. Raghavan, over to you." / "Thanks, Priya. Let's turn to the
+  next part: your projects."). A panelist who knows a question's topic clearly
+  better than the asker comes in with one follow-up at the second rung, once a
+  round, and the asker takes it back ("Thanks, Dr. Raghavan."). A long answer
+  is cut short by whoever on the panel ran out of patience first — not always
+  the asker. The panel closes as "we", and the lead says goodbye whoever was
+  asking. Seven new lines per register (`panel_greeting`, `panel_hello`,
+  `panel_sitting_in`, `hand_over`, `take_over`, `interject`,
+  `panel_to_closing[_early]`), screened by the same guard at boot.
+- ✅ **Every interviewer line records who said it** — `speaker_id`, and `parts`
+  when more than one voice said it; events from before read the speaker off
+  the segment. The room shows each part under its own name and face, the
+  header shows the panel with the speaker lit, and each part is said in its
+  speaker's voice (`@ai/core` v0.17.0–v0.17.1: M11's cast voice, or the
+  browser's by `voice_id`).
+- ✅ **Fixed: an arriving interviewer's first question went out under the
+  previous one's name** — since day 9. The selector named who asked the LAST
+  question as the asker of the next, so the arriving interviewer's own lead-in
+  was never said. `arriving_speaker()` reads the segment now running.
+- ✅ **Fixed: every line was labelled with the CURRENT interviewer's name**, so
+  a hand-over relabelled the whole transcript. Found by the first headless walk
+  of a panel; no test read the labels.
+- ✅ **§6.4's recovery posture stays on the panel**: the rest of a hard session
+  goes to the warmest person the student has met, or to the gentlest persona
+  the mode admits — not always to one hardcoded persona nobody had introduced.
+- ✅ **Faces follow the persona file's declared voice kind** — Arjun's male
+  voice was under a face with long hair.
+- Verified in headless Edge with M11 running: a Mock's and a Final Boss's
+  opening, three parts in two cast voices (Priya `chatterbox-default`, Arjun
+  `indictts-022743`, Vikram `indictts-063175`), the strip lighting whoever
+  spoke. 442 pass (+17).
+- **Found on the way, fixed in Core:** "Dr. Raghavan, over to you." was split
+  after "Dr." — a voice said "Dr." alone and paused, and M11 made two clips.
+  And a line's sentences were all asked of M11 at once; M11 makes one at a
+  time, so the last could be made first (the opening waited five seconds for
+  its first sentence). Now asked in speaking order (v0.17.1).
+- **Next, M11's:** an interviewer cutting in while the student is SPEAKING
+  needs streaming speech (M11 day 3 on: VAD, then ASR). The text-mode cut-in
+  above is its stand-in. Long term (the user): question sources per expert.
+
 ### What is left — and whose it is
 
 **Waiting on another module:**
@@ -928,7 +996,7 @@ Spec §4, Revision 2. This is the authoritative list.
 |---|---|---|---|
 | FR-6.1 | ✅ `InterviewPlan` from M02's plan + M05 availability + budget + mode, assembled by `planner.py` with no model call; M04's profile is the pinned prefix, not a plan input | P0 | 1 |
 | FR-6.2 | ✅ `POST /plan` previews without starting; `DELETE /plan/segments/{i}` drops one, only while `planned`; `PlanPreview` shows minutes, questions, M02's rationale, what was dropped and M02's `uncovered` | P1 | 1 |
-| FR-6.3 | ✅ Segments run in sequence, advance on their budget, and say so crossing over (§3.2.3); each has the persona its mode assigns its kind, and a new voice introduces itself; the rubric comes from M05's selection | P0 | 1 |
+| FR-6.3 | ✅ Segments run in sequence, advance on their budget, and say so crossing over (§3.2.3). The panel is seated from the personas' data (`panel.py`, 2026-10-06): the lead opens and closes, experts take the parts they know, a panel of one gets someone sitting in; the opening introduces everyone, rounds end in a two-voice hand-over, an expert comes in with a follow-up and hands back, and every line records who said it; the rubric comes from M05's selection | P0 | 1 |
 | FR-6.4 | ✅ Re-plan at segment boundaries, ≤ 2, from `question.asked`/`probe.decided`/`idle.moved_on` only — four triggers, a neutral live note, the reason in the report, `skipped` owed to M02 | P1 | 1 |
 | FR-6.5 | ✅ Probe ladder, cap 5, graceful exit, derived rungs — pure function, 14 tests, steelman unreachable | P0 | 1 |
 | FR-6.6 | ✅ `break_depth` per concept per session — recorded by the fold, kept at the shallowest break | P0 | 1 |
