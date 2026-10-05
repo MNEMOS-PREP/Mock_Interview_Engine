@@ -34,7 +34,7 @@ import {
   useStart,
 } from "../api";
 import type { PersonaCard, PlannedSegment } from "../types";
-import { Face } from "../ui/Face";
+import { Face, voiceKind } from "../ui/Face";
 
 /**
  * A cold first plan can take several seconds (M02 builds the requirement set,
@@ -115,7 +115,7 @@ function SegmentRow({
     >
       {who && !dropped && (
         <span className="mt-0.5">
-          <Face name={who.name} size={32} />
+          <Face name={who.name} size={32} kind={voiceKind(who.voice_id)} />
         </span>
       )}
       <div className="min-w-0 flex-1">
@@ -199,6 +199,11 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
   const live = segments.filter((s) => s.dropped_reason === null);
   const totalMinutes = live.reduce((sum, s) => sum + s.minutes, 0);
   const totalQuestions = live.reduce((sum, s) => sum + s.question_budget, 0);
+  const runsAPart = new Set(live.map((s) => s.persona_id));
+  const sittingIn = (built?.panel ?? [])
+    .filter((id) => !runsAPart.has(id))
+    .map((id) => byId.get(id))
+    .filter((card) => card !== undefined);
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -235,6 +240,17 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
           )}
         </Card>
       </div>
+
+      {sittingIn.length > 0 && (
+        // FR-6.3: someone at the table without a part of their own.
+        <p className="mt-3 text-sm text-ink-soft">
+          Also on the panel:{" "}
+          {sittingIn
+            .map((card) => `${card.name} (${card.title})`)
+            .join(", ")}{" "}
+          — sitting in, with a follow-up now and then.
+        </p>
+      )}
 
       <p className="mt-3 text-2xs text-ink-faint">
         {minutes(totalMinutes)} · {totalQuestions} question

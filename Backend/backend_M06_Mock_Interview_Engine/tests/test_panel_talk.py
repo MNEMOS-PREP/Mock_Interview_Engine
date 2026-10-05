@@ -20,7 +20,7 @@ from backend_M06_Mock_Interview_Engine.contracts import SessionStatus
 from backend_M06_Mock_Interview_Engine.personas import persona
 from backend_M06_Mock_Interview_Engine.state import fold
 
-from .stubs import BankQuestions, StubLLM, verdict
+from .stubs import BankQuestions, NoClaims, StubLLM, verdict
 from .test_engine import make, say
 
 LONG = " ".join(["word"] * 190)
@@ -240,3 +240,35 @@ def test_a_line_written_before_speakers_were_recorded_reads_as_its_rounds(db):
         if turn.question_source is not None:
             assert turn.speaker_id == runs(state, turn)
             assert turn.parts == []
+
+
+# ── sitting in ────────────────────────────────────────────────────────────
+
+
+def test_someone_sitting_in_says_hello_and_comes_in_every_other_question(db):
+    """No resume claims and no job description: one round of the plan's own,
+    so one interviewer runs it — and a second sits in, as at a real table."""
+    engine = make(db, llm=StubLLM([verdict(band="at")] * 90), m05=BankQuestions(), m01=NoClaims())
+    row, _ = store.create_session(
+        engine.db, candidate_id=uuid.uuid4(), kind="mock", mode="mock", minutes=30
+    )
+    engine.start(row.id)
+    state = engine.state(row.id)
+    runners = {s.persona_id for s in state.plan.segments}
+    assert len(runners) == 1, "the plan runs on one interviewer"
+    lead, sitter = state.plan.panel
+    assert sitter not in runners
+    opening = asked(state)[0]
+    assert [p.speaker_id for p in opening.parts] == [lead, sitter, lead]
+    assert opening.parts[1].text == persona(sitter).said().panel_sitting_in
+
+    state = run(engine, row, HELD, limit=16)
+    came_in = [t for t in asked(state) if t.speaker_id == sitter]
+    asked_new = [
+        t
+        for t in asked(state)
+        if t.probe_move is None and t.question_source not in (None, "closing")
+    ]
+    assert came_in, "the second interviewer came in"
+    assert all(t.probe_depth == 2 and t.probe_move == "rung" for t in came_in)
+    assert len(came_in) <= (len(asked_new) + 1) // 2

@@ -21,6 +21,12 @@ So the panel is now assembled from data, the same way every time:
   welcomed the student is the one who says goodbye. The panel grows with the
   interview (two people for 15 minutes, up to four for an hour) and a person
   who already runs a part is preferred for the next part of the same kind.
+* **Sitting in** — a plan with one part of its own (no job description, a
+  focus session on one topic) would seat one person, and thirty minutes with
+  one interviewer reads as one bot. A real technical round is often two at
+  the table: one asks, the other sits in and comes in with follow-ups. So a
+  panel of one, long enough for a few questions, gets a second person who
+  sits in (`sit_in`).
 
 Deterministic: the same plan and mode always seat the same panel, so a re-plan
 does not reshuffle who the student has met, and a test can hold it.
@@ -199,6 +205,42 @@ def assign(
     return out
 
 
+#: A panel of one gets someone sitting in from this long...
+SIT_IN_FROM_MINUTES = 15
+#: ...when its own parts hold at least this many questions.
+SIT_IN_FROM_QUESTIONS = 3
+
+
+def sit_in(
+    segments: Sequence,
+    assignment: Sequence[str],
+    temperament: Temperament,
+    minutes: int,
+    people: dict[str, Persona] | None = None,
+) -> str | None:
+    """Who sits in on a panel of one — the persona the mode admits that best
+    fits this interview's own parts — or None when the panel has two people
+    already, or the interview is too short to need a second."""
+    people = people or personas()
+    if len(set(assignment)) >= 2 or minutes < SIT_IN_FROM_MINUTES:
+        return None
+    middle = [s for s in segments if s.kind not in ("warmup", "closing")]
+    if sum(int(getattr(s, "question_budget", 0) or 0) for s in middle) < SIT_IN_FROM_QUESTIONS:
+        return None
+    seated = set(assignment)
+    eligible = [p for p in people.values() if fits(p, temperament) and p.id not in seated]
+    if not eligible:
+        return None
+    w = temperament.weight
+    topics = [segment_words(s) for s in middle]
+
+    def fit(p: Persona) -> float:
+        known = sum(expertise(p, topic) for topic in topics) / len(topics)
+        return (1 - w) * known + w * closeness(p, temperament)
+
+    return max(eligible, key=lambda p: (fit(p), p.id)).id
+
+
 def interjector(
     panel: Sequence[str],
     owner: str,
@@ -236,5 +278,6 @@ __all__ = [
     "panel_size",
     "persona_words",
     "segment_words",
+    "sit_in",
     "words",
 ]

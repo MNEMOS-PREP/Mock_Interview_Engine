@@ -11,6 +11,11 @@
  * says who is speaking, and the mouth opens on each word (`voice.ts` says how
  * far, every frame, without re-rendering the room). Under reduced motion the
  * ring stays and the mouth does not move.
+ *
+ * 2026-10-06: the hair follows the persona's own `voice_id` kind (authored in
+ * the persona file, `en-IN-male-neutral`) — never guessed from the name. A
+ * panel put Arjun's male voice under a face with long hair, and a voice and a
+ * face that disagree read as two people.
  */
 import { useEffect, useRef } from "react";
 
@@ -22,6 +27,11 @@ const REDUCED_MOTION =
 const BACKGROUNDS = ["#5b5bd6", "#0d9488", "#c2410c", "#7c3aed", "#0369a1", "#be185d"];
 const SKIN = ["#f1c7a5", "#d9a37e", "#b97c56", "#8d5a3b", "#6b4228"];
 const HAIR = ["#1f1a17", "#3b2a20", "#5a3b26", "#2b2b33", "#7a4a2a"];
+
+/** The kind a persona's `voice_id` declares (`locale-kind-manner`), if any. */
+export function voiceKind(voiceId: string | null | undefined): string | undefined {
+  return /^[a-z]{2}-[A-Z]{2}-([a-z]+)-[a-z]+$/.exec(voiceId ?? "")?.[1];
+}
 
 function hash(text: string): number {
   let h = 2166136261;
@@ -37,9 +47,12 @@ export function Face({
   size = 36,
   speaking = false,
   mouth,
+  kind,
 }: {
   name: string;
   size?: number;
+  /** The persona file's declared kind ("female", "male"); the hair follows it. */
+  kind?: string;
   /** The interviewer's voice is saying this person's line right now. */
   speaking?: boolean;
   /** How open the mouth is for a frame, 0 to 1 (`useInterviewerVoice`). */
@@ -65,7 +78,8 @@ export function Face({
   const bg = BACKGROUNDS[h % BACKGROUNDS.length]!;
   const skin = SKIN[(h >>> 3) % SKIN.length]!;
   const hair = HAIR[(h >>> 6) % HAIR.length]!;
-  const style = (h >>> 9) % 3;
+  // 0 and 1 are short, 2 is long. A declared kind picks among its own.
+  const style = kind === "male" ? (h >>> 9) % 2 : kind === "female" ? 2 : (h >>> 9) % 3;
   const glasses = (h >>> 12) % 4 === 0;
   const drawn = (
     <svg

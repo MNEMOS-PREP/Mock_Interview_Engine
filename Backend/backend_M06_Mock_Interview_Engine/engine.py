@@ -183,7 +183,13 @@ def seated(state: SessionState) -> list[Persona]:
     the student meets them — the lead first. One person for a drill."""
     if state.plan is None or state.kind == SessionKind.drill.value:
         return [speaker(state)]
-    ids = dict.fromkeys(s.persona_id for s in planner.live_segments(state.plan) if s.persona_id)
+    # The plan's panel, then anyone a re-plan handed a round to since.
+    ids = dict.fromkeys(
+        [
+            *state.plan.panel,
+            *(s.persona_id for s in planner.live_segments(state.plan) if s.persona_id),
+        ]
+    )
     return [persona(i) for i in ids] or [speaker(state)]
 
 

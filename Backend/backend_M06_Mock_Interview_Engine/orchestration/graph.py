@@ -330,18 +330,33 @@ def _panel_opening(
     parts = [(lead.id, said.panel_greeting.format(name=lead.name, others=names))]
     for other in others:
         topics = _topics_of(state, other.id)
-        if topics:
-            parts.append((other.id, other.said().panel_hello.format(topics=_join(topics))))
+        hello = (
+            other.said().panel_hello.format(topics=_join(topics))
+            if topics
+            else other.said().panel_sitting_in
+        )
+        parts.append((other.id, hello))
     return parts, said.first_question_lead
+
+
+def _runs_a_round(state: SessionState, persona_id: str) -> bool:
+    return state.plan is not None and any(
+        s.persona_id == persona_id and s.dropped_reason is None for s in state.plan.segments
+    )
 
 
 def _interjection(
     state: SessionState, panel: list[Persona], owner: Persona, item: Item, depth: int
 ) -> Persona | None:
-    """FR-6.3: someone else on the panel comes in with one follow-up — a
-    panelist who knows this question's topic clearly better than the one
-    asking (`panel.interjector`). At the second rung, after the asker's own
-    first follow-up, and once a round at most; the asker takes it back."""
+    """FR-6.3: someone else on the panel comes in with a follow-up, at the
+    second rung — after the asker's own first follow-up — and the asker takes
+    the question back after.
+
+    Two kinds of someone. A panelist who knows this question's topic clearly
+    better than the one asking (`panel.interjector`) comes in once a round.
+    Someone sitting in (`panel.sit_in`), with no round of their own, is the
+    second interviewer at the table and comes in on about every other
+    question of the round."""
     if state.kind == "drill" or depth != 2 or len(panel) < 2 or state.plan is None:
         return None
     here = [
@@ -349,13 +364,28 @@ def _interjection(
         for t in state.transcript
         if t.role == "interviewer" and t.segment_index == state.current_segment
     ]
-    if any(t.speaker_id not in (None, owner.id) for t in here):
-        return None  # someone has already come in this round
     segment = next((s for s in state.plan.segments if s.index == state.current_segment), None)
     title = segment.title if segment is not None and segment.title else ""
     topic = seating.words(item.concept_id, item.label, title)
-    chosen = seating.interjector([p.id for p in panel], owner.id, topic, {p.id: p for p in panel})
-    return next((p for p in panel if p.id == chosen), None)
+    if not any(t.speaker_id not in (None, owner.id) for t in here):
+        chosen = seating.interjector(
+            [p.id for p in panel], owner.id, topic, {p.id: p for p in panel}
+        )
+        expert = next((p for p in panel if p.id == chosen), None)
+        if expert is not None:
+            return expert
+    sitting = next(
+        (p for p in panel if p.id != owner.id and not _runs_a_round(state, p.id)), None
+    )
+    if sitting is None:
+        return None
+    asked_here = sum(
+        1
+        for t in here
+        if t.probe_move is None and t.question_source not in (None, "closing")
+    )
+    came_in = sum(1 for t in here if t.speaker_id == sitting.id and t.probe_move is not None)
+    return sitting if came_in < (asked_here + 1) // 2 else None
 
 
 def _taken_back(state: SessionState, owner: Persona, panel: list[Persona]) -> str:

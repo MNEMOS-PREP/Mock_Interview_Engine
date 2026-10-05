@@ -25,7 +25,18 @@ export interface TurnView {
   deliberately_false: boolean;
   /** Practice retry (§15.4): recorded beside the first attempt, never scored. */
   retry: boolean;
+  /** Interviewer turns: the persona who asks — the line's last voice. */
+  speaker_id?: string | null;
+  /** Interviewer turns said by more than one panelist (FR-6.3), part by
+   *  part: a hand-over, the opening's hellos. Empty when one person said it. */
+  parts?: TurnPart[];
   at: string;
+}
+
+/** One panelist's words within an interviewer line. */
+export interface TurnPart {
+  speaker_id: string;
+  text: string;
 }
 
 /** Who is asking (FR-6.3). A card — never the parameters behind the ladder. */
@@ -141,6 +152,9 @@ export interface InterviewPlan {
    *  the one a student would want to know about. */
   uncovered: string[];
   jd_id: string | null;
+  /** FR-6.3: who sits on the panel, the lead first — including anyone
+   *  sitting in without a part of their own. Absent on older plans. */
+  panel?: string[];
 }
 
 export interface HintOffer {

@@ -157,3 +157,54 @@ def test_only_someone_on_the_panel_cuts_in():
         panel.interjector(["methodical_engineer", "bar_raiser"], "methodical_engineer", topic)
         is None
     )
+
+
+# ── sitting in ────────────────────────────────────────────────────────────
+
+
+def test_a_panel_of_one_gets_someone_sitting_in():
+    """One part of its own (a focus session, no job description) would seat
+    one interviewer for half an hour; a real round has a second at the table."""
+    one_part = [part("warmup"), part("technical", "Recursion"), part("closing")]
+    for p in one_part:
+        p.question_budget = 0 if p.kind != "technical" else 5
+    temperament = MODES["mock"].temperament
+    assignment = panel.assign(one_part, temperament, 30)
+    assert len(set(assignment)) == 1
+    sitter = panel.sit_in(one_part, assignment, temperament, 30)
+    assert sitter is not None and sitter not in assignment
+    assert panel.fits(personas()[sitter], temperament)
+    # Not for a short interview, nor for a panel that already has two.
+    assert panel.sit_in(one_part, assignment, temperament, 10) is None
+    assert panel.sit_in(one_part, [*assignment[:-1], "hr_generalist"], temperament, 30) is None
+
+
+def test_the_plan_records_everyone_the_opening_introduces():
+    plan = panel_plan("mock")
+    assert plan.panel[0] == MODES["mock"].persona_for()
+    assert set(plan.panel) >= {s.persona_id for s in plan.segments}
+
+
+# ── the recovery posture stays on the panel ───────────────────────────────
+
+
+def test_a_struggling_student_is_handed_to_someone_gentler_they_have_met():
+    """§6.4's recovery posture, on a panel: the warmest person already on it,
+    not a stranger arriving mid-interview."""
+    from backend_M06_Mock_Interview_Engine import replan
+
+    plan = panel_plan("mock")
+    gentler = replan.recovery_persona(plan)
+    assert gentler in plan.panel
+    people = personas()
+    assert people[gentler].warmth > people[plan.panel[0]].warmth
+
+
+def test_a_panel_with_nobody_gentler_borrows_the_gentlest_the_mode_admits():
+    from backend_M06_Mock_Interview_Engine import replan
+
+    plan = panel_plan("final_boss")
+    gentler = replan.recovery_persona(plan)
+    people = personas()
+    assert panel.fits(people[gentler], MODES["final_boss"].temperament), "still a Final Boss"
+    assert people[gentler].warmth >= max(people[p].warmth for p in plan.panel)

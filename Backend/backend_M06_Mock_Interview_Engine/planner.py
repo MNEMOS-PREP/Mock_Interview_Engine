@@ -249,10 +249,14 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
         segment.index = index
     # FR-6.3: the panel, seated from the personas' own data for the parts
     # this plan actually has (`panel.py`) — not a table per mode.
-    for segment, persona_id in zip(
-        segments, panel.assign(segments, mode.temperament, inputs.requested_minutes), strict=True
-    ):
+    assignment = panel.assign(segments, mode.temperament, inputs.requested_minutes)
+    for segment, persona_id in zip(segments, assignment, strict=True):
         segment.persona_id = persona_id
+    # Everyone the opening introduces: the lead, whoever runs a part, and
+    # anyone sitting in on what would otherwise be a panel of one.
+    sitting = panel.sit_in(segments, assignment, mode.temperament, inputs.requested_minutes)
+    lead = panel.lead_for(mode.temperament)
+    seated = list(dict.fromkeys([lead, *assignment, *([sitting] if sitting else [])]))
 
     coverage = inputs.coverage or {}
     return InterviewPlan(
@@ -267,6 +271,7 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
         hint_penalty=dict(inputs.hint_penalty),
         claims=list(claims),
         uncovered=[str(u) for u in coverage.get("uncovered") or []],
+        panel=seated,
     )
 
 

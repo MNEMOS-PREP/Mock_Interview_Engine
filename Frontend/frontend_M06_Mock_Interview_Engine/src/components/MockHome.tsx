@@ -23,7 +23,7 @@ import { ErrorNote, Icon, PageHeader, SkeletonRows, relativeDays } from "@ai/cor
 import { useCreateSession, useHistory, useModes, usePersonas } from "../api";
 import { MockTargetsContext } from "../targets";
 import type { Mode, SessionSummary } from "../types";
-import { Face } from "../ui/Face";
+import { Face, voiceKind } from "../ui/Face";
 
 const LENGTHS = [
   { minutes: 15, label: "15 min", hint: "a few questions" },
@@ -325,7 +325,7 @@ export function MockHome() {
             <ul className="mt-4 space-y-3.5">
               {(personas.data ?? []).map((persona) => (
                 <li key={persona.id} className="flex items-start gap-3">
-                  <Face name={persona.name} size={40} />
+                  <Face name={persona.name} size={40} kind={voiceKind(persona.voice_id)} />
                   <span className="min-w-0">
                     <span className="block text-sm font-medium text-ink">{persona.name}</span>
                     <span className="block text-2xs text-ink-faint">{persona.title}</span>

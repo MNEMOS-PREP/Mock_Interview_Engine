@@ -104,6 +104,8 @@ class Lines:
     #: …and each of the others says hello and what they will ask about, in
     #: their own voice — which is how a student learns whose voice is whose.
     panel_hello: str
+    #: The hello of someone sitting in, with no round of their own.
+    panel_sitting_in: str
     #: At a round's end, the panelist leaving names the one arriving…
     hand_over: str
     #: …and the one arriving thanks them before the bridge. Said too by an
@@ -163,6 +165,7 @@ LINES: dict[Register, Lines] = {
             "and we'll keep this conversational."
         ),
         panel_hello="Hi! I'll be asking about {topics}.",
+        panel_sitting_in="Hi! I'll be sitting in, and I might jump in with a question or two.",
         hand_over="{name}, over to you.",
         take_over="Thanks, {name}.",
         interject="Can I jump in with one?",
@@ -211,6 +214,7 @@ LINES: dict[Register, Lines] = {
         idle_offer_closing="Shall we wrap up here?",
         panel_greeting="Hello, I'm {name}. I'm joined by {others}.",
         panel_hello="Hello. I'll be asking about {topics}.",
+        panel_sitting_in="Hello. I'll be sitting in, and may ask a follow-up or two.",
         hand_over="{name}, over to you.",
         take_over="Thanks, {name}.",
         interject="One question from me on that.",
@@ -260,6 +264,7 @@ LINES: dict[Register, Lines] = {
         idle_offer_closing="Wrap up?",
         panel_greeting="I'm {name}. With me: {others}.",
         panel_hello="I'll take {topics}.",
+        panel_sitting_in="I'll be sitting in. Expect a follow-up or two.",
         hand_over="{name}, go ahead.",
         take_over="Thanks, {name}.",
         interject="Let me come in here.",

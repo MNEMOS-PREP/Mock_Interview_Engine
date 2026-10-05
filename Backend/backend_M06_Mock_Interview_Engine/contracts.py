@@ -192,6 +192,11 @@ class InterviewPlan(BaseModel):
     claims: list[dict] = Field(default_factory=list)
     replans: list[Replan] = Field(default_factory=list, max_length=2)
     uncovered: list[str] = Field(default_factory=list)
+    #: FR-6.3: who sits on the panel, the lead first — everyone the opening
+    #: introduces, including anyone sitting in without a round of their own
+    #: (`panel.sit_in`). Empty on plans from before 2026-10-06, whose panel is
+    #: whoever runs a segment.
+    panel: list[str] = Field(default_factory=list)
     versions: VersionStamp = Field(default_factory=VersionStamp)
 
 

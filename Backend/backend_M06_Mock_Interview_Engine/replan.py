@@ -42,9 +42,32 @@ SHALLOW = 1
 STRUGGLING_FAILS = 3
 STRUGGLING_SILENCES = 2
 
-#: The persona a recovery posture hands the rest of the session to (§6.4:
-#: "friendly register").
+#: Who a recovery posture hands the rest of the session to when nobody on
+#: the panel is warmer than its lead (§6.4: "friendly register"). Kept for
+#: plans with no panel recorded; `recovery_persona` decides otherwise.
 RECOVERY_PERSONA = "friendly_recruiter"
+
+
+def recovery_persona(plan) -> str:
+    """§6.4's recovery posture, on a panel (FR-6.3): the rest of the session
+    goes to the warmest person ON the panel — someone the student has met —
+    when they are warmer than the lead. Otherwise to the warmest persona the
+    mode admits, who joins: a stranger arriving mid-interview is worse than
+    one more introduction, but a panel with nobody gentle has to borrow one."""
+    from . import panel as seating
+    from .modes import mode_config
+    from .personas import personas
+
+    people = personas()
+    seated = [people[p] for p in dict.fromkeys(plan.panel) if p in people]
+    if not seated:
+        return RECOVERY_PERSONA
+    warmest = max(seated, key=lambda p: (p.warmth, p.patience, p.id))
+    if warmest.warmth > seated[0].warmth:
+        return warmest.id
+    temperament = mode_config(plan.mode).temperament
+    admitted = [p for p in people.values() if seating.fits(p, temperament)] or list(people.values())
+    return max(admitted, key=lambda p: (p.warmth, p.patience, p.id)).id
 
 #: concept id -> M04's concept (name, prerequisites), or None when unknown or
 #: M04 is not there. The gap trigger degrades to "not fired" without it.
@@ -228,11 +251,12 @@ def _struggling(plan, leaving, upcoming, s: Signals, before) -> Replan:
                 by_index[closing.index].minutes = round(
                     by_index[closing.index].minutes + seg.minutes, 1
                 )
+        gentler = recovery_persona(plan)
         for seg in upcoming:
             if seg.index in by_index and by_index[seg.index].dropped_reason is None:
-                by_index[seg.index].persona_id = RECOVERY_PERSONA
+                by_index[seg.index].persona_id = gentler
         if closing is not None:
-            by_index[closing.index].persona_id = RECOVERY_PERSONA
+            by_index[closing.index].persona_id = gentler
 
     return Replan(
         at_segment=leaving.index,

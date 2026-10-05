@@ -29,6 +29,13 @@
  * v0.14.0), and the face's mouth moves while it does. The line on screen is
  * still the line; the voice reads it. It stops when the mic opens, the answer
  * is sent or the session pauses, and one button turns it off for good.
+ *
+ * 2026-10-06: a PANEL. Each line says who said it, part by part — the opening
+ * has every panelist say hello, a hand-over is the one leaving and the one
+ * arriving — and each part is shown under its own speaker's name and face and
+ * said in their own voice (`@ai/core` v0.17.0). The header shows the panel,
+ * with whoever is speaking lit. Before this every line was labelled with the
+ * CURRENT interviewer's name, so a hand-over relabelled the whole transcript.
  */
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -41,6 +48,7 @@ import {
   Skeleton,
   useInterviewerVoice,
   type InterviewerVoice,
+  type SpokenPart,
 } from "@ai/core";
 
 import {
@@ -51,6 +59,7 @@ import {
   useIdle,
   useMoveOn,
   usePause,
+  usePersonas,
   useRepeat,
   useResume,
   useResumeState,
@@ -60,8 +69,8 @@ import {
 } from "../api";
 import { fillerCount, useDictation } from "../speech";
 import { useInterviewStream } from "../stream";
-import type { HintOffer, Session, TurnView } from "../types";
-import { Face } from "../ui/Face";
+import type { HintOffer, PersonaCard, Session, TurnPart, TurnView } from "../types";
+import { Face, voiceKind } from "../ui/Face";
 
 type Voice = InterviewerVoice;
 
@@ -188,6 +197,8 @@ function StatusStrip({
   onEnd,
   busy,
   voice,
+  panel,
+  speakingId,
 }: {
   session: Session;
   waiting: boolean;
@@ -197,7 +208,13 @@ function StatusStrip({
   onEnd: () => void;
   busy: boolean;
   voice: Voice;
+  /** Everyone on the panel (FR-6.3), the lead first. */
+  panel: PersonaCard[];
+  /** Who is speaking now, or null. */
+  speakingId: string | null;
 }) {
+  const asking = session.interviewer;
+  const shown = panel.find((p) => p.id === speakingId) ?? asking;
   const tone =
     session.status === "paused"
       ? "bg-session-idle"
@@ -220,16 +237,43 @@ function StatusStrip({
   return (
     <div className="sticky top-16 z-20 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-line bg-surface/85 px-4 py-3 shadow-raised backdrop-blur-xl">
       <span className="flex items-center gap-3">
-        <Avatar
-          name={session.interviewer?.name ?? "Interviewer"}
-          speaking={voice.speakingKey !== null}
-          mouth={voice.mouth}
-        />
+        {panel.length > 1 ? (
+          <span
+            className="flex items-center -space-x-2"
+            role="img"
+            aria-label={`Your panel: ${panel.map((p) => `${p.name}, ${p.title}`).join("; ")}`}
+          >
+            {panel.map((p) => (
+              <span
+                key={p.id}
+                title={`${p.name} · ${p.title}`}
+                className={`rounded-full ring-2 ${
+                  p.id === (speakingId ?? asking?.id) ? "relative z-10 ring-brand" : "ring-surface opacity-80"
+                }`}
+              >
+                <Avatar
+                  name={p.name}
+                  size={32}
+                  kind={voiceKind(p.voice_id)}
+                  speaking={p.id === speakingId}
+                  mouth={p.id === speakingId ? voice.mouth : undefined}
+                />
+              </span>
+            ))}
+          </span>
+        ) : (
+          <Avatar
+            name={asking?.name ?? "Interviewer"}
+            kind={voiceKind(asking?.voice_id)}
+            speaking={voice.speakingKey !== null}
+            mouth={voice.mouth}
+          />
+        )}
         <span className="leading-tight">
           <span className="block text-sm font-medium text-ink">
-            {session.interviewer?.name ?? "Your interviewer"}
-            {session.interviewer?.title && (
-              <span className="font-normal text-ink-faint"> · {session.interviewer.title}</span>
+            {shown?.name ?? "Your interviewer"}
+            {shown?.title && (
+              <span className="font-normal text-ink-faint"> · {shown.title}</span>
             )}
           </span>
           <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-ink-soft">
@@ -301,13 +345,15 @@ function Avatar({
   size = 36,
   speaking = false,
   mouth,
+  kind,
 }: {
   name: string;
   size?: number;
   speaking?: boolean;
   mouth?: (now: number) => number;
+  kind?: string;
 }) {
-  return <Face name={name} size={size} speaking={speaking} mouth={mouth} />;
+  return <Face name={name} size={size} speaking={speaking} mouth={mouth} kind={kind} />;
 }
 
 /** The plan's question budget, summed — "about", because follow-ups and a
@@ -365,16 +411,18 @@ function Said({
   soft = false,
   speaking = false,
   mouth,
+  kind,
 }: {
   name: string;
   children: ReactNode;
   soft?: boolean;
   speaking?: boolean;
   mouth?: (now: number) => number;
+  kind?: string;
 }) {
   return (
     <div className="flex gap-3">
-      <Avatar name={name} speaking={speaking} mouth={mouth} />
+      <Avatar name={name} speaking={speaking} mouth={mouth} kind={kind} />
       <div className="min-w-0 flex-1 pt-0.5">
         <p className="text-2xs font-medium text-ink-faint">{name}</p>
         <div className={`turn-interviewer mt-1 whitespace-pre-wrap ${soft ? "text-ink-soft" : ""}`}>
@@ -385,15 +433,32 @@ function Said({
   );
 }
 
+/** An interviewer line as its voices said it: each part with its speaker. */
+function partsOf(turn: TurnView, fallback: string | null): TurnPart[] {
+  if (turn.parts && turn.parts.length > 0) return turn.parts;
+  return [{ speaker_id: turn.speaker_id ?? fallback ?? "", text: turn.text }];
+}
+
+/** The room's name for one part of a line — what the voice reports back. */
+function partKey(turn: TurnView, index: number): string {
+  return `${turn.turn_id}:${index}`;
+}
+
 function Turn({
   turn,
-  interviewer,
-  speaking = false,
+  nameOf,
+  kindOf,
+  fallback,
+  speakingPart,
   mouth,
 }: {
   turn: TurnView;
-  interviewer: string;
-  speaking?: boolean;
+  nameOf: (id: string) => string;
+  kindOf: (id: string) => string | undefined;
+  /** Who said a line that does not say (an event from before speakers). */
+  fallback: string | null;
+  /** The part being heard now, or null. */
+  speakingPart: string | null;
   mouth?: (now: number) => number;
 }) {
   if (turn.role === "candidate") {
@@ -406,10 +471,21 @@ function Turn({
       </div>
     );
   }
+  const parts = partsOf(turn, fallback);
   return (
-    <Said name={interviewer} speaking={speaking} mouth={mouth}>
-      {turn.text}
-    </Said>
+    <div className="space-y-4">
+      {parts.map((part, index) => (
+        <Said
+          key={partKey(turn, index)}
+          name={nameOf(part.speaker_id)}
+          kind={kindOf(part.speaker_id)}
+          speaking={speakingPart === partKey(turn, index)}
+          mouth={mouth}
+        >
+          {part.text}
+        </Said>
+      ))}
+    </div>
   );
 }
 
@@ -581,6 +657,35 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const bottom = useRef<HTMLDivElement>(null);
 
   const data = session.data;
+  // FR-6.3: who is on the panel, by the persona files' own cards.
+  const personaCards = usePersonas();
+  const cards = useMemo(
+    () => new Map((personaCards.data ?? []).map((card) => [card.id, card])),
+    [personaCards.data],
+  );
+  const panel = useMemo(() => {
+    // The plan's panel (anyone sitting in included), then whoever a re-plan
+    // has handed a part to since.
+    const ids = [
+      ...new Set([
+        ...(data?.plan?.panel ?? []),
+        ...(data?.plan?.segments ?? [])
+          .filter((segment) => segment.dropped_reason === null && segment.persona_id)
+          .map((segment) => segment.persona_id),
+      ]),
+    ];
+    return ids.map((id) => cards.get(id)).filter((card): card is PersonaCard => card !== undefined);
+  }, [data?.plan, cards]);
+  const nameOf = (id: string) => cards.get(id)?.name ?? data?.interviewer?.name ?? "Interviewer";
+  const kindOf = (id: string) => voiceKind(cards.get(id)?.voice_id ?? data?.interviewer?.voice_id);
+  /** A line as the voice says it: each part in its own speaker's voice. */
+  const voiced = (turn: TurnView): SpokenPart[] =>
+    partsOf(turn, data?.interviewer?.id ?? null).map((part, index) => ({
+      text: part.text,
+      personaId: part.speaker_id || null,
+      voiceId: cards.get(part.speaker_id)?.voice_id ?? null,
+      id: partKey(turn, index),
+    }));
   // Each line it speaks is measured and posted to M11's latency ledger
   // (`@ai/core` v0.15.0); the room adds the two marks only it knows. Since
   // v0.16.0 it speaks in the voice M11 casts for this interviewer when M11 is
@@ -629,7 +734,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
           .slice(lastStudent + 1)
           .filter((turn) => turn.role === "interviewer");
         const final = opening.at(-1);
-        if (final) voice.speak(opening.map((turn) => turn.text).join(" "), final.turn_id);
+        if (final) voice.speak(opening.flatMap(voiced), final.turn_id);
       }
       return;
     }
@@ -637,7 +742,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     for (const turn of fresh) heard.current.add(turn.turn_id);
     const final = fresh.at(-1);
     if (final) {
-      voice.speak(fresh.map((turn) => turn.text).join(" "), final.turn_id);
+      voice.speak(fresh.flatMap(voiced), final.turn_id);
     } else if (idleKey && idleKey !== idleHeard.current && data.status === "live") {
       // EC-6.1's prompt is the interviewer talking too.
       voice.speak(data.idle_line!, "idle");
@@ -789,7 +894,22 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   // What a screen reader hears when the interviewer speaks: the newest line,
   // in a polite live region. The transcript itself is not live — announcing
   // the whole conversation on every change would bury the question.
-  const lastLine = [...data.transcript].reverse().find((turn) => turn.role === "interviewer")?.text ?? "";
+  const lastTurn = [...data.transcript].reverse().find((turn) => turn.role === "interviewer");
+  const lastLine = lastTurn?.text ?? "";
+  const lastAsker = lastTurn?.speaker_id ? nameOf(lastTurn.speaker_id) : who;
+  // Whose face is lit: the part being heard says who is speaking.
+  const partSpeaker = new Map(
+    data.transcript.flatMap((turn) =>
+      turn.role === "interviewer"
+        ? partsOf(turn, data.interviewer?.id ?? null).map(
+            (part, index) => [partKey(turn, index), part.speaker_id] as const,
+          )
+        : [],
+    ),
+  );
+  const speakingId =
+    (voice.speakingPart && partSpeaker.get(voice.speakingPart)) ||
+    (voice.speakingKey !== null ? (data.interviewer?.id ?? null) : null);
 
   function submit() {
     const typed = draft.trim();
@@ -810,14 +930,37 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     <div className="mx-auto max-w-(--container-conversation)">
       {data.status === "planned" ? (
         <section className="mx-auto max-w-xl py-10 text-center">
-          {data.interviewer && (
+          {panel.length > 1 ? (
+            // FR-6.3: a panel — who the student is about to meet, in the
+            // order they will meet them.
             <div className="mb-6 flex flex-col items-center gap-3">
-              <Avatar name={data.interviewer.name} size={56} />
-              <p className="text-sm text-ink-soft">
-                <span className="font-medium text-ink">{data.interviewer.name}</span> ·{" "}
-                {data.interviewer.title}
-              </p>
+              <div className="flex items-end justify-center gap-4">
+                {panel.map((p) => (
+                  <div key={p.id} className="flex w-24 flex-col items-center gap-2">
+                    <Avatar name={p.name} size={48} kind={voiceKind(p.voice_id)} />
+                    <p className="text-center text-2xs leading-tight text-ink-soft">
+                      <span className="block font-medium text-ink">{p.name}</span>
+                      {p.title}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-2xs text-ink-faint">Your panel</p>
             </div>
+          ) : (
+            data.interviewer && (
+              <div className="mb-6 flex flex-col items-center gap-3">
+                <Avatar
+                  name={data.interviewer.name}
+                  size={56}
+                  kind={voiceKind(data.interviewer.voice_id)}
+                />
+                <p className="text-sm text-ink-soft">
+                  <span className="font-medium text-ink">{data.interviewer.name}</span> ·{" "}
+                  {data.interviewer.title}
+                </p>
+              </div>
+            )
           )}
           <h1 className="text-3xl font-semibold tracking-tight text-ink">
             {data.kind === "drill"
@@ -834,7 +977,9 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               ? "Two minutes, typed, and not scored. I'll ask you to defend it and stop as soon as we reach the edge."
               : `About ${data.requested_minutes} minutes. ${
                   voice.supported && data.interviewer
-                    ? `${data.interviewer.name} reads each question aloud — the speaker button turns that off. `
+                    ? panel.length > 1
+                      ? "Each of them speaks in their own voice — the speaker button turns that off. "
+                      : `${data.interviewer.name} reads each question aloud — the speaker button turns that off. `
                     : ""
                 }Speak or type your answers. You can pause ${
                   (data.flags.pauses_allowed ?? 1) === 1 ? "once" : `${data.flags.pauses_allowed} times`
@@ -850,7 +995,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
         <>
           <h1 className="sr-only">Interview with {who}</h1>
           <p className="sr-only" aria-live="polite">
-            {lastLine ? `${who} asks: ${lastLine}` : ""}
+            {lastLine ? `${lastAsker} asks: ${lastLine}` : ""}
           </p>
           <StatusStrip
             session={data}
@@ -864,6 +1009,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               end.mutate("ended_by_student");
             }}
             voice={voice}
+            panel={panel}
+            speakingId={speakingId}
           />
           <Stepper session={data} />
 
@@ -908,8 +1055,10 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                   {crossed && title && <RoundRule title={title} />}
                   <Turn
                     turn={turn}
-                    interviewer={who}
-                    speaking={voice.speakingKey === turn.turn_id}
+                    nameOf={nameOf}
+                    kindOf={kindOf}
+                    fallback={data.interviewer?.id ?? null}
+                    speakingPart={voice.speakingPart}
                     mouth={voice.mouth}
                   />
                 </Fragment>
@@ -917,14 +1066,14 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             })}
 
             {preview && (
-              <Said name={who} soft>
+              <Said name={who} soft kind={voiceKind(data.interviewer?.voice_id)}>
                 {preview}
               </Said>
             )}
 
             {thinking && !preview && (
               <div className="flex gap-3" aria-hidden>
-                <Avatar name={who} />
+                <Avatar name={who} kind={voiceKind(data.interviewer?.voice_id)} />
                 <span className="mt-1 flex h-9 items-center gap-1.5 rounded-2xl rounded-tl-md bg-surface-sunken px-4">
                   <span className="thinking-dot" />
                   <span className="thinking-dot" />
@@ -937,7 +1086,13 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               // EC-6.1: beside the question, not a new one — the answer box
               // still answers what was asked.
               <div role="status">
-                <Said name={who} soft speaking={voice.speakingKey === "idle"} mouth={voice.mouth}>
+                <Said
+                  name={who}
+                  soft
+                  kind={voiceKind(data.interviewer?.voice_id)}
+                  speaking={voice.speakingKey === "idle"}
+                  mouth={voice.mouth}
+                >
                   {data.idle_line}
                 </Said>
               </div>
@@ -1114,7 +1269,19 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                       repeat.mutate(undefined, {
                         onSuccess: (turn) => {
                           setRepeated(turn.text);
-                          voice.repeat(turn.text, "repeat");
+                          // In the voice of whoever asked it — an expert who
+                          // came in asks their own question again.
+                          const asker = lastTurn?.speaker_id ?? data.interviewer?.id ?? null;
+                          voice.repeat(
+                            [
+                              {
+                                text: turn.text,
+                                personaId: asker,
+                                voiceId: (asker && cards.get(asker)?.voice_id) || null,
+                              },
+                            ],
+                            "repeat",
+                          );
                         },
                       })
                     }
