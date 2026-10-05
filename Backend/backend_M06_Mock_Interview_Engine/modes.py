@@ -27,6 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .contracts import Mode, SegmentKind
+from .panel import Temperament, lead_for
 
 
 @dataclass(frozen=True)
@@ -51,8 +52,12 @@ class ModeConfig:
     #: §15.4's proposal: a retry is allowed in Practice only, and only the
     #: first attempt is scored.
     retry_allowed: bool
-    #: segment kind -> persona id; `default` covers the rest (FR-6.3).
-    personas: dict[str, str] = field(default_factory=dict)
+    #: What kind of panel this mode is, as numbers (FR-6.3; `panel.py`).
+    #: Who sits on it is decided from the personas' own data — a table of
+    #: names here was one posting behind the day it was written.
+    temperament: Temperament = field(
+        default_factory=lambda: Temperament(target={"warmth": 0.5}, bounds={})
+    )
     #: A sentence the plan preview shows about who is asking, when it is not
     #: what the mode's name suggests (Real-drive until M15 can match).
     persona_note: str | None = None
@@ -63,8 +68,10 @@ class ModeConfig:
     #: day is one line, and read by nothing until then.
     difficulty_offset: float = 0.0
 
-    def persona_for(self, kind: SegmentKind | str) -> str:
-        return self.personas.get(kind, self.personas["default"])
+    def persona_for(self, kind: SegmentKind | str = "default") -> str:
+        """The panel's lead — who opens, closes, and speaks when a plan names
+        nobody. Each part's own interviewer is `panel.assign`'s to choose."""
+        return lead_for(self.temperament)
 
 
 MODES: dict[str, ModeConfig] = {
@@ -81,7 +88,15 @@ MODES: dict[str, ModeConfig] = {
         overrun_allowance=0.25,
         pacing_enforced=False,
         retry_allowed=True,
-        personas={"default": "friendly_recruiter", "behavioural": "hr_generalist"},
+        # Warm and patient, never pushy: whoever sits on this panel.
+        temperament=Temperament(
+            target={"warmth": 0.9, "patience": 0.9, "follow_up_aggression": 0.4},
+            bounds={
+                "warmth": (0.7, 1.0),
+                "patience": (0.75, 1.0),
+                "follow_up_aggression": (0.0, 0.6),
+            },
+        ),
         difficulty_offset=-0.3,
     ),
     "mock": ModeConfig(
@@ -97,11 +112,11 @@ MODES: dict[str, ModeConfig] = {
         overrun_allowance=0.25,
         pacing_enforced=True,
         retry_allowed=False,
-        personas={
-            "default": "methodical_engineer",
-            "project": "professor",
-            "behavioural": "hr_generalist",
-        },
+        # A methodical lead; experts join for the parts they know.
+        temperament=Temperament(
+            target={"warmth": 0.55, "patience": 0.65, "follow_up_aggression": 0.85},
+            bounds={"follow_up_aggression": (0.3, 1.0)},
+        ),
     ),
     "real_drive": ModeConfig(
         id="real_drive",
@@ -116,12 +131,12 @@ MODES: dict[str, ModeConfig] = {
         overrun_allowance=0.25,
         pacing_enforced=True,
         retry_allowed=False,
-        personas={
-            "default": "methodical_engineer",
-            "technical": "impatient_senior",
-            "project": "professor",
-            "behavioural": "hr_generalist",
-        },
+        # As Mock, and brisker: a brisk lead and nobody coddling — but a real
+        # drive's HR round has its HR partner, so the bounds admit one.
+        temperament=Temperament(
+            target={"warmth": 0.45, "patience": 0.5, "follow_up_aggression": 0.85},
+            bounds={"follow_up_aggression": (0.25, 1.0), "warmth": (0.0, 0.85)},
+        ),
         persona_note=(
             "Company-matched interviewers need the company guide (M15), which does not cover "
             "this posting yet — this is the standard drive panel."
@@ -140,7 +155,12 @@ MODES: dict[str, ModeConfig] = {
         overrun_allowance=0.0,
         pacing_enforced=True,
         retry_allowed=False,
-        personas={"default": "bar_raiser", "behavioural": "impatient_senior"},
+        # Never warm, never gentle — harder by mechanics, never by manner.
+        temperament=Temperament(
+            target={"warmth": 0.3, "patience": 0.4, "follow_up_aggression": 1.0},
+            bounds={"warmth": (0.0, 0.5), "follow_up_aggression": (0.6, 1.0)},
+            weight=0.6,
+        ),
         difficulty_offset=0.8,
     ),
 }

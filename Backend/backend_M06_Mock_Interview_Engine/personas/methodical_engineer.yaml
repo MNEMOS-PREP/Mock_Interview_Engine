@@ -12,7 +12,7 @@ formality: 0.6
 interruption_threshold: 0.6
 follow_up_aggression: 0.9
 verbosity_target: 30
-domain_bias: []
+domain_bias: [data structures, algorithms, problem solving, debugging, technical]
 voice_id: en-IN-female-neutral
 note_taking_cadence: 0
 hints_available: true

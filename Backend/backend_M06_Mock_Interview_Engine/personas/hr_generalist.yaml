@@ -11,7 +11,7 @@ formality: 0.5
 interruption_threshold: 0.7
 follow_up_aggression: 0.3
 verbosity_target: 25
-domain_bias: [teamwork, communication]
+domain_bias: [teamwork, communication, behavioural, people, conflict]
 voice_id: en-IN-female-neutral
 note_taking_cadence: 3
 hints_available: true

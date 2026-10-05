@@ -35,6 +35,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import panel
 from .contracts import InterviewPlan, Mode, PlannedSegment, SegmentKind
 from .modes import ModeConfig, mode_config
 
@@ -199,10 +200,12 @@ def _blocked(inputs: PlanInputs, modality: str) -> str | None:
 def assemble(inputs: PlanInputs) -> InterviewPlan:
     """M02's plan, plus what only M06 knows. Deterministic; no model call.
 
-    Each segment gets the persona the MODE assigns to its kind (FR-6.3): a
-    mock is a panel — the lead engineer opens, a professor takes the project,
-    HR takes the people questions — and the lead closes, because a closing
-    run by someone the student has not met is a page load.
+    Each segment gets a panelist (FR-6.3, `panel.py`): the persona whose
+    declared expertise and temperament best fit that part in this mode, from
+    the persona files — so a mock is a panel (a methodical lead, a professor
+    for the project, HR for the people questions) because of who those
+    personas ARE, not because a table says so. The lead opens and closes,
+    because a closing run by someone the student has not met is a page load.
     """
     warmup_minutes, closing_minutes = reserved_minutes(inputs.requested_minutes)
     mode = mode_config(inputs.mode)
@@ -244,6 +247,12 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
     ]
     for index, segment in enumerate(segments):
         segment.index = index
+    # FR-6.3: the panel, seated from the personas' own data for the parts
+    # this plan actually has (`panel.py`) — not a table per mode.
+    for segment, persona_id in zip(
+        segments, panel.assign(segments, mode.temperament, inputs.requested_minutes), strict=True
+    ):
+        segment.persona_id = persona_id
 
     coverage = inputs.coverage or {}
     return InterviewPlan(

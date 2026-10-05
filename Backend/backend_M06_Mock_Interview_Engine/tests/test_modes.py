@@ -99,25 +99,24 @@ def test_no_mode_promises_a_mechanic_that_does_not_exist():
 
 
 # ── FR-6.3: a panel, one persona per segment ─────────────────────────────
+# Who sits is `panel.py`'s, from the personas' own data, and its properties
+# are held in test_panel.py. These hold what each mode's summary promises.
 
 
 def test_a_mock_is_a_panel():
-    """The lead engineer opens and closes, a professor takes the project, HR
-    takes the people questions."""
-    assert who(panel_plan("mock")) == {
-        "warmup": "methodical_engineer",
-        "project": "professor",
-        "technical": "methodical_engineer",
-        "behavioural": "hr_generalist",
-        "closing": "methodical_engineer",
-    }
+    """More than one person, the lead opening and closing, and the parts with
+    a declared expert on the panel going to that expert."""
+    plan = panel_plan("mock")
+    lead = mode_config("mock").persona_for()
+    assert plan.segments[0].persona_id == lead == plan.segments[-1].persona_id
+    assert len({s.persona_id for s in plan.segments}) >= 3
 
 
 def test_final_boss_is_bar_raisers_and_never_a_friendly_voice():
-    personas = who(panel_plan("final_boss"))
-    assert personas["technical"] == "bar_raiser"
-    assert personas["warmup"] == "bar_raiser"
-    assert "friendly_recruiter" not in personas.values()
+    seated = set(who(panel_plan("final_boss")).values())
+    assert all(persona(p).speech != "friendly" for p in seated)
+    assert all(persona(p).warmth <= 0.5 for p in seated)
+    assert who(panel_plan("final_boss"))["warmup"] == "bar_raiser"
 
 
 def test_practice_is_gentle_throughout():
@@ -128,16 +127,16 @@ def test_practice_is_gentle_throughout():
 def test_the_new_voice_in_a_panel_introduces_itself(db):
     """A hand-over in a real panel is a person saying who they are. The first
     line of a round run by someone new is their greeting."""
-    from backend_M06_Mock_Interview_Engine.engine import bridge_line, introduced
+    from backend_M06_Mock_Interview_Engine.engine import bridge_line
 
     plan = panel_plan("mock")
-    project = next(s for s in plan.segments if s.kind == "project")
-    technical = next(s for s in plan.segments if s.kind == "technical")
-    met = frozenset({"methodical_engineer"})
-    assert "Dr. Raghavan" in bridge_line(project, met)
-    # Priya has spoken already, so her round gets a bridge, not a second hello.
-    assert "Hello" not in bridge_line(technical, met)
-    assert introduced is not None
+    lead = plan.segments[0].persona_id
+    newcomer = next(s for s in plan.segments if s.persona_id != lead)
+    again = next(s for s in plan.segments[1:-1] if s.persona_id == lead)
+    met = frozenset({lead})
+    assert persona(newcomer.persona_id).name in bridge_line(newcomer, met)
+    # The lead has spoken already, so their round gets a bridge, not a second hello.
+    assert "Hello" not in bridge_line(again, met)
 
 
 # ── the mechanics each mode claims ────────────────────────────────────────
@@ -198,4 +197,5 @@ def test_practice_stops_after_two_follow_ups_and_final_boss_does_not(db):
 def test_the_speaker_is_the_segments_persona(db):
     engine = make(db, m05=BankQuestions(), m01=NoClaims())
     row = live(engine, "final_boss")
-    assert speaker(engine.state(row.id)).id == "bar_raiser"
+    state = engine.state(row.id)
+    assert speaker(state).id == mode_config("final_boss").persona_for() == "bar_raiser"

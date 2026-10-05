@@ -12,7 +12,7 @@ formality: 0.3
 interruption_threshold: 0.9
 follow_up_aggression: 0.4
 verbosity_target: 25
-domain_bias: []
+domain_bias: [warm-up, motivation, background, career goals]
 voice_id: en-IN-female-warm
 note_taking_cadence: 0
 hints_available: true

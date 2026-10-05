@@ -13,6 +13,7 @@ import pytest
 
 from backend_M06_Mock_Interview_Engine import planner
 from backend_M06_Mock_Interview_Engine.contracts import InterviewPlan
+from backend_M06_Mock_Interview_Engine.modes import mode_config
 
 SESSION = uuid.UUID("11111111-1111-4111-8111-111111111111")
 JD = uuid.UUID("22222222-2222-4222-8222-222222222222")
@@ -258,15 +259,17 @@ def test_every_plan_opens_with_a_warm_up_and_closes_with_the_students_questions(
         assert [s.index for s in plan.segments] == list(range(len(plan.segments)))
 
 
-def test_the_persona_is_the_modes_default():
-    """§6.1's mode table. Day 9 makes modes full configs; the plan needs the
-    persona now, and it is the same for every segment of a session."""
-    assert {s.persona_id for s in planner.assemble(inputs(mode="practice")).segments} == {
-        "friendly_recruiter"
-    }
-    assert {s.persona_id for s in planner.assemble(inputs(mode="final_boss")).segments} == {
-        "bar_raiser"
-    }
+def test_every_part_has_an_interviewer_and_the_lead_opens_and_closes():
+    """FR-6.3. Who sits on the panel is `panel.assign`'s (test_panel.py); the
+    planner's part is that every segment names someone, and that the person
+    the student meets first is the one who says goodbye."""
+    for mode in ("practice", "final_boss"):
+        segments = planner.assemble(inputs(mode=mode)).segments
+        lead = mode_config(mode).persona_for()
+        assert all(s.persona_id for s in segments)
+        assert segments[0].persona_id == lead == segments[-1].persona_id
+    assert mode_config("practice").persona_for() == "friendly_recruiter"
+    assert mode_config("final_boss").persona_for() == "bar_raiser"
 
 
 # ── no job description (§10) ─────────────────────────────────────────────

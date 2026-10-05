@@ -1,0 +1,159 @@
+"""The panel — FR-6.3, master plan §26: who interviews, chosen from data.
+
+These hold properties, never names. Authoring a persona is supposed to change
+the panel; a test that pinned "Dr. Raghavan takes the project" would fail the
+day that works.
+"""
+
+from __future__ import annotations
+
+import random
+from types import SimpleNamespace
+
+import pytest
+
+from backend_M06_Mock_Interview_Engine import panel
+from backend_M06_Mock_Interview_Engine.modes import MODES
+from backend_M06_Mock_Interview_Engine.personas import personas
+
+from .test_modes import panel_plan
+
+ALL_MODES = tuple(MODES)
+
+
+def seated(plan) -> list[str]:
+    return list(dict.fromkeys(s.persona_id for s in plan.segments))
+
+
+def eligible(mode: str):
+    return [p for p in personas().values() if panel.fits(p, MODES[mode].temperament)]
+
+
+def declares(p, kind: str) -> bool:
+    return panel.stem(kind) in panel.words(p.domain_bias)
+
+
+def part(kind: str, title: str = "") -> SimpleNamespace:
+    """The four fields `panel` reads from a segment, and nothing else."""
+    return SimpleNamespace(kind=kind, title=title, rubric_round_types=[], concept_ids=[])
+
+
+# ── shape ─────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("mode", ALL_MODES)
+def test_the_lead_opens_and_closes(mode):
+    """The person who welcomed the student is the one who says goodbye."""
+    plan = panel_plan(mode)
+    lead = MODES[mode].persona_for()
+    assert plan.segments[0].persona_id == lead == plan.segments[-1].persona_id
+
+
+@pytest.mark.parametrize("mode", ALL_MODES)
+def test_every_mode_seats_a_panel_not_one_person_in_several_hats(mode):
+    assert len(seated(panel_plan(mode))) >= 2
+
+
+@pytest.mark.parametrize("mode", ALL_MODES)
+def test_nobody_outside_the_modes_temperament_sits(mode):
+    for pid in seated(panel_plan(mode)):
+        assert panel.fits(personas()[pid], MODES[mode].temperament), (mode, pid)
+
+
+@pytest.mark.parametrize("mode", ALL_MODES)
+def test_a_part_with_a_declared_expert_goes_to_one(mode):
+    """When someone the mode admits names a part's kind among their domains,
+    that part is theirs — the HR partner takes the people questions because
+    of what the persona file says, not because a table does."""
+    plan = panel_plan(mode)
+    for segment in plan.segments[1:-1]:
+        experts = {p.id for p in eligible(mode) if declares(p, segment.kind)}
+        if experts:
+            assert segment.persona_id in experts, (mode, segment.kind, segment.persona_id)
+
+
+def test_the_panel_grows_with_the_interview():
+    assert panel.panel_size(10) == 2
+    assert panel.panel_size(30) == 3
+    assert panel.panel_size(60) == 4
+    plan = panel_plan("mock")
+    short = panel.assign(plan.segments, MODES["mock"].temperament, minutes=10)
+    assert len(set(short)) <= 2
+
+
+def test_the_same_plan_seats_the_same_panel():
+    """A re-plan must not reshuffle who the student has met — and the order a
+    directory listing returns the persona files in must not matter either."""
+    plan = panel_plan("mock")
+    people = personas()
+    shuffled = list(people.items())
+    random.Random(7).shuffle(shuffled)
+    first = panel.assign(plan.segments, MODES["mock"].temperament, 45, people)
+    again = panel.assign(plan.segments, MODES["mock"].temperament, 45, dict(shuffled))
+    assert first == again
+
+
+def test_bounds_that_exclude_everyone_still_seat_someone():
+    """An authoring mistake in a mode is never an interview without anyone."""
+    impossible = panel.Temperament(target={"warmth": 0.5}, bounds={"warmth": (2.0, 3.0)})
+    out = panel.assign([part("warmup"), part("technical"), part("closing")], impossible, 30)
+    assert len(out) == 3 and all(out)
+
+
+# ── data, not code ────────────────────────────────────────────────────────
+
+
+def test_a_new_persona_joins_the_panel_without_code():
+    """The claim the module makes: author a persona who knows a part better
+    than anyone seated, and the panel brings them in for it."""
+    people = personas()
+    dba = people["methodical_engineer"].model_copy(
+        update={
+            "id": "database_engineer",
+            "name": "Farah",
+            "title": "Database Engineer",
+            "domain_bias": ["sql", "databases", "query tuning", "technical"],
+            "warmth": 0.5,
+            "patience": 0.5,
+            "follow_up_aggression": 0.8,
+        }
+    )
+    plan = panel_plan("mock")
+    with_her = panel.assign(plan.segments, MODES["mock"].temperament, 45, {**people, dba.id: dba})
+    by_kind = {s.kind: pid for s, pid in zip(plan.segments, with_her, strict=True)}
+    assert by_kind["technical"] == "database_engineer"  # the SQL part
+    assert by_kind["warmup"] == MODES["mock"].persona_for(), "the lead is unchanged"
+
+
+def test_expertise_counts_declared_domains_over_a_title():
+    people = personas()
+    topic = panel.words("behavioural", "conflict in a team")
+    assert panel.expertise(people["hr_generalist"], topic) > 0
+    assert panel.expertise(people["hr_generalist"], topic) > panel.expertise(
+        people["methodical_engineer"], topic
+    )
+    assert panel.expertise(people["methodical_engineer"], frozenset()) == 0.0
+
+
+# ── interjections ─────────────────────────────────────────────────────────
+
+
+def test_an_expert_on_the_panel_cuts_in_when_they_clearly_know_more():
+    topic = panel.words("behavioural", "conflict", "teamwork")
+    seated_ = ["methodical_engineer", "hr_generalist"]
+    assert panel.interjector(seated_, "methodical_engineer", topic) == "hr_generalist"
+
+
+def test_nobody_cuts_in_on_someone_who_knows_as_much():
+    topic = panel.words("behavioural", "conflict", "teamwork")
+    seated_ = ["methodical_engineer", "hr_generalist"]
+    assert panel.interjector(seated_, "hr_generalist", topic) is None
+
+
+def test_only_someone_on_the_panel_cuts_in():
+    topic = panel.words("behavioural", "conflict", "teamwork")
+    assert panel.interjector(["methodical_engineer"], "methodical_engineer", topic) is None
+    assert (
+        panel.interjector(["methodical_engineer", "bar_raiser"], "methodical_engineer", topic)
+        is None
+    )

@@ -11,7 +11,7 @@ formality: 0.8
 interruption_threshold: 0.8
 follow_up_aggression: 0.9
 verbosity_target: 35
-domain_bias: [algorithms, derivation, first principles]
+domain_bias: [algorithms, derivation, first principles, projects, research]
 voice_id: en-IN-male-measured
 note_taking_cadence: 3
 hints_available: true
