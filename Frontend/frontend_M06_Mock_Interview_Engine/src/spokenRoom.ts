@@ -27,7 +27,9 @@ import {
   speakOnServer,
   transcribeOnServer,
   useListening,
+  useRollingCaption,
   type AsrResult,
+  type Caption,
   type InterviewerVoice,
 } from "@ai/core";
 
@@ -188,8 +190,14 @@ export function useWarmBackchannels(enabled: boolean, cards: PersonaCard[]): voi
   const key = cards.map((card) => card.id).join(",");
   useEffect(() => {
     if (!enabled) return;
+    // Their "okay"s, and the "go ahead" said as they yield (EC-11.1).
     const todo = cards
-      .flatMap((card) => (card.backchannels ?? []).map((word) => ({ card, word })))
+      .flatMap((card) =>
+        [...(card.backchannels ?? []), ...(card.go_ahead ? [card.go_ahead] : [])].map((word) => ({
+          card,
+          word,
+        })),
+      )
       .filter(({ card, word }) => !done.current.has(`${card.id}:${word}`));
     if (todo.length === 0) return;
     let stopped = false;
@@ -272,6 +280,12 @@ export interface PushToTalk {
   level: () => number;
   press: () => void;
   release: () => void;
+  /** EC-11.12: the device took the microphone (a call). */
+  interrupted: boolean;
+  /** EC-11.7: the microphone in use. */
+  device: { label: string; sampleRate: number | null } | null;
+  /** FR-11.3: the answer so far, from M11's recogniser, while held. */
+  caption: Caption | null;
 }
 
 /** Shorter than this is a tap, not an answer. */
@@ -288,6 +302,9 @@ export function usePushToTalk(options: {
   /** The button went down — the interviewer's cue to stop. */
   onPress: (at: number) => void;
   onTurn: (turn: HeldTurn) => void;
+  /** FR-11.3: caption the answer from M11's recogniser while it is held —
+   *  for a browser that cannot caption it itself. */
+  caption?: boolean;
 }): PushToTalk {
   const latest = useRef(options);
   latest.current = options;
@@ -331,6 +348,13 @@ export function usePushToTalk(options: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listening.audioBetween]);
 
+  const caption = useRollingCaption({
+    enabled: options.enabled && Boolean(options.caption),
+    from: () => pressedAt.current,
+    audioBetween: (from, to) => listening.audioBetween(from, to),
+    context: () => latest.current.context(),
+  });
+
   return {
     active: listening.active,
     error: listening.error,
@@ -339,5 +363,8 @@ export function usePushToTalk(options: {
     level: listening.level,
     press,
     release,
+    interrupted: listening.interrupted,
+    device: listening.device,
+    caption,
   };
 }

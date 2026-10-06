@@ -73,10 +73,13 @@ import {
   Icon,
   Skeleton,
   isEcho,
+  isOffline,
   keepAnswerAudio,
   keepingAnswers,
+  looksLikeBluetooth,
   serverAsrAvailable,
   setKeepingAnswers,
+  transcribeOnServer,
   useInterviewerVoice,
   useTurnTaking,
   type AsrResult,
@@ -91,9 +94,11 @@ import {
   useHint,
   useIdle,
   useHeard,
+  useInterruption,
   useMoveOn,
   usePause,
   usePersonas,
+  usePrefill,
   useRepeat,
   useResume,
   useResumeState,
@@ -181,6 +186,19 @@ function unsureRanges(asr: AsrResult, offset: number): [number, number][] {
     at = end + 1;
   }
   return ranges;
+}
+
+/** What the room tells M06 about a spoken answer's words: how sure the
+ *  recogniser was, which character ranges of `full` it was not (FR-11.15),
+ *  the model and the language (FR-11.22). One shape for the answer and for the
+ *  prefill thinking ahead of it (FR-11.6), so the two can match exactly. */
+function noteFor(asr: AsrResult, full: string, said: string) {
+  return {
+    mean_confidence: asr.mean_confidence,
+    unsure: unsureRanges(asr, full.length - said.length),
+    model: asr.model,
+    language: asr.language,
+  };
 }
 
 /** A student's answer, with the words the recogniser was unsure of marked. */
@@ -799,6 +817,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const idle = useIdle(sessionId);
   const repeat = useRepeat(sessionId);
   const heardLine = useHeard(sessionId);
+  const prefillAnswer = usePrefill(sessionId);
+  const interruption = useInterruption(sessionId);
   const flag = useFlag(sessionId);
   const [repeated, setRepeated] = useState<string | null>(null);
   const [flagging, setFlagging] = useState(false);
@@ -922,6 +942,27 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const [askedAgain, setAskedAgain] = useState<{ who: string; text: string } | null>(null);
   const echoes = useRef(0);
   const unheard = useRef(0);
+  /** EC-11.15: an answer that could not be written down or sent — offline —
+   *  kept here and sent when the network is back. Nothing is lost. */
+  const unsent = useRef<
+    | { kind: "audio"; turn: HeldTurn }
+    | {
+        kind: "text";
+        text: string;
+        speechEndedAt?: number;
+        asr?: { mean_confidence: number; unsure: [number, number][]; model?: string | null; language?: string | null };
+        audio?: { audio: Blob; startedAt: number; endedAt: number };
+      }
+    | null
+  >(null);
+  const [offlineNote, setOfflineNote] = useState<string | null>(null);
+  const offline = () => typeof navigator !== "undefined" && navigator.onLine === false;
+  const sendUnsentRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    const back = () => window.setTimeout(() => sendUnsentRef.current(), 1500);
+    window.addEventListener("online", back);
+    return () => window.removeEventListener("online", back);
+  }, []);
   // The box's text, read by a turn that ends after this render.
   const draftNow = useRef("");
   draftNow.current = draft;
@@ -941,7 +982,17 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     const contest = data.mode === "final_boss" && !contested.current.has(round);
     const onCut = (cut: { key: string; partId: string | null; heard: number }) => {
       const [turnId, part] = (cut.partId ?? `${cut.key}:0`).split(":");
-      heardLine.mutate({ turn_id: turnId!, part_index: Number(part ?? 0) || 0, heard: cut.heard });
+      const index = Number(part ?? 0) || 0;
+      heardLine.mutate({ turn_id: turnId!, part_index: index, heard: cut.heard });
+      // EC-11.1: in over the very start of a line, the interviewer yields —
+      // "Sorry — go ahead.", aside, not on the record — and M06 puts the
+      // question again once they have finished. Not in Final Boss.
+      if (index === 0 && cut.heard < 0.25 && data.mode !== "final_boss") {
+        const line = data.transcript.find((turn) => turn.turn_id === turnId);
+        const who = line ? partsOf(line, data.interviewer?.id ?? null)[0]?.speaker_id : undefined;
+        const card = who ? cards.get(who) : undefined;
+        if (who && card?.go_ahead) voice.backchannel(card.go_ahead, { personaId: who, voiceId: card.voice_id });
+      }
     };
     if (voice.bargeIn(startedAt, { contest, onCut }) && contest) contested.current.add(round);
   };
@@ -971,6 +1022,13 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     const browserWords = held.current.join(" ");
     held.current = [];
     const long = turn.endedAt - turn.startedAt;
+    if (turn.text === null && turn.audio && offline()) {
+      // EC-11.15: the network went mid-answer. The audio is kept and written
+      // down when it is back — the answer is not lost, and not "missed".
+      unsent.current = { kind: "audio", turn };
+      setOfflineNote("You're offline — what you said is saved, and goes as your answer when you're back.");
+      return;
+    }
     if (turn.text === null) {
       // No recogniser: the browser's words stay in the box for "Answer".
       append(browserWords);
@@ -1004,14 +1062,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     const open = data?.status === "live" && Boolean(data.open_turn_id) && !waiting && !codeMode;
     // How sure the recogniser was, and of which words (FR-11.15/11.16):
     // M06 asks again rather than judging words nobody could make out.
-    const note = turn.asr
-      ? {
-          mean_confidence: turn.asr.mean_confidence,
-          unsure: unsureRanges(turn.asr, full.length - turn.text.length),
-          model: turn.asr.model,
-          language: turn.asr.language,
-        }
-      : undefined;
+    const note = turn.asr ? noteFor(turn.asr, full, turn.text) : undefined;
     const audio = turn.audio ? { audio: turn.audio, startedAt: turn.startedAt, endedAt: turn.endedAt } : undefined;
     if (open) submit(full, turn.endedAt, note, audio);
     else append(turn.text);
@@ -1040,6 +1091,20 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     context: askedNow,
     onTurn: (turn) => takeTurn(turn, turn.how === "switch" ? "switch" : "end"),
     onPause: backchannel,
+    // FR-11.6: at a pause, what has been said so far — M06 thinks ahead with
+    // it, and uses that only if the answer is these exact words.
+    onPrefill: (ahead) => {
+      if (!data || data.status !== "live" || !data.open_turn_id || waiting || codeMode) return;
+      if (isEcho(ahead.text, lastAsked()?.text ?? "")) return;
+      const full = draftNow.current.trim() ? `${draftNow.current.trimEnd()} ${ahead.text}` : ahead.text;
+      prefillAnswer.mutate({
+        question_turn_id: data.open_turn_id,
+        text: full,
+        asr: noteFor(ahead.asr, full, ahead.text),
+      });
+    },
+    // FR-11.3: where the browser cannot caption the student, M11 does.
+    caption: !dictation.supported,
     onSpeechStart: (startedAt) => {
       if (!data) return;
       comeIn(startedAt);
@@ -1060,7 +1125,64 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
       if (!codeMode && dictation.supported && !dictation.listening) dictation.start();
     },
     onTurn: (turn) => takeTurn(turn, "end"),
+    caption: !dictation.supported,
   });
+  // EC-11.7: a Bluetooth headset in its calling mode clips the first moment
+  // of speech. Said once, with what to do about it.
+  const bluetoothSaid = useRef(false);
+  const device = (freeMic ? listening.device : null) ?? (holdToTalk ? ptt.device : null);
+  useEffect(() => {
+    if (!device || bluetoothSaid.current || !looksLikeBluetooth(device.label, device.sampleRate)) return;
+    bluetoothSaid.current = true;
+    setMicNote("A Bluetooth headset can cut off your first word — take a breath before you start, or use your laptop's own mic.");
+  }, [device]);
+  /** "Repeat the question" (FR-11.13) — and the way back in after a call. */
+  const sayQuestionAgain = () =>
+    repeat.mutate(undefined, {
+      onSuccess: (turn) => {
+        setRepeated(turn.text);
+        // In the voice of whoever asked it — an expert who came in asks
+        // their own question again.
+        const asker = lastAsked()?.speaker_id ?? data?.interviewer?.id ?? null;
+        voice.repeat(
+          [{ text: turn.text, personaId: asker, voiceId: (asker && cards.get(asker)?.voice_id) || null }],
+          "repeat",
+        );
+      },
+    });
+  // EC-11.12: a call takes the microphone. After a moment the clock stops (no
+  // pause spent) and the interviewer falls quiet; when the microphone is back,
+  // five seconds to settle, then the question again.
+  const takenAway = (freeMic && listening.interrupted) || (holdToTalk && ptt.interrupted);
+  const [callState, setCallState] = useState<"here" | "away" | "back">("here");
+  const [reentry, setReentry] = useState(0);
+  useEffect(() => {
+    if (data?.status !== "live") return;
+    if (takenAway && callState === "here") {
+      const timer = window.setTimeout(() => {
+        setCallState("away");
+        voice.stop("pause");
+        interruption.mutate(true);
+      }, 1500);
+      return () => window.clearTimeout(timer);
+    }
+    if (!takenAway && callState === "away") {
+      setCallState("back");
+      setReentry(5);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [takenAway, callState, data?.status]);
+  useEffect(() => {
+    if (callState !== "back") return;
+    if (reentry <= 0) {
+      setCallState("here");
+      interruption.mutate(false, { onSuccess: () => sayQuestionAgain() });
+      return;
+    }
+    const timer = window.setTimeout(() => setReentry((n) => n - 1), 1000);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callState, reentry]);
   // A poor connection moves the open mic to hold-to-talk, once, and says why.
   useEffect(() => {
     if (!poor || !talkFreely || holdToTalk) return;
@@ -1387,9 +1509,20 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     setDraft("");
     setSpoken("");
     setPreview("");
+    const boxHad = draft;
     answer.mutate(
       { question_turn_id: data.open_turn_id, text, ...(asr ? { asr } : {}) },
       {
+        onError: (err) => {
+          // Nothing said or typed is lost: it goes back in the box.
+          setDraft(spoken === undefined ? boxHad : typed);
+          if (isOffline(err)) {
+            // EC-11.15: and it goes again by itself when the network is back.
+            unsent.current = { kind: "text", text: typed, speechEndedAt, asr, audio };
+            setOfflineNote("You're offline — your answer is in the box, and goes when you're back.");
+            answer.reset();
+          }
+        },
         onSuccess: (after) => {
           // FR-11.19: kept only with the student's say-so, beside the turn
           // it answered, on the clock it was said on.
@@ -1407,6 +1540,25 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     );
   }
   const fillers = spoken.trim() ? fillerCount(spoken) : null;
+  /** EC-11.15: the network is back — what could not go, goes. */
+  function sendUnsent() {
+    const item = unsent.current;
+    if (!item || !data?.open_turn_id || offline()) return;
+    unsent.current = null;
+    setOfflineNote(null);
+    if (item.kind === "text") {
+      submit(item.text, item.speechEndedAt, item.asr, item.audio);
+      return;
+    }
+    const audio = item.turn.audio;
+    if (!audio) return;
+    transcribeOnServer(audio, askedNow())
+      .then((asr) => takeTurn({ ...item.turn, text: asr.text.trim(), asr }, "end"))
+      .catch(() => {
+        unsent.current = item; // still not through: kept for the next try
+      });
+  }
+  sendUnsentRef.current = sendUnsent;
 
   return (
     <div className="mx-auto max-w-(--container-conversation)">
@@ -1496,6 +1648,16 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
           />
           <Stepper session={data} />
 
+          {callState !== "here" && (
+            <p
+              className="mt-3 rounded-lg border border-brand-line bg-brand-soft/40 px-3 py-2 text-sm text-ink"
+              role="status"
+            >
+              {callState === "away"
+                ? "Paused — your phone took the microphone. The clock is stopped and no pause is used; take your time."
+                : `Welcome back — picking up in ${reentry}…`}
+            </p>
+          )}
           {lost && (
             <p
               className="mt-3 rounded-lg border border-line bg-surface-sunken px-3 py-2 text-2xs text-session-degraded"
@@ -1715,6 +1877,19 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                   Listening{dictation.interim ? `: ${dictation.interim}` : " — speak your answer"}
                 </p>
               )}
+              {!dictation.supported && (listening.caption ?? ptt.caption) && (
+                // FR-11.3: the caption from M11's recogniser, unsure words
+                // lighter (spec §8) — where the browser cannot caption.
+                <p className="flex flex-wrap items-center gap-x-1 px-4 pb-2 text-2xs text-ink-soft" role="status">
+                  <span aria-hidden className="status-dot status-dot-live bg-session-listening" style={{ color: "var(--color-session-listening)" }} />
+                  Listening:{(listening.caption ?? ptt.caption)!.truncated ? " …" : ""}
+                  {(listening.caption ?? ptt.caption)!.words.map((w, i) => (
+                    <span key={i} className={w.unsure ? "text-ink-faint" : undefined}>
+                      {w.word}
+                    </span>
+                  ))}
+                </p>
+              )}
               {holdToTalk && serverAsr && (
                 // FR-11.17, spec §6.9: "a big hold-to-talk button, a visible
                 // upload progress, and the same interviewer behaviour".
@@ -1893,26 +2068,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() =>
-                      repeat.mutate(undefined, {
-                        onSuccess: (turn) => {
-                          setRepeated(turn.text);
-                          // In the voice of whoever asked it — an expert who
-                          // came in asks their own question again.
-                          const asker = lastTurn?.speaker_id ?? data.interviewer?.id ?? null;
-                          voice.repeat(
-                            [
-                              {
-                                text: turn.text,
-                                personaId: asker,
-                                voiceId: (asker && cards.get(asker)?.voice_id) || null,
-                              },
-                            ],
-                            "repeat",
-                          );
-                        },
-                      })
-                    }
+                    onClick={sayQuestionAgain}
                     disabled={repeat.isPending}
                   >
                     Repeat the question
@@ -1945,6 +2101,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     ? listening.error
                   : holdToTalk && ptt.error
                     ? ptt.error
+                  : offlineNote
+                    ? offlineNote
                   : ladder
                     ? ladder
                   : awayNote

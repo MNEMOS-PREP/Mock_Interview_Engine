@@ -99,6 +99,9 @@ export interface PersonaCard {
   /** M11's EC-11.9: their own "didn't catch that", for an answer nobody
    *  could write down. */
   didnt_catch?: string;
+  /** M11's EC-11.1: said aside as they yield to a student who started
+   *  speaking over the start of a line. */
+  go_ahead?: string;
 }
 
 export interface SessionFlags {
