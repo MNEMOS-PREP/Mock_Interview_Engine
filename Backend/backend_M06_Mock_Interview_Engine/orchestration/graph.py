@@ -206,6 +206,30 @@ NO_QUESTIONS = re.compile(
     re.I,
 )
 
+#: The words a "no questions" is made of, in any order. A phrase list is
+#: always one phrasing behind: two live runs (2026-10-06/07) heard "No,
+#: that's all from me. Thank you." filed as the student's question for the
+#: panel ("That's one to ask the real panel"), because "from me" was not on
+#: it. An answer with no question mark whose every word is one of these says
+#: nothing to ask; one word of substance ("ask", "team", "about") makes it a
+#: question, as before. "Yes" is not here: alone, it means they have one.
+_CLOSING_TALK = frozenset(
+    "no nope nah nothing none not really question questions for now else from me my "
+    "side that's thats that is all it everything i i'm im am good fine okay ok so well "
+    "thanks thank you very much yeah actually at the moment right think don't dont do "
+    "know sure idea can't cant of any anything sir ma'am maam".split()
+)
+
+
+def says_nothing(answer: str) -> bool:
+    """FR-6.21: the whole answer says "nothing to ask"."""
+    if NO_QUESTIONS.match(answer):
+        return True
+    if "?" in answer:
+        return False
+    words = re.findall(r"[a-z']+", answer.lower().replace("’", "'"))
+    return bool(words) and all(word in _CLOSING_TALK for word in words)
+
 
 @dataclass
 class Deps:
@@ -811,7 +835,7 @@ def build(deps: Deps):
         if rule_screen(answer).abusive:
             _emit(lines.conduct_close)
             return {"finish": "conduct", "utterance": Utterance(lines.conduct_close, "template")}
-        nothing = bool(NO_QUESTIONS.match(answer))
+        nothing = says_nothing(answer)
         out: dict[str, Any] = {"closing_question": not nothing}
         if (
             nothing

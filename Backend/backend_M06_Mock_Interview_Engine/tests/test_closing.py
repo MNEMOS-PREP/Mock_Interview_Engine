@@ -86,6 +86,39 @@ def test_nothing_to_ask_closes_straight_away(db):
     assert state.closing_questions == []
 
 
+@pytest.mark.parametrize(
+    "said",
+    [
+        "No, that's all from me. Thank you.",
+        "Nothing from my side, thanks.",
+        "No questions from my side.",
+        "I think I'm good, thank you so much.",
+        "No, that's it for now. Thanks.",
+    ],
+)
+def test_nothing_to_ask_however_it_is_said(said):
+    """Two live runs filed "No, that's all from me. Thank you." as the
+    student's question for the panel: "from me" was not on a phrase list."""
+    from backend_M06_Mock_Interview_Engine.orchestration.graph import says_nothing
+
+    assert says_nothing(said)
+
+
+@pytest.mark.parametrize(
+    "asked",
+    [
+        "No, I wanted to ask about the team.",
+        "What does the team work on?",
+        "Yes.",
+        "How soon would I hear back",
+    ],
+)
+def test_a_question_is_still_a_question(asked):
+    from backend_M06_Mock_Interview_Engine.orchestration.graph import says_nothing
+
+    assert not says_nothing(asked)
+
+
 def test_i_dont_know_is_not_recorded_as_the_students_question(db):
     """It would appear in their notes as "your question for the interviewer"."""
     engine, row = reach_the_closing(db)
