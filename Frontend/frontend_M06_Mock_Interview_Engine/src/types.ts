@@ -91,6 +91,9 @@ export interface PersonaCard {
    *  least time between two of them, in seconds. */
   backchannels?: string[];
   backchannel_every_s?: number;
+  /** M11's EC-11.9: their own "didn't catch that", for an answer nobody
+   *  could write down. */
+  didnt_catch?: string;
 }
 
 export interface SessionFlags {

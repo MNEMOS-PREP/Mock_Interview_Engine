@@ -911,12 +911,15 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     void serverAsrAvailable().then(setServerAsr);
   }, []);
   const freeMic = talkFreely && !holdToTalk;
-  serverWrites.current = freeMic && serverAsr;
+  serverWrites.current = (freeMic || holdToTalk) && serverAsr;
   // FR-11.19: whether the student chose to keep their spoken answers.
   const [keep, setKeep] = useState(keepingAnswers);
   const [keepNote, setKeepNote] = useState<string | null>(null);
   // EC-11.8, EC-11.9: what the room noticed about the mic, said once.
   const [micNote, setMicNote] = useState<string | null>(null);
+  /** EC-11.9's "didn't catch that", said by the asker — not on the record:
+   *  nothing was answered, so nothing is judged. */
+  const [askedAgain, setAskedAgain] = useState<{ who: string; text: string } | null>(null);
   const echoes = useRef(0);
   const unheard = useRef(0);
   // The box's text, read by a turn that ends after this render.
@@ -947,9 +950,14 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const missed = () => {
     unheard.current += 1;
     if (unheard.current < 2) {
-      setMicNote("I couldn't make that out — could you say it again?");
+      const id = lastAsked()?.speaker_id ?? data?.interviewer?.id ?? "";
+      const card = cards.get(id);
+      const line = card?.didnt_catch ?? "Sorry, I didn't catch that. Could you say it again?";
+      setAskedAgain({ who: id, text: line });
+      voice.speak([{ text: line, personaId: id || null, voiceId: card?.voice_id ?? null }], "didnt_catch");
       return;
     }
+    setAskedAgain(null);
     unheard.current = 0;
     setTalkFreelyState(false); // for now, not as the student's preference
     setHoldToTalk(false);
@@ -1044,7 +1052,12 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const ptt = usePushToTalk({
     enabled: holdToTalk && serverAsr && data?.status === "live",
     context: askedNow,
-    onPress: comeIn,
+    onPress: (at) => {
+      comeIn(at);
+      // FR-11.18: the live caption while they hold — the browser's own
+      // recognition; M11's words replace it when they let go.
+      if (!codeMode && dictation.supported && !dictation.listening) dictation.start();
+    },
     onTurn: (turn) => takeTurn(turn, "end"),
   });
   // A poor connection moves the open mic to hold-to-talk, once, and says why.
@@ -1126,6 +1139,35 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     idleHeard.current = idleKey;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.transcript.length, lastTurnId, data?.idle_line, data?.idle_prompts]);
+
+  // EC-11.13: "students background the tab and then miss the question".
+  // The voice carries on in a hidden tab; when they come back to a line said
+  // while they were away, the room says so, once, with the way to hear it.
+  const [awayNote, setAwayNote] = useState<string | null>(null);
+  const away = useRef<{ at: number; lines: number; speaking: boolean } | null>(null);
+  const linesNow = useRef(0);
+  linesNow.current = data?.transcript.filter((turn) => turn.role === "interviewer").length ?? 0;
+  const speakingNow = useRef(false);
+  speakingNow.current = voice.speakingKey !== null;
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        away.current = { at: Date.now(), lines: linesNow.current, speaking: speakingNow.current };
+        return;
+      }
+      const was = away.current;
+      away.current = null;
+      if (!was || Date.now() - was.at < 2000) return;
+      if (linesNow.current > was.lines || was.speaking) {
+        setAwayNote(
+          "You were in another tab while the interviewer was speaking — the question is just above, and \"Repeat the question\" says it again.",
+        );
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+  useEffect(() => setAwayNote(null), [data?.questions_asked, data?.transcript.length]);
 
   // A pause is a pause: the voice stops with the clock.
   useEffect(() => {
@@ -1209,10 +1251,21 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   // typing is not silence, which is why the browser says when and the server
   // only decides what. Each prompt restarts the count for the next; after the
   // offer to move on there are no more.
+  //
+  // Speaking is not silence either, and neither is the question still being
+  // said. A live run (2026-10-06) heard "Take your time." the moment a
+  // student finished a spoken answer: the count had run through the
+  // question's own synthesis and the whole answer, because only keystrokes
+  // reset it. Now it starts when the interviewer stops and the student is
+  // quiet, and any speech starts it again.
+  const studentBusy =
+    listening.speaking || listening.deciding || listening.writing || ptt.held || ptt.sending;
+  const interviewerTalking = voice.speakingKey !== null || reveal.overdue;
   const [keptThinking, setKeptThinking] = useState(false);
   useEffect(() => setKeptThinking(false), [data?.open_turn_id]);
   useEffect(() => {
     setMicNote(null);
+    setAskedAgain(null);
     setRepeated(null);
     setFlagged(null);
     setFlagging(false);
@@ -1227,6 +1280,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     )
       return;
     if (data.idle_offered || !connected) return;
+    if (studentBusy || interviewerTalking) return;
     const body = {
       question_turn_id: data.open_turn_id,
       n: data.idle_prompts + 1,
@@ -1244,6 +1298,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     data?.status,
     connected,
     draft,
+    studentBusy,
+    interviewerTalking,
   ]);
 
   const notices = useMemo(
@@ -1318,6 +1374,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     voice.stop("send");
     voice.mark("answer_sent", speechEndedAt);
     answeredAt.current = speechEndedAt ?? nowMs();
+    setAskedAgain(null);
     if (dictation.listening) dictation.stop();
     // Fenced, so the evaluator reads code as code rather than as prose.
     const text = codeMode && spoken === undefined ? "```\n" + draft.replace(/\s+$/, "") + "\n```" : typed;
@@ -1505,6 +1562,20 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                   <span className="thinking-dot" />
                   <span className="thinking-dot" />
                 </span>
+              </div>
+            )}
+
+            {data.status === "live" && askedAgain && (
+              <div role="status">
+                <Said
+                  name={nameOf(askedAgain.who)}
+                  soft
+                  kind={kindOf(askedAgain.who)}
+                  speaking={voice.speakingKey === "didnt_catch"}
+                  mouth={voice.mouth}
+                >
+                  {askedAgain.text}
+                </Said>
               </div>
             )}
 
@@ -1870,6 +1941,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     ? ptt.error
                   : ladder
                     ? ladder
+                  : awayNote
+                    ? awayNote
                   : micNote
                     ? micNote
                   : keepNote
