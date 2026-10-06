@@ -290,3 +290,22 @@ def test_nobody_closes_a_question_the_same_way_twice_running(db):
     assert any(len(used) >= 3 for used in by_speaker.values()), "the run closed enough questions"
     for speaker, used in by_speaker.items():
         assert all(a != b for a, b in zip(used, used[1:], strict=False)), (speaker, used)
+
+
+def test_someone_joining_midway_says_so_instead_of_their_opening():
+    """§6.4's gentler interviewer joins an interview already under way. A live
+    run had Meera arrive with "thanks for making the time" — the opening —
+    in the middle of the interview (2026-10-07)."""
+    from backend_M06_Mock_Interview_Engine.engine import bridge_line
+    from backend_M06_Mock_Interview_Engine.tests.test_modes import panel_plan
+
+    plan = panel_plan("practice")
+    technical = next(s for s in plan.segments if s.kind == "technical")
+    joining = technical.model_copy(update={"persona_id": "friendly_recruiter"})
+    meera = persona("friendly_recruiter")
+    said = bridge_line(joining, frozenset({"professor"}))
+    assert said.startswith(meera.said().panel_joining.format(name=meera.name))
+    assert "thanks for making the time" not in said
+    assert technical.title in said
+    # Nobody has spoken yet: the opening greeting, as before.
+    assert bridge_line(joining, frozenset()) == meera.said().greeting

@@ -109,6 +109,10 @@ class Lines:
     panel_hello: str
     #: The hello of someone sitting in, with no round of their own.
     panel_sitting_in: str
+    #: Someone joining an interview already under way (§6.4's gentler
+    #: interviewer): not their opening greeting — "thanks for making the
+    #: time" is said once, at the start.
+    panel_joining: str
     #: At a round's end, the panelist leaving names the one arriving…
     hand_over: str
     #: …and the one arriving thanks them before the bridge. Said too by an
@@ -170,6 +174,7 @@ LINES: dict[Register, Lines] = {
         ),
         panel_hello="Hi! I'll be asking about {topics}.",
         panel_sitting_in="Hi! I'll be sitting in, and I might jump in with a question or two.",
+        panel_joining="Hi, I'm {name} — I'll take it from here.",
         hand_over="{name}, over to you.",
         take_over="Thanks, {name}.",
         interject="Can I jump in with one?",
@@ -220,6 +225,7 @@ LINES: dict[Register, Lines] = {
         panel_greeting="Hello, I'm {name}. I'm joined by {others}.",
         panel_hello="Hello. I'll be asking about {topics}.",
         panel_sitting_in="Hello. I'll be sitting in, and may ask a follow-up or two.",
+        panel_joining="I'm {name}. I'll take it from here.",
         hand_over="{name}, over to you.",
         take_over="Thanks, {name}.",
         interject="One question from me on that.",
@@ -271,6 +277,7 @@ LINES: dict[Register, Lines] = {
         panel_greeting="I'm {name}. With me: {others}.",
         panel_hello="I'll take {topics}.",
         panel_sitting_in="I'll be sitting in. Expect a follow-up or two.",
+        panel_joining="{name}. I'll take it from here.",
         hand_over="{name}, go ahead.",
         take_over="Thanks, {name}.",
         interject="Let me come in here.",

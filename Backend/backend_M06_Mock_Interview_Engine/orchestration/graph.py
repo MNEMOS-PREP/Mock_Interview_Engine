@@ -417,19 +417,21 @@ def _fresh_exit(state: SessionState, persona: Persona, line: str) -> str:
     there for now." eight answers running (2026-10-07). When this interviewer
     used `line` on their last line, another of their own authored exits is
     said instead — each of them neutral, none a verdict."""
-    last = next(
-        (
+    # Their last few lines, not just the last: a redirect between two exits
+    # still let the professor's own exit come twice in a live run.
+    recent = " ".join(
+        t.text
+        for t in [
             t
-            for t in reversed(state.transcript)
+            for t in state.transcript
             if t.role == "interviewer" and t.speaker_id == persona.id
-        ),
-        None,
+        ][-3:]
     )
-    if last is None or not line or line not in last.text:
+    if not line or line not in recent:
         return line
     said = persona.said()
     for other in (said.moving_on, said.ceiling_exit, said.graceful_exit):
-        if other and other != line and other not in last.text:
+        if other and other != line and other not in recent:
             return other
     return line
 

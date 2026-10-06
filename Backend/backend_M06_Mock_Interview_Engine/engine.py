@@ -269,7 +269,14 @@ def bridge_line(
     who = persona(arriving.persona_id)
     said = who.said()
     if introduced is not None and arriving.kind != "closing" and who.id not in introduced:
-        return said.greeting
+        # Nobody has spoken yet: their opening greeting. Joining an interview
+        # already under way: a joining line, then the round's own topic.
+        if not introduced:
+            return said.greeting
+        joining = said.panel_joining.format(name=who.name)
+        if arriving.title and arriving.kind != "warmup":
+            return f"{joining} {said.bridge_to.format(topic=arriving.title)}"
+        return joining
     if arriving.kind == "closing":
         if panel:
             return said.panel_to_closing_early if forced_by_time else said.panel_to_closing
