@@ -33,6 +33,9 @@ class Lines:
     ceiling_exit: str
     moving_on: str
     clarify: str
+    #: M11's FR-11.16: the recogniser could not make out a spoken answer. The
+    #: fault is the line's, not the student's, and the line says so.
+    didnt_catch: str
     redirect: str
     answer_briefly: str
     defer_to_report: str
@@ -128,6 +131,7 @@ LINES: dict[Register, Lines] = {
         ceiling_exit="Thanks — that covers it. Let's move on.",
         moving_on="Thanks. Let's move on.",
         clarify="Could you say that a little differently? I want to make sure I follow.",
+        didnt_catch="Sorry — I didn't quite catch that. Could you say it again?",
         redirect="I think that answers a slightly different question — let me put mine again.",
         answer_briefly="Good question — happy to talk about that at the end. Back to this one:",
         defer_to_report="I'll walk you through it in the report afterwards.",
@@ -182,6 +186,7 @@ LINES: dict[Register, Lines] = {
         ceiling_exit="Okay. Let's move on.",
         moving_on="Okay. Let's move on.",
         clarify="Can you rephrase that?",
+        didnt_catch="Sorry, I didn't catch that. Could you say it again?",
         redirect="That's a different question. Here's mine again.",
         answer_briefly="We can come back to that at the end. On this one:",
         defer_to_report="The report will walk through it.",
@@ -234,6 +239,7 @@ LINES: dict[Register, Lines] = {
         ceiling_exit="Alright.",
         moving_on="Okay.",
         clarify="Say that again, more precisely.",
+        didnt_catch="Didn't catch that. Again?",
         redirect="That's not what I asked.",
         answer_briefly="Later. On this:",
         defer_to_report="The report covers it.",

@@ -130,6 +130,9 @@ def evaluation_request(state: SessionState, turn, ensemble: str) -> dict:
         "consent_id": str(state.flags.consent_id) if state.flags.consent_id else None,
         "round_type": turn.rubric_round_type,
         "ensemble": ensemble,
+        # M11's FR-11.15: words the recogniser was unsure of — scored, never
+        # quoted back as what the student said.
+        **({"uncitable": [list(r) for r in turn.unsure]} if getattr(turn, "unsure", None) else {}),
     }
 
 

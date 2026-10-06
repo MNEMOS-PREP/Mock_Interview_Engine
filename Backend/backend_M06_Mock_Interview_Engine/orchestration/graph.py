@@ -151,8 +151,22 @@ class StepState(TypedDict, total=False):
 
 
 PROBE_MOVES = frozenset(
-    {"rung", "clarify", "redirect_once", "answer_briefly", "hint", "steelman", "redirect_conduct"}
+    {
+        "rung",
+        "clarify",
+        "redirect_once",
+        "answer_briefly",
+        "hint",
+        "steelman",
+        "redirect_conduct",
+        "didnt_catch",
+    }
 )
+
+#: M11's FR-11.16: below this the recogniser could not make the answer out.
+#: Whisper's mean exp(log-probability) over clean speech sits around 0.6–0.9;
+#: garbled or drowned speech falls under 0.4.
+NOT_CAUGHT_BELOW = 0.4
 
 #: The moves "let's keep it moving" may precede (§6.7).
 NUDGEABLE = frozenset({"rung", "redirect_once", "answer_briefly"})
@@ -425,6 +439,17 @@ def _voiced(utterance: Utterance, parts: list[tuple[str, str]]) -> Utterance:
     )
 
 
+def _not_caught(state: SessionState) -> bool:
+    """M11's FR-11.16: the recogniser was unsure of the answer just given,
+    and this question has not asked to hear it again yet."""
+    last = state.transcript[-1] if state.transcript else None
+    if last is None or last.role != "candidate" or last.asr_confidence is None:
+        return False
+    if last.asr_confidence >= NOT_CAUGHT_BELOW:
+        return False
+    return state.ladder is None or "didnt_catch" not in state.ladder.moves
+
+
 def build(deps: Deps):
     def entry(s: StepState) -> str | list[str]:
         inp = s["inp"]
@@ -433,6 +458,9 @@ def build(deps: Deps):
         if inp.answer is not None and inp.item is not None and inp.item.source == "closing":
             # FR-6.21: the student's question for us is not an answer to judge.
             return "closing_reply"
+        if inp.answer is not None and _not_caught(inp.state):
+            # Words nobody could make out are not judged: heard again first.
+            return "not_caught"
         if inp.answer is not None:
             # Fan out: the strategist judges while the guard screens.
             return ["strategist", "guard"]
@@ -485,6 +513,10 @@ def build(deps: Deps):
         if outcome.move.kind == "end_session":
             out["finish"] = "conduct"
         return out
+
+    def not_caught(s: StepState) -> dict[str, Any]:
+        """M11's FR-11.16: ask to hear it again — no verdict, no depth."""
+        return {"outcome": Outcome(move=Move(kind="didnt_catch"), success=None)}
 
     def replay_decision(s: StepState) -> dict[str, Any]:
         out: dict[str, Any] = {"outcome": s["inp"].recorded}
@@ -566,6 +598,8 @@ def build(deps: Deps):
                 out["calls"] = [utterance.call]
         elif move.kind == "clarify":
             utterance = Utterance(lines.clarify, "template")
+        elif move.kind == "didnt_catch":
+            utterance = Utterance(lines.didnt_catch, "template", question=repeat_q)
         elif move.kind == "redirect_once":
             utterance = Utterance(f"{lines.redirect} {repeat_q}", "template", question=repeat_q)
         elif move.kind == "answer_briefly":
@@ -792,6 +826,7 @@ def build(deps: Deps):
     graph.add_node("guard", guard)
     graph.add_node("decide", decide_node)
     graph.add_node("replay_decision", replay_decision)
+    graph.add_node("not_caught", not_caught)
     graph.add_node("probe", probe)
     graph.add_node("offer_retry", offer_retry)
     graph.add_node("select", select)
@@ -801,12 +836,12 @@ def build(deps: Deps):
     graph.add_conditional_edges(
         START,
         entry,
-        ["strategist", "guard", "replay_decision", "select", "closing_reply"],
+        ["strategist", "guard", "replay_decision", "select", "closing_reply", "not_caught"],
     )
     graph.add_edge("closing_reply", END)
     # The join: decide runs once, after BOTH the strategist and the guard.
     graph.add_edge(["strategist", "guard"], "decide")
-    for node in ("decide", "replay_decision"):
+    for node in ("decide", "replay_decision", "not_caught"):
         graph.add_conditional_edges(
             node,
             after_decide,

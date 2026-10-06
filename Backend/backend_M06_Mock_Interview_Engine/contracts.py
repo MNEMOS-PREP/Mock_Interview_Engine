@@ -220,6 +220,9 @@ MoveKind = Literal[
     "redirect_conduct",
     #: EC-6.4, the second time: the session ends politely. Not a probe.
     "end_session",
+    #: M11's FR-11.16: the recogniser was unsure of a spoken answer, so the
+    #: interviewer asks to hear it again — once a question, and never judged.
+    "didnt_catch",
 ]
 
 
@@ -328,6 +331,11 @@ class TurnView(BaseModel):
     #: through it, 0–1. None when it was heard to the end. `heard.py`.
     heard_part: int | None = None
     heard: float | None = None
+    #: Candidate turns spoken through M11's recogniser: how sure it was
+    #: (0–1), and the character ranges of `text` it was unsure of — words that
+    #: must not be quoted back as what the student said (FR-11.15).
+    asr_confidence: float | None = None
+    unsure: list[tuple[int, int]] = Field(default_factory=list)
     at: datetime
 
 

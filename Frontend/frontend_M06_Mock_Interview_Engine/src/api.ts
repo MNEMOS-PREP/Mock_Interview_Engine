@@ -217,8 +217,12 @@ export function useStart(id: string) {
 export function useAnswer(id: string) {
   const write = useSessionWriter(id);
   return useMutation({
-    mutationFn: (body: { question_turn_id: string; text: string }) =>
-      api.post<Session>(`/v1/interviews/${id}/answer`, body),
+    mutationFn: (body: {
+      question_turn_id: string;
+      text: string;
+      /** A spoken answer, as M11's recogniser heard it (FR-11.15, FR-11.16). */
+      asr?: { mean_confidence: number; unsure: [number, number][]; model?: string | null };
+    }) => api.post<Session>(`/v1/interviews/${id}/answer`, body),
     onSuccess: write,
   });
 }

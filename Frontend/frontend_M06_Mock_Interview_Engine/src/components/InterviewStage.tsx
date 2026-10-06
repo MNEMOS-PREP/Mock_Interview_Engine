@@ -64,6 +64,7 @@ import {
   serverAsrAvailable,
   useInterviewerVoice,
   useTurnTaking,
+  type AsrResult,
   type InterviewerVoice,
   type SpokenPart,
 } from "@ai/core";
@@ -134,6 +135,49 @@ function VoiceToggle({ voice, name }: { voice: Voice; name: string }) {
       <SpeakerIcon on={voice.enabled} />
     </button>
   );
+}
+
+/** Below this a word is one the recogniser was unsure of (M11's asr.py). */
+const UNSURE_WORD = 0.45;
+
+/** What the recogniser was unsure of, as character ranges of the answer —
+ *  its words are joined by single spaces, after whatever the box held. */
+function unsureRanges(asr: AsrResult, offset: number): [number, number][] {
+  const ranges: [number, number][] = [];
+  let at = offset;
+  for (const word of asr.words) {
+    const end = at + word.word.length;
+    if (word.confidence < UNSURE_WORD) {
+      const last = ranges[ranges.length - 1];
+      if (last && at - last[1] <= 1) last[1] = end;
+      else ranges.push([at, end]);
+    }
+    at = end + 1;
+  }
+  return ranges;
+}
+
+/** A student's answer, with the words the recogniser was unsure of marked. */
+function AnswerText({ turn }: { turn: TurnView }) {
+  const ranges = turn.unsure ?? [];
+  if (ranges.length === 0) return <>{turn.text}</>;
+  const out: ReactNode[] = [];
+  let at = 0;
+  ranges.forEach(([start, end], i) => {
+    if (start > at) out.push(turn.text.slice(at, start));
+    out.push(
+      <span
+        key={i}
+        className="underline decoration-dotted decoration-ink-faint underline-offset-4"
+        title="The recogniser wasn't sure of these words, so they are never quoted back as yours."
+      >
+        {turn.text.slice(start, end)}
+      </span>,
+    );
+    at = Math.max(at, end);
+  });
+  if (at < turn.text.length) out.push(turn.text.slice(at));
+  return <>{out}</>;
 }
 
 /** "Talk freely" is remembered for this browser, like the voice switch. */
@@ -533,7 +577,9 @@ function Turn({
       <div className="flex justify-end">
         <div className="max-w-[85%] rounded-2xl rounded-br-md border border-brand-line bg-brand-soft px-4 py-3">
           <p className="text-2xs font-medium text-brand">You</p>
-          <p className="turn-candidate mt-1 whitespace-pre-wrap">{turn.text}</p>
+          <p className="turn-candidate mt-1 whitespace-pre-wrap">
+            <AnswerText turn={turn} />
+          </p>
         </div>
       </div>
     );
@@ -817,7 +863,16 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
       if (!turn.text) return; // heard as speech, transcribed as nothing: a cough
       const full = draftNow.current.trim() ? `${draftNow.current.trimEnd()} ${turn.text}` : turn.text;
       const open = data?.status === "live" && Boolean(data.open_turn_id) && !waiting && !codeMode;
-      if (open) submit(full, turn.endedAt);
+      // How sure the recogniser was, and of which words (FR-11.15/11.16):
+      // M06 asks again rather than judging words nobody could make out.
+      const note = turn.asr
+        ? {
+            mean_confidence: turn.asr.mean_confidence,
+            unsure: unsureRanges(turn.asr, full.length - turn.text.length),
+            model: turn.asr.model,
+          }
+        : undefined;
+      if (open) submit(full, turn.endedAt, note);
       else append(turn.text);
     },
     onSpeechStart: (startedAt) => {
@@ -1053,7 +1108,11 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
 
   /** Send the answer: what is in the box — or, at the end of a spoken turn,
    *  everything said (`spoken`), which the box has not caught up with yet. */
-  function submit(spoken?: string, speechEndedAt?: number) {
+  function submit(
+    spoken?: string,
+    speechEndedAt?: number,
+    asr?: { mean_confidence: number; unsure: [number, number][]; model?: string | null },
+  ) {
     const typed = (spoken ?? draft).trim();
     if (!typed || !data?.open_turn_id || (spoken === undefined && listening.writing)) return;
     voice.stop("send");
@@ -1064,7 +1123,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     setDraft("");
     setSpoken("");
     setPreview("");
-    answer.mutate({ question_turn_id: data.open_turn_id, text });
+    answer.mutate({ question_turn_id: data.open_turn_id, text, ...(asr ? { asr } : {}) });
   }
   const fillers = spoken.trim() ? fillerCount(spoken) : null;
 

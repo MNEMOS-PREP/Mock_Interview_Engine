@@ -164,9 +164,21 @@ class DrillCreated(BaseModel):
     url: str
 
 
+class AsrNote(BaseModel):
+    """A spoken answer, as M11's recogniser heard it (FR-11.15, FR-11.16)."""
+
+    #: How sure the recogniser was, 0–1.
+    mean_confidence: float = Field(ge=0.0, le=1.0)
+    #: Character ranges of the answer's text it was unsure of.
+    unsure: list[tuple[int, int]] = Field(default_factory=list, max_length=40)
+    model: str | None = Field(default=None, max_length=60)
+
+
 class AnswerIn(BaseModel):
     question_turn_id: uuid.UUID
     text: str = Field(max_length=MAX_ANSWER_CHARS)
+    #: Present when the answer was spoken and written down by M11.
+    asr: AsrNote | None = None
 
 
 class SessionOut(BaseModel):
@@ -877,7 +889,12 @@ def answer(
     the task never runs.
     """
     try:
-        state = engine.answer(session_id, body.question_turn_id, body.text)
+        state = engine.answer(
+            session_id,
+            body.question_turn_id,
+            body.text,
+            asr=body.asr.model_dump(mode="json") if body.asr else None,
+        )
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="No such session.") from exc
     except (AnswerRejected, store.ConcurrentWrite) as exc:

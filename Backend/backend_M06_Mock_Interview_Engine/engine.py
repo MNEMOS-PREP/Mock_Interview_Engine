@@ -839,7 +839,14 @@ class Engine:
             payload={"module": module, "sentence": self.upstreams.on_missing(module)},
         )
 
-    def answer(self, session_id: uuid.UUID, question_turn_id: uuid.UUID, text: str) -> SessionState:
+    def answer(
+        self,
+        session_id: uuid.UUID,
+        question_turn_id: uuid.UUID,
+        text: str,
+        *,
+        asr: dict | None = None,
+    ) -> SessionState:
         row = self.row(session_id)
         self.back(session_id)
         state = self.state(session_id)
@@ -871,6 +878,8 @@ class Engine:
                     "question_turn_id": str(question_turn_id),
                     "completion_reason": "submit",
                     "modality": "verbal",
+                    # M11's recogniser: how sure, and which words were not.
+                    **({"asr": asr} if asr else {}),
                 },
             )
         except InvalidTransition as exc:
@@ -1014,7 +1023,10 @@ class Engine:
 
         if answer_turn is not None and recorded is None and result.outcome is not None:
             self._record_decision(row, state, answer_turn, item, result)
-            self._owe(row, answer_turn, item)
+            # Words the recogniser could not make out are not an answer to
+            # score: the one said again is (M11's FR-11.16).
+            if result.outcome.move.kind != "didnt_catch":
+                self._owe(row, answer_turn, item)
         if result.offer_retry:
             self._offer_retry(row, result)
             return

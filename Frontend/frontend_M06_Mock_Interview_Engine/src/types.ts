@@ -37,6 +37,10 @@ export interface TurnView {
    *  being heard and how far through it, 0–1. Null when heard to the end. */
   heard_part?: number | null;
   heard?: number | null;
+  /** Spoken answers (M11's recogniser): how sure it was, 0–1, and the
+   *  character ranges of `text` it was unsure of — never quoted back. */
+  asr_confidence?: number | null;
+  unsure?: [number, number][];
   at: string;
 }
 
