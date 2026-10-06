@@ -200,11 +200,24 @@ def test_a_struggling_student_is_handed_to_someone_gentler_they_have_met():
     assert people[gentler].warmth > people[plan.panel[0]].warmth
 
 
-def test_a_panel_with_nobody_gentler_borrows_the_gentlest_the_mode_admits():
+def test_a_panel_with_nobody_gentle_borrows_the_gentlest_the_mode_admits():
+    """Found live (2026-10-07): a mock's panel of Priya and the professor,
+    and a struggling student. The professor is warmer than Priya but not
+    gentle — handing him the rest of the interview changed nothing but the
+    panel's shape. The gentlest friendly persona the mode admits joins."""
     from backend_M06_Mock_Interview_Engine import replan
 
-    plan = panel_plan("final_boss")
+    plan = panel_plan("mock").model_copy(update={"panel": ["methodical_engineer", "professor"]})
     gentler = replan.recovery_persona(plan)
     people = personas()
-    assert panel.fits(people[gentler], MODES["final_boss"].temperament), "still a Final Boss"
-    assert people[gentler].warmth >= max(people[p].warmth for p in plan.panel)
+    assert gentler not in plan.panel
+    assert people[gentler].speech == "friendly"
+    assert panel.fits(people[gentler], MODES["mock"].temperament)
+
+
+def test_final_boss_stays_final_boss_when_a_student_struggles():
+    """Nobody gentle is admitted to a Final Boss panel: the pace eases by
+    mechanics, and the student is not promised a gentler interviewer."""
+    from backend_M06_Mock_Interview_Engine import replan
+
+    assert replan.recovery_persona(panel_plan("final_boss")) is None

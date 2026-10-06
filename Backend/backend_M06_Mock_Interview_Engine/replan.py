@@ -48,26 +48,34 @@ STRUGGLING_SILENCES = 2
 RECOVERY_PERSONA = "friendly_recruiter"
 
 
-def recovery_persona(plan) -> str:
-    """§6.4's recovery posture, on a panel (FR-6.3): the rest of the session
-    goes to the warmest person ON the panel — someone the student has met —
-    when they are warmer than the lead. Otherwise to the warmest persona the
-    mode admits, who joins: a stranger arriving mid-interview is worse than
-    one more introduction, but a panel with nobody gentle has to borrow one."""
+def recovery_persona(plan) -> str | None:
+    """§6.4's recovery posture, on a panel (FR-6.3): the rest of a hard
+    session goes to someone GENTLE — a persona whose own file gives it the
+    friendly register — the warmest one already on the panel if there is one,
+    else the warmest the mode admits, who joins and introduces themselves.
+    None when the mode admits nobody gentle (Final Boss): the panel stays,
+    and the pace eases by mechanics alone.
+
+    Until 2026-10-07 any panelist warmer than the lead counted, so a live
+    mock handed the rest of the interview — its DSA round and its closing —
+    to the professor (warmth 0.6 against the lead's 0.5): nothing got
+    gentler, and the panel's shape broke."""
     from . import panel as seating
     from .modes import mode_config
     from .personas import personas
 
     people = personas()
+    warmest = lambda found: max(found, key=lambda p: (p.warmth, p.patience, p.id)).id  # noqa: E731
     seated = [people[p] for p in dict.fromkeys(plan.panel) if p in people]
-    if not seated:
-        return RECOVERY_PERSONA
-    warmest = max(seated, key=lambda p: (p.warmth, p.patience, p.id))
-    if warmest.warmth > seated[0].warmth:
-        return warmest.id
+    gentle = [p for p in seated if p.speech == "friendly"]
+    if gentle:
+        return warmest(gentle)
     temperament = mode_config(plan.mode).temperament
-    admitted = [p for p in people.values() if seating.fits(p, temperament)] or list(people.values())
-    return max(admitted, key=lambda p: (p.warmth, p.patience, p.id)).id
+    admitted = [
+        p for p in people.values() if p.speech == "friendly" and seating.fits(p, temperament)
+    ]
+    return warmest(admitted) if admitted else None
+
 
 #: concept id -> M04's concept (name, prerequisites), or None when unknown or
 #: M04 is not there. The gap trigger degrades to "not fired" without it.
@@ -237,11 +245,18 @@ def _time_overrun(plan, leaving, upcoming, s: Signals, before) -> Replan:
     )
 
 
+def _listed(items: list[str]) -> str:
+    """"a", "a and b", "a, b and c"."""
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
 def _struggling(plan, leaving, upcoming, s: Signals, before) -> Replan:
     """§6.4: drop one non-reserved segment, extend the closing, and a
     recovery posture — a friendly register for the rest of the session."""
     closing = next((seg for seg in plan.segments if seg.is_reserved), None)
     dropped = upcoming[-1] if len(upcoming) > 1 else None
+
+    gentler = recovery_persona(plan)
 
     def change(by_index):
         if dropped is not None:
@@ -251,7 +266,8 @@ def _struggling(plan, leaving, upcoming, s: Signals, before) -> Replan:
                 by_index[closing.index].minutes = round(
                     by_index[closing.index].minutes + seg.minutes, 1
                 )
-        gentler = recovery_persona(plan)
+        if gentler is None:
+            return  # nobody gentle in this mode: the panel stays
         for seg in upcoming:
             if seg.index in by_index and by_index[seg.index].dropped_reason is None:
                 by_index[seg.index].persona_id = gentler
@@ -266,8 +282,14 @@ def _struggling(plan, leaving, upcoming, s: Signals, before) -> Replan:
         after=_after(before, change),
         student_sentence=(
             f"“{leaving.title}” was a hard round, so I eased the pace for the rest: "
-            + ("one part less, " if dropped is not None else "")
-            + "a gentler interviewer, and more time at the end for your questions."
+            + _listed(
+                [
+                    *(["one part less"] if dropped is not None else []),
+                    *(["a gentler interviewer"] if gentler is not None else []),
+                    "more time at the end for your questions",
+                ]
+            )
+            + "."
         ),
         live_note="Adjusting the plan — a slightly different shape for the rest of the session.",
     )
