@@ -1003,6 +1003,36 @@ stream the script controls.
   joining line, not an opening (`fbc0fa4`); what the student heard of a line
   they cut in on (`7b67a60`).
 
+- ✅ **"No, that's all from me. Thank you." is nothing to ask** (`2b6fec0`).
+  Two live runs filed it as the student's question for the panel ("That's
+  one to ask the real panel"): the closing matched a phrase list and "from
+  me" was not on it. Now an answer with no question mark made only of closing
+  talk, in any order, says nothing to ask.
+- ✅ **"Did you say quick sort or quick select?"** (M11's FR-11.16, `28fdc2e`,
+  `clarify.py`). A word the recogniser was unsure of, near a term that decides
+  the answer, is asked about before anything is judged — once a question,
+  three a session. The decisive terms are the question's own (key points,
+  each rung's expected points, label, stem); never asked when what was heard
+  is one of them, or the same word with an ending. The reply is judged with
+  the answer it clarifies, and M13 and M04 get both together, the unsure
+  words still unquotable.
+- ✅ **A question spoken over from its start is put again** (M11's EC-11.1,
+  `28fdc2e`): an answer given before most of the question was heard is not
+  judged against it. The room yields aside ("Sorry — go ahead.").
+- ✅ **Thinking while the student pauses, strictly** (M11's FR-11.6,
+  `8152191`, `prefill.py`). The user's rule: *"the reply should be based on
+  what the answer is, not assume what he/she is gonna say"*. A prefill runs
+  the step in memory on what has been said so far and keeps each model answer
+  by its exact request; the real step uses one only for a byte-identical
+  request — exact words, same state. Pinned: no second model call, and the
+  same line as without a prefill; one word more and the model is asked.
+- ✅ **A phone call takes the microphone** (M11's EC-11.12, `7846920`): the
+  clock stops as for a lost connection; no pause spent, no reconnect counted;
+  the room counts five seconds back in and asks the question again.
+- ✅ **The room on Core v0.25.0** (`364bef9`): prefill at pauses, captions
+  from M11 where the browser has none, offline answers kept and sent when the
+  network is back, a Bluetooth note.
+
 ### What is left — and whose it is
 
 **Waiting on another module:**
