@@ -54,7 +54,7 @@ from .llm import LLM, LLMResult, get_llm
 from .models import InterviewSession, LLMCall, SessionEvent
 from .modes import mode_config
 from .orchestration import Deps, Selected, StepInput, StepResult, build, enabled, run_step
-from .orchestration.graph import MIN_SECONDS_FOR_A_QUESTION
+from .orchestration.graph import MIN_SECONDS_FOR_A_QUESTION, UNJUDGED
 from .personas import Persona, persona
 from .state import InvalidTransition, SessionState
 
@@ -1044,9 +1044,10 @@ class Engine:
 
         if answer_turn is not None and recorded is None and result.outcome is not None:
             self._record_decision(row, state, answer_turn, item, result)
-            # Words the recogniser could not make out are not an answer to
-            # score: the one said again is (M11's FR-11.16).
-            if result.outcome.move.kind != "didnt_catch":
+            # Words the recogniser could not make out, a word it was unsure
+            # of, an answer to a question never heard: asked about, not scored
+            # — the answer that follows is (M11's FR-11.16, EC-11.1).
+            if result.outcome.move.kind not in UNJUDGED:
                 self._owe(row, answer_turn, item)
         if result.offer_retry:
             self._offer_retry(row, result)

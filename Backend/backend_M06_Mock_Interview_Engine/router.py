@@ -576,6 +576,9 @@ def persona_cards() -> list[dict]:
             # M11's EC-11.9: an answer the recogniser heard as speech but could
             # not write down is asked for again, in the asker's own words.
             "didnt_catch": p.said().didnt_catch,
+            # M11's EC-11.1: said aside as the interviewer yields to a student
+            # who started speaking over the start of a line.
+            "go_ahead": p.said().go_ahead,
         }
         for p in personas().values()
         for card in (p.card(),)

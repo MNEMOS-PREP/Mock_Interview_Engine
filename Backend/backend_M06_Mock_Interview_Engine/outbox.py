@@ -61,6 +61,7 @@ from ai_core.timeutil import utcnow
 from sqlmodel import Session, select
 
 from .adapters import Upstreams, UpstreamUnavailable
+from .clarify import scored
 from .contracts import SessionKind
 from .items import Item
 from .models import ArtifactOutbox, EvaluationOutbox, InterviewSession, LedgerOutbox
@@ -120,19 +121,21 @@ EVALUATION_KEYS = frozenset(
 
 def evaluation_request(state: SessionState, turn, ensemble: str) -> dict:
     """What M13's `EvaluateRequest` accepts, and nothing more."""
+    # A reply to "did you say …?" is scored with the answer it clarifies.
+    text, uncitable = scored(state, turn)
     return {
         "turn_id": str(turn.turn_id),
         "session_id": str(state.session_id),
         "candidate_id": str(state.candidate_id),
         "question_id": str(turn.question_id) if turn.question_id else None,
-        "answer_text": turn.text,
+        "answer_text": text,
         "hint_level_used": turn.hint_level_used,
         "consent_id": str(state.flags.consent_id) if state.flags.consent_id else None,
         "round_type": turn.rubric_round_type,
         "ensemble": ensemble,
         # M11's FR-11.15: words the recogniser was unsure of — scored, never
         # quoted back as what the student said.
-        **({"uncitable": [list(r) for r in turn.unsure]} if getattr(turn, "unsure", None) else {}),
+        **({"uncitable": [list(r) for r in uncitable]} if uncitable else {}),
     }
 
 
@@ -181,7 +184,8 @@ def artifact_request(state: SessionState, turn) -> dict:
         "session_id": str(state.session_id),
         "turn_id": str(turn.turn_id),
         "artifact_type": "transcript",
-        "content": turn.text,
+        # What M13 is sent to score — M04 resolves its quotes against it.
+        "content": scored(state, turn)[0],
     }
 
 

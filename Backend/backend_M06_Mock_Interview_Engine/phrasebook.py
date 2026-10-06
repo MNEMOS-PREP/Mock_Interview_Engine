@@ -124,6 +124,18 @@ class Lines:
     #: The closing of a panel: "we" and "us", not "I" and "me".
     panel_to_closing: str
     panel_to_closing_early: str
+    # ── spoken answers (M11) ─────────────────────────────────────────────
+    #: EC-11.1: the student spoke before hearing the question; it is put
+    #: again, after this.
+    reoffer: str
+    #: FR-11.16, §6.8: a word the recogniser was unsure of, near a term that
+    #: decides the answer — what was heard, and the term it may have been…
+    clarify_term: str
+    #: …or only the term, when what was heard is not words to say back.
+    clarify_term_one: str
+    #: Said aside, not on the record, when the student starts speaking over
+    #: the start of a line: the interviewer yields.
+    go_ahead: str
 
 
 LINES: dict[Register, Lines] = {
@@ -182,6 +194,10 @@ LINES: dict[Register, Lines] = {
         panel_to_closing_early=(
             "We're close to time, so let's stop there. Anything you'd like to ask us?"
         ),
+        reoffer="Thanks — let me put my question again.",
+        clarify_term="Sorry — did you say {heard} or {term}?",
+        clarify_term_one="Sorry — did you say {term}?",
+        go_ahead="Sorry — go ahead.",
     ),
     "neutral": Lines(
         greeting="Hello. Let's begin.",
@@ -233,6 +249,10 @@ LINES: dict[Register, Lines] = {
         panel_to_closing_early=(
             "We're close to time, so we'll stop there. Do you have any questions for us?"
         ),
+        reoffer="Let me ask that again.",
+        clarify_term="Sorry, did you say {heard} or {term}?",
+        clarify_term_one="Sorry, did you say {term}?",
+        go_ahead="Go ahead.",
     ),
     "bar_raiser": Lines(
         greeting="Let's get started.",
@@ -283,6 +303,10 @@ LINES: dict[Register, Lines] = {
         interject="Let me come in here.",
         panel_to_closing="That's our questions. Yours?",
         panel_to_closing_early="Close to time. Your questions?",
+        reoffer="The question again.",
+        clarify_term="{heard} or {term}?",
+        clarify_term_one="Did you say {term}?",
+        go_ahead="Go on.",
     ),
 }
 

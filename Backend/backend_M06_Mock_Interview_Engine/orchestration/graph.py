@@ -52,6 +52,7 @@ from .. import panel as seating
 from ..agents.guard import AnswerScreen, SafetyGuard, neutralise, rule_screen
 from ..agents.interviewer import Interviewer, Utterance
 from ..agents.strategist import ProbeStrategist
+from ..clarify import clarified, question_unheard, unsure_term
 from ..contracts import Move, ProbeLadderState, StrategistVerdict
 from ..items import Item
 from ..ladder import LadderConfig, Outcome, decide
@@ -160,8 +161,17 @@ PROBE_MOVES = frozenset(
         "steelman",
         "redirect_conduct",
         "didnt_catch",
+        "clarify_term",
+        "reoffer",
     }
 )
+
+#: Moves that ask about an answer instead of judging it: no verdict, nothing
+#: owed to M13 for the answer they asked about.
+UNJUDGED = frozenset({"didnt_catch", "clarify_term", "reoffer"})
+
+#: Spec §6.8: "max 3 per session — beyond that it's annoying".
+MAX_CLARIFY_PER_SESSION = 3
 
 #: M11's FR-11.16: below this the recogniser could not make the answer out.
 #: Whisper's mean exp(log-probability) over clean speech sits around 0.6–0.9;
@@ -507,6 +517,52 @@ def _not_caught(state: SessionState) -> bool:
     return state.ladder is None or "didnt_catch" not in state.ladder.moves
 
 
+def _answered(state: SessionState) -> Any | None:
+    """The interviewer's line the last answer replied to."""
+    if not state.transcript or state.transcript[-1].role != "candidate":
+        return None
+    return next((t for t in reversed(state.transcript[:-1]) if t.role == "interviewer"), None)
+
+
+def _unheard(state: SessionState) -> bool:
+    """M11's EC-11.1: the question the student answered was barely heard,
+    and this question has not been put again yet."""
+    if state.ladder is not None and "reoffer" in state.ladder.moves:
+        return False
+    return question_unheard(_answered(state))
+
+
+def _term_to_check(state: SessionState, item: Item | None) -> tuple[str, str] | None:
+    """M11's FR-11.16: (what was heard, the term it may have been) — when
+    the recogniser was unsure of a word near one that decides the answer."""
+    last = state.transcript[-1] if state.transcript else None
+    if item is None or last is None or last.role != "candidate" or not last.unsure:
+        return None
+    if last.asr_confidence is not None and last.asr_confidence < NOT_CAUGHT_BELOW:
+        return None  # nothing was made out: "didn't catch that" instead
+    if state.ladder is not None and "clarify_term" in state.ladder.moves:
+        return None  # once a question
+    answered = _answered(state)
+    if answered is not None and answered.probe_move == "clarify_term":
+        return None  # never clarify a clarification
+    asked = sum(
+        1 for t in state.transcript if t.role == "interviewer" and t.probe_move == "clarify_term"
+    )
+    if asked >= MAX_CLARIFY_PER_SESSION:
+        return None
+    return unsure_term(last.text, last.unsure, item)
+
+
+def _answer_given(state: SessionState, answer: str) -> str:
+    """The answer as given: a reply to "did you say …?" with the answer it
+    clarifies, that answer first."""
+    last = state.transcript[-1] if state.transcript else None
+    if last is None or last.role != "candidate":
+        return answer
+    original = clarified(state, last)
+    return f"{original.text}\n{answer}" if original is not None else answer
+
+
 def build(deps: Deps):
     def entry(s: StepState) -> str | list[str]:
         inp = s["inp"]
@@ -515,9 +571,15 @@ def build(deps: Deps):
         if inp.answer is not None and inp.item is not None and inp.item.source == "closing":
             # FR-6.21: the student's question for us is not an answer to judge.
             return "closing_reply"
+        if inp.answer is not None and _unheard(inp.state):
+            # They spoke before hearing the question: it is put again (EC-11.1).
+            return "reoffer"
         if inp.answer is not None and _not_caught(inp.state):
             # Words nobody could make out are not judged: heard again first.
             return "not_caught"
+        if inp.answer is not None and _term_to_check(inp.state, inp.item) is not None:
+            # "Did you say quick sort or quick select?" (FR-11.16, §6.8).
+            return "clarify_term"
         if inp.answer is not None:
             # Fan out: the strategist judges while the guard screens.
             return ["strategist", "guard"]
@@ -530,7 +592,8 @@ def build(deps: Deps):
         # EC-6.6: what reads as an instruction to the system is set aside
         # before the strategist sees the answer. The rule half only — it is
         # the half that can say WHERE; the model half runs beside this.
-        answer = neutralise(inp.answer, rule_screen(inp.answer).spans)
+        given = _answer_given(inp.state, inp.answer)
+        answer = neutralise(given, rule_screen(given).spans)
         # The question WITHOUT the words that introduced it — §6.7's promise:
         # "the persona never changes the standard". The rendered turn carries
         # the register's lead ("Hello. Let's begin. First question." against a
@@ -575,6 +638,14 @@ def build(deps: Deps):
         """M11's FR-11.16: ask to hear it again — no verdict, no depth."""
         return {"outcome": Outcome(move=Move(kind="didnt_catch"), success=None)}
 
+    def reoffer(s: StepState) -> dict[str, Any]:
+        """M11's EC-11.1: put the question again — no verdict, no depth."""
+        return {"outcome": Outcome(move=Move(kind="reoffer"), success=None)}
+
+    def clarify_term(s: StepState) -> dict[str, Any]:
+        """M11's FR-11.16: ask which word was meant — no verdict, no depth."""
+        return {"outcome": Outcome(move=Move(kind="clarify_term"), success=None)}
+
     def replay_decision(s: StepState) -> dict[str, Any]:
         out: dict[str, Any] = {"outcome": s["inp"].recorded}
         if s["inp"].recorded is not None and s["inp"].recorded.move.kind == "end_session":
@@ -601,9 +672,12 @@ def build(deps: Deps):
         lines = persona.said()
         seated = deps.panel_for(inp.state)
         repeat_q = _question_to_repeat(inp.state)
-        last_answer = next(
-            (t.text for t in reversed(inp.state.transcript) if t.role == "candidate"),
-            inp.answer or "",
+        last_answer = _answer_given(
+            inp.state,
+            next(
+                (t.text for t in reversed(inp.state.transcript) if t.role == "candidate"),
+                inp.answer or "",
+            ),
         )
         out: dict[str, Any] = {"item": item, "new_question": False}
         # One "keep it moving" per round, and only before a follow-up or a
@@ -657,6 +731,20 @@ def build(deps: Deps):
             utterance = Utterance(lines.clarify, "template")
         elif move.kind == "didnt_catch":
             utterance = Utterance(lines.didnt_catch, "template", question=repeat_q)
+        elif move.kind == "reoffer":
+            utterance = Utterance(f"{lines.reoffer} {repeat_q}", "template", question=repeat_q)
+        elif move.kind == "clarify_term":
+            found = _term_to_check(inp.state, item)
+            if found is None:  # a replay of a decision whose answer has changed
+                utterance = Utterance(lines.didnt_catch, "template", question=repeat_q)
+            else:
+                heard, term = found
+                said = (
+                    lines.clarify_term.format(heard=heard, term=term)
+                    if re.fullmatch(r"[A-Za-z' -]+", heard)
+                    else lines.clarify_term_one.format(term=term)
+                )
+                utterance = Utterance(said, "template", question=repeat_q)
         elif move.kind == "redirect_once":
             utterance = Utterance(f"{lines.redirect} {repeat_q}", "template", question=repeat_q)
         elif move.kind == "answer_briefly":
@@ -895,6 +983,8 @@ def build(deps: Deps):
     graph.add_node("decide", decide_node)
     graph.add_node("replay_decision", replay_decision)
     graph.add_node("not_caught", not_caught)
+    graph.add_node("reoffer", reoffer)
+    graph.add_node("clarify_term", clarify_term)
     graph.add_node("probe", probe)
     graph.add_node("offer_retry", offer_retry)
     graph.add_node("select", select)
@@ -904,12 +994,21 @@ def build(deps: Deps):
     graph.add_conditional_edges(
         START,
         entry,
-        ["strategist", "guard", "replay_decision", "select", "closing_reply", "not_caught"],
+        [
+            "strategist",
+            "guard",
+            "replay_decision",
+            "select",
+            "closing_reply",
+            "not_caught",
+            "reoffer",
+            "clarify_term",
+        ],
     )
     graph.add_edge("closing_reply", END)
     # The join: decide runs once, after BOTH the strategist and the guard.
     graph.add_edge(["strategist", "guard"], "decide")
-    for node in ("decide", "replay_decision", "not_caught"):
+    for node in ("decide", "replay_decision", "not_caught", "reoffer", "clarify_term"):
         graph.add_conditional_edges(
             node,
             after_decide,

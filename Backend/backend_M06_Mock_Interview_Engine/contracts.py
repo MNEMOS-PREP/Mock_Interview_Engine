@@ -223,6 +223,14 @@ MoveKind = Literal[
     #: M11's FR-11.16: the recogniser was unsure of a spoken answer, so the
     #: interviewer asks to hear it again — once a question, and never judged.
     "didnt_catch",
+    #: M11's FR-11.16, spec §6.8: a word the recogniser was unsure of, near a
+    #: term that decides the answer — "did you say quick sort or quick
+    #: select?". Once a question, three a session; the reply is judged with
+    #: the answer it clarifies (`clarify.py`).
+    "clarify_term",
+    #: M11's EC-11.1: the student spoke before hearing most of the question,
+    #: so it is put again, and what they said is not judged against it.
+    "reoffer",
 ]
 
 
