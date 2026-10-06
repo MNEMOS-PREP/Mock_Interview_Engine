@@ -786,6 +786,12 @@ def build(deps: Deps):
         item = s["item"]
         assert item is not None
         before, lead, nudged = lead_for(s)
+        # M05 §6.8: a question from the student's history, asked again because
+        # the bank ran thin, is announced — "a silent repeat is the failure;
+        # an announced one is a re-test the student can reason about".
+        disclosure = ((s.get("selection") or {}).get("disclosure") or "").strip()
+        if disclosure:
+            lead = f"{lead} {disclosure}".strip()
         asker = s.get("persona") or deps.persona_for(s["inp"].state)
         asked = deps.interviewer.open_question(item, lead=lead)
         utterance = _voiced(asked, [*before, (asker.id, asked.text)])

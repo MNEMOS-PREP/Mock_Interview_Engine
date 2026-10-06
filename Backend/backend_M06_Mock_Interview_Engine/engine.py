@@ -2209,7 +2209,15 @@ class Engine:
         up = self.upstreams
         round_type = self._round_type(state)
         segment = self.segment(state)
-        seen = store.seen_item_ids(self.db, row.candidate_id, now=now)
+        # M05 §6.6 has two filters, and they are not the same thing. Asked in
+        # THIS interview is never asked again — the hard one. Asked in the
+        # student's recent history is freshness, which M05 may relax when the
+        # bank runs thin, and then says so. Until 2026-10-06 both carried the
+        # history: for a student who had seen the bank, relaxing could not
+        # help, M05 fell to its playlist, and a live run heard the same
+        # question at the warm-up and at the next two rounds.
+        asked_here = {str(t.question_id) for t in state.transcript if t.question_id is not None}
+        recent = {str(i) for i in store.seen_item_ids(self.db, row.candidate_id, now=now)}
         request = {
             "candidate_id": str(row.candidate_id),
             "session_id": str(row.id),
@@ -2222,8 +2230,8 @@ class Engine:
             "required_requirement_ids": list(segment.requirement_ids) if segment else [],
             # In memory only — see ThetaCache.
             "theta_provisional": self.thetas.get(row.id),
-            "seen_item_ids": sorted(str(i) for i in seen),
-            "recent_item_ids": sorted(str(i) for i in seen),
+            "seen_item_ids": sorted(asked_here),
+            "recent_item_ids": sorted(recent | asked_here),
             "time_remaining_s": int(state.time_remaining_s(now)),
             "is_first_of_round": state.questions_asked == 0,
             "round_progress": min(state.questions_asked / question_budget(state), 1.0),
@@ -2235,10 +2243,14 @@ class Engine:
                 chosen = up.m05.select(request)
                 if chosen is None:
                     return Selected(None, empty_reason="bank_exhausted")
-                question = up.m05.question(uuid.UUID(str(chosen["question_id"])))
-                source = "m05_fallback" if chosen.get("reason") == "fallback" else "m05_bank"
-                item = from_m05(question, round_type=chosen["round_type"], source=source)
-                return Selected(item, chosen)
+                if str(chosen["question_id"]) not in asked_here:
+                    question = up.m05.question(uuid.UUID(str(chosen["question_id"])))
+                    source = "m05_fallback" if chosen.get("reason") == "fallback" else "m05_bank"
+                    item = from_m05(question, round_type=chosen["round_type"], source=source)
+                    return Selected(item, chosen)
+                # A question this interview has already asked: never again,
+                # whoever offers it. M06's own playlist below, or the round ends.
+                log.info("M06: M05 offered %s again in %s", chosen["question_id"], row.id)
             except UpstreamUnavailable as exc:
                 log.info("M06: M05 selection failed for %s: %s", row.id, exc)
                 degraded["M05"] = up.on_missing("M05")
@@ -2246,7 +2258,6 @@ class Engine:
             degraded["M05"] = up.on_missing("M05")
 
         # §10: M06's own playlist. Never repeats within this session.
-        asked_here = {str(t.question_id) for t in state.transcript if t.question_id is not None}
         local_request = {**request, "seen_item_ids": sorted(asked_here)}
         chosen = up.local_questions.select(local_request)
         if chosen is None:

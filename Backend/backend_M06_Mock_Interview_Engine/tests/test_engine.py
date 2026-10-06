@@ -234,7 +234,11 @@ def test_selection_carries_theta_and_what_was_already_asked(db):
     assert request["session_id"] == str(second.id)
     assert request["is_first_of_round"] is True
     asked_before = engine.state(first.id).transcript[0].question_id
-    assert str(asked_before) in request["seen_item_ids"]
+    # Asked in an EARLIER interview: freshness, which M05 may relax and
+    # announce — not the hard "never", which is this interview's own
+    # questions (M05 §6.6; `test_no_repeats.py`).
+    assert str(asked_before) in request["recent_item_ids"]
+    assert str(asked_before) not in request["seen_item_ids"]
     assert "theta_provisional" in request
 
 

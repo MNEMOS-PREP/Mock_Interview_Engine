@@ -213,6 +213,7 @@ def test_the_persona_list_carries_each_voice_and_its_opening_line():
     for pid, p in personas().items():
         assert cards[pid]["voice_id"] == p.voice_id
         assert cards[pid]["greeting"] == p.said().greeting
+        assert cards[pid]["didnt_catch"] == p.said().didnt_catch
         assert "max_depth" not in cards[pid] and "follow_up_aggression" not in cards[pid]
 
 

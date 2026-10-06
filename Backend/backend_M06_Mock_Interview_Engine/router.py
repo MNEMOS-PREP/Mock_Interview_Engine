@@ -569,6 +569,9 @@ def persona_cards() -> list[dict]:
                 )
             },
             "greeting": p.said().greeting,
+            # M11's EC-11.9: an answer the recogniser heard as speech but could
+            # not write down is asked for again, in the asker's own words.
+            "didnt_catch": p.said().didnt_catch,
         }
         for p in personas().values()
         for card in (p.card(),)
