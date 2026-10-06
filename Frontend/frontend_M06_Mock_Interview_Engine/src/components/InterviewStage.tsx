@@ -41,6 +41,10 @@
  * the mic open and start speaking at any time — over the interviewer too,
  * who stops (barge-in, spec §6.5; Final Boss finishes up to 1.5 s first, once
  * a round) — and their words land in the box. Off unless they turn it on.
+ * Where M11 can transcribe (day 4), the words in the box are its recogniser's
+ * — Whisper, with the question as its prompt, so "Dijkstra" is Dijkstra — and
+ * the browser's own recognition is the live caption while they speak; where
+ * it cannot, the browser's words go in the box as before.
  */
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -51,6 +55,8 @@ import {
   ErrorNote,
   Icon,
   Skeleton,
+  serverAsrAvailable,
+  transcribeOnServer,
   useInterviewerVoice,
   useListening,
   type InterviewerVoice,
@@ -683,10 +689,20 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const [draft, setDraft] = useState("");
   const [codeMode, setCodeMode] = useState(false);
   const [spoken, setSpoken] = useState("");
+  /** Words into the answer box, after whatever is there. */
+  const append = (words: string) => {
+    if (!words) return;
+    setDraft((current) => (current.trim() ? `${current.trimEnd()} ${words}` : words));
+    setSpoken((current) => `${current} ${words}`);
+  };
+  // Day 4: while M11's recogniser writes the box, the browser's phrases are
+  // held here — the fallback if the recogniser cannot answer.
+  const serverWrites = useRef(false);
+  const held = useRef<string[]>([]);
   const dictation = useDictation((phrase) => {
     if (!phrase) return;
-    setDraft((current) => (current.trim() ? `${current.trimEnd()} ${phrase}` : phrase));
-    setSpoken((current) => `${current} ${phrase}`);
+    if (serverWrites.current) held.current.push(phrase);
+    else append(phrase);
   });
   const [preview, setPreview] = useState("");
   const [thinking, setThinking] = useState(false);
@@ -746,10 +762,43 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   };
   // Final Boss contests a barge-in once a round (§6.5); these rounds have.
   const contested = useRef(new Set<number>());
+  // Day 4: M11's recogniser, if it can run. Asked when talking freely starts.
+  const [serverAsr, setServerAsr] = useState(false);
+  useEffect(() => {
+    if (talkFreely) void serverAsrAvailable().then(setServerAsr);
+  }, [talkFreely]);
+  serverWrites.current = talkFreely && serverAsr;
+  /** When the student's current stretch of speech began, if they are speaking. */
+  const stretch = useRef<number | null>(null);
+  /** Stretches being written down: the answer waits for them. */
+  const [writing, setWriting] = useState(0);
   const listening = useListening({
     enabled: talkFreely && data?.status === "live",
+    keepAudio: true,
     playing: voice.isSpeaking,
+    onSpeechEnd: (endedAt) => {
+      const began = stretch.current;
+      stretch.current = null;
+      if (began === null || !serverWrites.current) return;
+      // A little before the detector decided (the first word) and after.
+      const audio = listening.audioBetween(began - 300, endedAt + 250);
+      const fallback = () => {
+        append(held.current.join(" "));
+        held.current = [];
+      };
+      if (!audio) return fallback();
+      const asked = [...(data?.transcript ?? [])].reverse().find((turn) => turn.role === "interviewer");
+      setWriting((n) => n + 1);
+      transcribeOnServer(audio, asked?.question_text ?? asked?.text)
+        .then((heard) => {
+          held.current = [];
+          append(heard.text.trim());
+        })
+        .catch(fallback)
+        .finally(() => setWriting((n) => Math.max(0, n - 1)));
+    },
     onSpeechStart: (startedAt) => {
+      stretch.current = startedAt;
       if (!data) return;
       const round = data.current_segment;
       const contest = data.mode === "final_boss" && !contested.current.has(round);
@@ -976,7 +1025,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
 
   function submit() {
     const typed = draft.trim();
-    if (!typed || !data?.open_turn_id) return;
+    if (!typed || !data?.open_turn_id || writing > 0) return;
     voice.stop("send");
     voice.mark("answer_sent");
     if (dictation.listening) dictation.stop();
@@ -1306,7 +1355,9 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     aria-pressed={talkFreely}
                     title={
                       talkFreely
-                        ? "The mic stays open: start speaking any time, even over the interviewer, and your words go in the box. Headphones keep their voice out of your mic."
+                        ? `The mic stays open: start speaking any time, even over the interviewer, and your words go in the box.${
+                            serverAsr ? " They are written down by the voice service's recogniser; the audio is not kept." : ""
+                          } Headphones keep their voice out of your mic.`
                         : "Keep the mic open, so you can start speaking any time — even over the interviewer"
                     }
                     className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-2xs font-medium ${
@@ -1385,8 +1436,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                   Ctrl / ⌘ + Enter
                 </span>
                 <span className="ml-auto xl:ml-0">
-                  <Button type="submit" disabled={!canAnswer || !draft.trim()}>
-                    {data.in_closing ? "Ask" : "Answer"} →
+                  <Button type="submit" disabled={!canAnswer || !draft.trim() || writing > 0}>
+                    {writing > 0 ? "Writing it down…" : `${data.in_closing ? "Ask" : "Answer"} →`}
                   </Button>
                 </span>
               </div>

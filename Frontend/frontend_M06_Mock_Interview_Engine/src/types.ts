@@ -15,6 +15,9 @@ export interface TurnView {
   segment_index: number;
   role: "interviewer" | "candidate" | "system";
   text: string;
+  /** Interviewer turns: the question alone, without the words that led into
+   *  it — what a repeat says, and the recogniser's prompt (M11 day 4). */
+  question_text?: string | null;
   modality: string;
   question_id: string | null;
   question_source: string | null;
