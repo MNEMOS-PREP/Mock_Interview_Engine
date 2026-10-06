@@ -221,7 +221,12 @@ export function useAnswer(id: string) {
       question_turn_id: string;
       text: string;
       /** A spoken answer, as M11's recogniser heard it (FR-11.15, FR-11.16). */
-      asr?: { mean_confidence: number; unsure: [number, number][]; model?: string | null };
+      asr?: {
+        mean_confidence: number;
+        unsure: [number, number][];
+        model?: string | null;
+        language?: string | null;
+      };
     }) => api.post<Session>(`/v1/interviews/${id}/answer`, body),
     onSuccess: write,
   });

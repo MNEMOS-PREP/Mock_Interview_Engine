@@ -41,6 +41,8 @@ export interface TurnView {
    *  character ranges of `text` it was unsure of — never quoted back. */
   asr_confidence?: number | null;
   unsure?: [number, number][];
+  /** The language the recogniser heard (M11's FR-11.22), lower case. */
+  language?: string | null;
   at: string;
 }
 

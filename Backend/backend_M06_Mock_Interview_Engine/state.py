@@ -355,6 +355,7 @@ def _answer_received(s: SessionState, p: dict, at: datetime) -> None:
             retry=asked.retry if asked else False,
             asr_confidence=(p.get("asr") or {}).get("mean_confidence"),
             unsure=[tuple(r) for r in (p.get("asr") or {}).get("unsure") or []],
+            language=(p.get("asr") or {}).get("language"),
             at=at,
         )
     )

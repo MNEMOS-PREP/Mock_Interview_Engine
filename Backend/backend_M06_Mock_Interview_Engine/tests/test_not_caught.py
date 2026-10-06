@@ -111,3 +111,23 @@ def test_m13_is_told_which_words_not_to_quote(db):
         state, [t for t in state.transcript if t.role == "interviewer"][0], "n1"
     )
     assert "uncitable" not in typed
+
+
+def test_an_answer_in_hindi_is_kept_as_said_and_noted_never_penalised(db):
+    """M11's FR-11.22 and EC-11.10: the recogniser names the language it heard;
+    the turn keeps it, M13's own rule scores content never language, and the
+    notes say so once."""
+    from datetime import UTC, datetime
+
+    from backend_M06_Mock_Interview_Engine import report as report_module
+
+    engine, row = live(db)
+    hindi = {**SURE, "language": "hindi"}
+    state = answer(engine, row, "हैश मैप की को एक बकेट में रखता है", asr=hindi)
+    said = [t for t in state.transcript if t.role == "candidate"][-1]
+    assert said.language == "hindi"
+    report = report_module.build(
+        engine.state(row.id), store.events_for(db, row.id), datetime.now(UTC)
+    )
+    assert any("partly in Hindi" in note for note in report.notes)
+    assert all("penal" not in note or "never" in note for note in report.notes)

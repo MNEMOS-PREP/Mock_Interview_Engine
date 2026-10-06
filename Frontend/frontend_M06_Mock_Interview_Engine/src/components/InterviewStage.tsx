@@ -1009,6 +1009,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
           mean_confidence: turn.asr.mean_confidence,
           unsure: unsureRanges(turn.asr, full.length - turn.text.length),
           model: turn.asr.model,
+          language: turn.asr.language,
         }
       : undefined;
     const audio = turn.audio ? { audio: turn.audio, startedAt: turn.startedAt, endedAt: turn.endedAt } : undefined;
@@ -1366,7 +1367,12 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   function submit(
     spoken?: string,
     speechEndedAt?: number,
-    asr?: { mean_confidence: number; unsure: [number, number][]; model?: string | null },
+    asr?: {
+      mean_confidence: number;
+      unsure: [number, number][];
+      model?: string | null;
+      language?: string | null;
+    },
     audio?: { audio: Blob; startedAt: number; endedAt: number },
   ) {
     const typed = (spoken ?? draft).trim();

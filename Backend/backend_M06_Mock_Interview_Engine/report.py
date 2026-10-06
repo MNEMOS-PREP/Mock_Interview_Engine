@@ -291,6 +291,20 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
         )
     if any(q.retried for q in questions):
         notes.append("Where you took another go, the first attempt is the one that was scored.")
+    spoken_in = sorted(
+        {
+            t.language
+            for t in state.transcript
+            if t.role == "candidate" and t.language and t.language != "english"
+        }
+    )
+    if spoken_in:
+        # M11's EC-11.10: noted, never penalised.
+        names = " and ".join(language.capitalize() for language in spoken_in)
+        notes.append(
+            f"You answered partly in {names}. It was written down as you said it and "
+            "scored on what you said — never on the language."
+        )
     if state.flags.inputs_flagged:
         # EC-6.6. Said once, plainly: part of an answer read as instructions
         # to the system, so it was set aside rather than judged.

@@ -339,6 +339,8 @@ class TurnView(BaseModel):
     #: must not be quoted back as what the student said (FR-11.15).
     asr_confidence: float | None = None
     unsure: list[tuple[int, int]] = Field(default_factory=list)
+    #: The language the recogniser heard it in (FR-11.22), lower case.
+    language: str | None = None
     at: datetime
 
 

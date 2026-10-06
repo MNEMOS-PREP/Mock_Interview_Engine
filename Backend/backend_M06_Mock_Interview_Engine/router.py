@@ -172,6 +172,10 @@ class AsrNote(BaseModel):
     #: Character ranges of the answer's text it was unsure of.
     unsure: list[tuple[int, int]] = Field(default_factory=list, max_length=40)
     model: str | None = Field(default=None, max_length=60)
+    #: The language it heard ("english", "hindi"…) — M11's FR-11.22: an
+    #: answer in Hindi is written as said and scored on content, never on
+    #: language (M13's rule 4).
+    language: str | None = Field(default=None, max_length=24)
 
 
 class AnswerIn(BaseModel):
