@@ -74,6 +74,7 @@ import {
   useFlag,
   useHint,
   useIdle,
+  useHeard,
   useMoveOn,
   usePause,
   usePersonas,
@@ -480,6 +481,25 @@ function Said({
   );
 }
 
+/** A part of an interviewer line, with what the student did not hear — they
+ *  started speaking over it (M11's FR-11.9) — dimmed. The line stays whole:
+ *  it is what was said. */
+function HeardText({ text, index, turn }: { text: string; index: number; turn: TurnView }) {
+  if (turn.heard === null || turn.heard === undefined) return <>{text}</>;
+  const cutPart = turn.heard_part ?? 0;
+  if (index < cutPart) return <>{text}</>;
+  let upto = index > cutPart ? 0 : Math.round(text.length * turn.heard);
+  // A word half-said is not heard.
+  if (upto > 0 && upto < text.length && text[upto] !== " ") upto = Math.max(0, text.lastIndexOf(" ", upto));
+  return (
+    <>
+      {text.slice(0, upto)}
+      {index === cutPart && <span className="text-2xs text-ink-faint" title="You started speaking here"> ⟨you came in⟩ </span>}
+      <span className="text-ink-faint">{text.slice(upto)}</span>
+    </>
+  );
+}
+
 /** An interviewer line as its voices said it: each part with its speaker. */
 function partsOf(turn: TurnView, fallback: string | null): TurnPart[] {
   if (turn.parts && turn.parts.length > 0) return turn.parts;
@@ -529,7 +549,7 @@ function Turn({
           speaking={speakingPart === partKey(turn, index)}
           mouth={mouth}
         >
-          {part.text}
+          <HeardText text={part.text} index={index} turn={turn} />
         </Said>
       ))}
     </div>
@@ -681,6 +701,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const moveOn = useMoveOn(sessionId);
   const idle = useIdle(sessionId);
   const repeat = useRepeat(sessionId);
+  const heardLine = useHeard(sessionId);
   const flag = useFlag(sessionId);
   const [repeated, setRepeated] = useState<string | null>(null);
   const [flagging, setFlagging] = useState(false);
@@ -803,7 +824,13 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
       if (!data) return;
       const round = data.current_segment;
       const contest = data.mode === "final_boss" && !contested.current.has(round);
-      if (voice.bargeIn(startedAt, { contest }) && contest) contested.current.add(round);
+      // FR-11.9: where they came in goes on the record — the part being
+      // heard (its key is "turn:part") and how far through it.
+      const onCut = (cut: { key: string; partId: string | null; heard: number }) => {
+        const [turnId, part] = (cut.partId ?? `${cut.key}:0`).split(":");
+        heardLine.mutate({ turn_id: turnId!, part_index: Number(part ?? 0) || 0, heard: cut.heard });
+      };
+      if (voice.bargeIn(startedAt, { contest, onCut }) && contest) contested.current.add(round);
       // Their words go in the box, as if they had pressed the mic.
       const open = data.status === "live" && Boolean(data.open_turn_id) && !waiting;
       if (open && !codeMode && dictation.supported && !dictation.listening) dictation.start();

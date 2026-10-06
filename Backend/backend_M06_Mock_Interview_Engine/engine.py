@@ -1611,6 +1611,27 @@ class Engine:
         )
         return asked
 
+    def heard(
+        self, session_id: uuid.UUID, turn_id: uuid.UUID, part_index: int | None, heard: float
+    ) -> SessionState:
+        """M11's FR-11.9: the student started speaking over an interviewer line
+        — here, in this part, this far through. Recorded once per line: the
+        first cut is the one that happened."""
+        row = self.row(session_id)
+        state = self.state(session_id)
+        turn = state.turn(turn_id)
+        if turn is None or turn.role != "interviewer":
+            raise InvalidTransition("That line is not an interviewer's.")
+        store.record(
+            self.db,
+            row,
+            "turn.heard",
+            step=f"heard:{turn.turn_index}",
+            turn_index=turn.turn_index,
+            payload={"turn_id": str(turn_id), "part_index": part_index, "heard": heard},
+        )
+        return self.state(session_id)
+
     def flag(
         self, session_id: uuid.UUID, question_turn_id: uuid.UUID, reason: str, note: str
     ) -> dict[str, Any]:

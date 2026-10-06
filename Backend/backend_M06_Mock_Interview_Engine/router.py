@@ -25,7 +25,7 @@ from ai_core.dependencies import DependencyStatus
 from ai_core.guard import require_role
 from ai_core.identity import Principal, Role
 from ai_core.timeutil import utcnow
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, StringConstraints, field_validator
 from sqlmodel import Session, select
@@ -763,6 +763,33 @@ def repeat_question(session_id: uuid.UUID, engine: Engine = Depends(get_engine))
         raise HTTPException(status_code=404, detail="No such session.") from exc
     except (InvalidTransition, store.ConcurrentWrite) as exc:
         raise _conflict(exc) from exc
+
+
+class HeardIn(BaseModel):
+    """Where the student came in over an interviewer line (M11's FR-11.9)."""
+
+    turn_id: uuid.UUID
+    #: The part being heard: its index in the turn's `parts`, 0 for a line
+    #: said whole.
+    part_index: int | None = Field(default=None, ge=0, le=20)
+    #: How far through that part, 0–1.
+    heard: float = Field(ge=0.0, le=1.0)
+
+
+@router.post("/interviews/{session_id}/heard", status_code=204)
+def line_heard(
+    session_id: uuid.UUID, body: HeardIn, engine: Engine = Depends(get_engine)
+) -> Response:
+    """The voice stopped because the student started speaking: what they had
+    heard. The line stays whole; the transcript dims the rest, and the
+    interviewer reads it as far as it was heard."""
+    try:
+        engine.heard(session_id, body.turn_id, body.part_index, body.heard)
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
+    except (InvalidTransition, store.ConcurrentWrite) as exc:
+        raise _conflict(exc) from exc
+    return Response(status_code=204)
 
 
 @router.post("/interviews/{session_id}/flag", response_model=FlagOut)

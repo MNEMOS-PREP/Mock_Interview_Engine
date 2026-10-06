@@ -22,6 +22,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from .contracts import MoveKind
+from .heard import for_interviewer
 
 #: Class names a view's type graph may never reach, matched by name so the
 #: check does not need M13's or M05's types importable here.
@@ -115,7 +116,12 @@ def project_for_interviewer(
         max_words=max_words,
         segment_title=segment_title,
         round_summary=round_summary[:SUMMARY_MAX_CHARS],
-        recent_turns=[ViewTurn(role=t.role, text=t.text) for t in transcript[-6:]],
+        # A line the student cut in on reads as far as it was heard (M11's
+        # FR-11.9), so a follow-up does not assume what they never heard.
+        recent_turns=[
+            ViewTurn(role=t.role, text=for_interviewer(t) if t.role == "interviewer" else t.text)
+            for t in transcript[-6:]
+        ],
         profile_prefix=profile_prefix,
         move=move,
         ladder_depth=ladder_depth,

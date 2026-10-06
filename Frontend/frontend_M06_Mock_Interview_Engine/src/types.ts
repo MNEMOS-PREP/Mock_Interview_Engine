@@ -33,6 +33,10 @@ export interface TurnView {
   /** Interviewer turns said by more than one panelist (FR-6.3), part by
    *  part: a hand-over, the opening's hellos. Empty when one person said it. */
   parts?: TurnPart[];
+  /** M11's FR-11.9: the student started speaking over this line — the part
+   *  being heard and how far through it, 0–1. Null when heard to the end. */
+  heard_part?: number | null;
+  heard?: number | null;
   at: string;
 }
 

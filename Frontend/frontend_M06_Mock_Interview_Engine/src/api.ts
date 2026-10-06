@@ -267,6 +267,16 @@ export function useRepeat(id: string) {
   });
 }
 
+/** M11's FR-11.9: the student started speaking over an interviewer line —
+ *  here, in this part, this far through. The transcript dims the rest, and
+ *  the interviewer reads the line as far as it was heard. */
+export function useHeard(id: string) {
+  return useMutation({
+    mutationFn: (body: { turn_id: string; part_index: number | null; heard: number }) =>
+      api.post<void>(`/v1/interviews/${id}/heard`, body),
+  });
+}
+
 /** §7's ⚑ — forwarded to M05, which stops selecting the item. */
 export function useFlag(id: string) {
   return useMutation({

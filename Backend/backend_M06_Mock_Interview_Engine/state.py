@@ -615,6 +615,17 @@ def _noted(s: SessionState, _p: dict, _at: datetime) -> None:
     _require_open(s, "a note on the log")
 
 
+def _turn_heard(s: SessionState, p: dict, _at: datetime) -> None:
+    """M11's FR-11.9: where the student came in over an interviewer line.
+    An annotation, so it folds in any status — a cut can land just after the
+    session ended — and onto a turn the log does not know, nothing."""
+    turn = s.turn(UUID(str(p["turn_id"])))
+    if turn is None or turn.role != "interviewer":
+        return
+    turn.heard_part = int(p.get("part_index") or 0)
+    turn.heard = max(0.0, min(1.0, float(p.get("heard", 1.0))))
+
+
 def _step_failed(s: SessionState, _p: dict, _at: datetime) -> None:
     _require_open(s, "step.failed")
     s.flags.step_failures += 1
@@ -661,6 +672,7 @@ _REDUCERS = {
     # interview, so neither has anything to fold.
     "question.repeated": _noted,
     "question.flagged": _noted,
+    "turn.heard": _turn_heard,
     "consent.resolved": _consent,
     "evaluation.queued": _evaluation,
     "evaluation.completed": _evaluated,

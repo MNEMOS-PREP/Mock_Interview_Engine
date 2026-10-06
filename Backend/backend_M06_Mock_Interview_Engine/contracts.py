@@ -323,6 +323,11 @@ class TurnView(BaseModel):
     #: Interviewer turns: the line as each panelist said it, in order. Empty
     #: for a line one person said whole — `text` and `speaker_id` are it.
     parts: list[SpokenPart] = Field(default_factory=list)
+    #: M11's FR-11.9: the student started speaking over this line. The part
+    #: being heard (index into `parts`; 0 for a line said whole) and how far
+    #: through it, 0–1. None when it was heard to the end. `heard.py`.
+    heard_part: int | None = None
+    heard: float | None = None
     at: datetime
 
 
