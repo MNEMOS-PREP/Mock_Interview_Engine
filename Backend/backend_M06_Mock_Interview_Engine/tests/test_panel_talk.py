@@ -272,3 +272,21 @@ def test_someone_sitting_in_says_hello_and_comes_in_every_other_question(db):
     assert came_in, "the second interviewer came in"
     assert all(t.probe_depth == 2 and t.probe_move == "rung" for t in came_in)
     assert len(came_in) <= (len(asked_new) + 1) // 2
+
+
+def test_nobody_closes_a_question_the_same_way_twice_running(db):
+    """A live panel run heard the professor's own exit eight answers running
+    (2026-10-07). Consecutive exits by one interviewer now differ."""
+    # Every answer fails its first rung: a graceful exit, every time.
+    engine, row = session(db, minutes=30, llm=StubLLM([verdict(justification="failed")] * 40))
+    state = run(engine, row, "I don't know", limit=8)
+    by_speaker: dict[str, list[str]] = {}
+    for turn in asked(state):
+        said = persona(turn.speaker_id).said()
+        exits = (said.graceful_exit, said.moving_on, said.ceiling_exit)
+        used = next((e for e in exits if e and turn.text.startswith(e)), None)
+        if used:
+            by_speaker.setdefault(turn.speaker_id, []).append(used)
+    assert any(len(used) >= 3 for used in by_speaker.values()), "the run closed enough questions"
+    for speaker, used in by_speaker.items():
+        assert all(a != b for a, b in zip(used, used[1:], strict=False)), (speaker, used)

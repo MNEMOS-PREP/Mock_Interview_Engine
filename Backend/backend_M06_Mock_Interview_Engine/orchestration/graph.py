@@ -411,6 +411,29 @@ def _taken_back(state: SessionState, owner: Persona, panel: list[Persona]) -> st
     return f"{owner.said().take_over.format(name=other.name)} " if other is not None else ""
 
 
+def _fresh_exit(state: SessionState, persona: Persona, line: str) -> str:
+    """Nobody closes a question the same way every time: a live panel run
+    heard the professor say "That's where it gets subtle. Let's leave it
+    there for now." eight answers running (2026-10-07). When this interviewer
+    used `line` on their last line, another of their own authored exits is
+    said instead — each of them neutral, none a verdict."""
+    last = next(
+        (
+            t
+            for t in reversed(state.transcript)
+            if t.role == "interviewer" and t.speaker_id == persona.id
+        ),
+        None,
+    )
+    if last is None or not line or line not in last.text:
+        return line
+    said = persona.said()
+    for other in (said.moving_on, said.ceiling_exit, said.graceful_exit):
+        if other and other != line and other not in last.text:
+            return other
+    return line
+
+
 def _merge_voices(parts: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """Adjacent words by one voice are one part; empty ones are dropped."""
     out: list[tuple[str, str]] = []
@@ -710,8 +733,12 @@ def build(deps: Deps):
         elif nudge:
             exit_line = said_leaving.keep_moving
         else:
-            exit_line = Interviewer.exit_then(
-                said_leaving, graceful=graceful, ceiling=outcome.ceiling is not None
+            exit_line = _fresh_exit(
+                inp.state,
+                leaving,
+                Interviewer.exit_then(
+                    said_leaving, graceful=graceful, ceiling=outcome.ceiling is not None
+                ),
             )
             cadence = leaving.note_taking_cadence
             if (
