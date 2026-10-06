@@ -232,6 +232,16 @@ export function useAnswer(id: string) {
   });
 }
 
+/** M11's EC-11.12: the device took the microphone (a phone call), or gave
+ *  it back. The clock stops while it has it; no pause is spent. */
+export function useInterruption(id: string) {
+  const write = useSessionWriter(id);
+  return useMutation({
+    mutationFn: (away: boolean) => api.post<Session>(`/v1/interviews/${id}/interruption`, { away }),
+    onSuccess: write,
+  });
+}
+
 /** M11's FR-11.6: what the student has said so far, sent while they pause.
  *  Nothing comes back and nothing is written: M06 thinks ahead, and uses it
  *  only if the answer is these exact words. */

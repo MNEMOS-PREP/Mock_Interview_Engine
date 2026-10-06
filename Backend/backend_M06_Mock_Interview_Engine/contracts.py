@@ -374,6 +374,13 @@ class SessionFlags(BaseModel):
     #: or None while they are here. The clock does not run while it is set,
     #: and the sweeper ends a session away longer than an abandoned pause.
     away_since: datetime | None = None
+    #: Why they are away: None for a dropped connection, "interruption" when
+    #: the device took the microphone — a phone call (M11's EC-11.12). An
+    #: interruption stops the clock like a disconnect and, like one, spends
+    #: none of the student's pauses; unlike one, it is not a reconnect.
+    away_reason: str | None = None
+    #: Interruptions so far this session.
+    interruptions: int = 0
     #: §10's ladder (`degrade.py`): the interviewer's model turns failed
     #: running — a turn that made no model call says nothing either way — and
     #: when the model was last tried, which is what the panic circuit's probe

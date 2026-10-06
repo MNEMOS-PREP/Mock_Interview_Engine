@@ -521,7 +521,7 @@ def _resumed(s: SessionState, _p: dict, at: datetime) -> None:
     s.live_since = at
 
 
-def _connection_lost(s: SessionState, _p: dict, at: datetime) -> None:
+def _connection_lost(s: SessionState, p: dict, at: datetime) -> None:
     """§8: "Disconnected — timer paused". Not a pause: the student's one
     pause (FR-6.12) is theirs to spend, and losing a connection is not
     spending it."""
@@ -531,6 +531,9 @@ def _connection_lost(s: SessionState, _p: dict, at: datetime) -> None:
         raise InvalidTransition("connection.lost while already away")
     _stop_clock(s, at)
     s.flags.away_since = at
+    s.flags.away_reason = p.get("reason")
+    if s.flags.away_reason == "interruption":
+        s.flags.interruptions += 1
 
 
 def _connection_resumed(s: SessionState, p: dict, at: datetime) -> None:
@@ -540,7 +543,11 @@ def _connection_resumed(s: SessionState, p: dict, at: datetime) -> None:
     if s.flags.away_since is None:
         raise InvalidTransition("connection.resumed while not away")
     s.flags.away_since = None
-    s.flags.reconnect_count += 1
+    # A call taking the microphone is not a connection that dropped (§6.8's
+    # "> 2 reconnects" is about the network), however the student comes back.
+    if s.flags.away_reason != "interruption":
+        s.flags.reconnect_count += 1
+    s.flags.away_reason = None
     if s.status is SessionStatus.live:
         s.live_since = at + timedelta(seconds=float(p.get("grace_s") or 0.0))
 

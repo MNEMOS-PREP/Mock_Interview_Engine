@@ -1800,6 +1800,41 @@ class Engine:
             )
         return state
 
+    def interrupted(self, session_id: uuid.UUID, *, away: bool) -> SessionState:
+        """M11's EC-11.12: the device took the microphone — a phone call, most
+        often — and, later, gave it back. The clock stops as for a lost
+        connection: not a pause, which is the student's to spend. It restarts
+        on the way back with no grace; the room has already counted the
+        student back in (its five-second re-entry)."""
+        row = self.row(session_id)
+        state = self.state(session_id)
+        if state.status is not SessionStatus.live:
+            return state
+        try:
+            if away:
+                if state.flags.away_since is not None:
+                    return state  # already away: the stream went first
+                n = state.flags.interruptions + 1
+                return store.record(
+                    self.db,
+                    row,
+                    "connection.lost",
+                    step=f"interrupted:{n}",
+                    payload={"reason": "interruption"},
+                ).state
+            if state.flags.away_since is None:
+                return state
+            away_s = max((self.clock() - state.flags.away_since).total_seconds(), 0.0)
+            return store.record(
+                self.db,
+                row,
+                "connection.resumed",
+                step=f"interruption-back:{state.flags.interruptions}",
+                payload={"grace_s": 0.0, "away_s": round(away_s, 1), "reason": "interruption"},
+            ).state
+        except (InvalidTransition, store.ConcurrentWrite):
+            return self.state(session_id)
+
     def back(self, session_id: uuid.UUID, *, grace_s: float = 0.0) -> SessionState | None:
         """The student is here (§6.8). From an action the clock restarts at
         once; the stream re-attaching passes the 30-second grace instead."""

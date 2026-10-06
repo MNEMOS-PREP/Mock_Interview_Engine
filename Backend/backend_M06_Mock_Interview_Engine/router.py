@@ -185,6 +185,13 @@ class AnswerIn(BaseModel):
     asr: AsrNote | None = None
 
 
+class InterruptionIn(BaseModel):
+    """M11's EC-11.12: the device took the microphone (`away`), or gave it
+    back."""
+
+    away: bool
+
+
 class PrefillIn(BaseModel):
     """What the student has said so far, sent while they pause (M11's
     FR-11.6). The same words, cut from the same recording, as the answer will
@@ -933,6 +940,19 @@ def answer(
         raise _conflict(exc) from exc
     background.add_task(_deliver, session_id)
     return session_out(state)
+
+
+@router.post("/interviews/{session_id}/interruption", response_model=SessionOut)
+def interruption(
+    session_id: uuid.UUID, body: InterruptionIn, engine: Engine = Depends(get_engine)
+) -> SessionOut:
+    """M11's EC-11.12: a phone call took the microphone. The clock stops —
+    not a pause, which is the student's to spend — and restarts when the
+    room says they are back."""
+    try:
+        return session_out(engine.interrupted(session_id, away=body.away))
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
 
 
 @router.post("/interviews/{session_id}/prefill", status_code=204)
