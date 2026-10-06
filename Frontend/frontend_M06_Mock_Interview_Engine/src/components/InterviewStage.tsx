@@ -45,6 +45,12 @@
  * — Whisper, with the question as its prompt, so "Dijkstra" is Dijkstra — and
  * the browser's own recognition is the live caption while they speak; where
  * it cannot, the browser's words go in the box as before.
+ *
+ * Day 5 (`useTurnTaking`): the room knows when the student has FINISHED — a
+ * silence as long as their own pauses run, then M11's turn model hearing
+ * whether it sounds finished — and the answer is sent then, the way a spoken
+ * interview works: nobody presses a button to stop talking. Without M11's
+ * recogniser the words wait in the box for "Answer", as before.
  */
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -56,9 +62,8 @@ import {
   Icon,
   Skeleton,
   serverAsrAvailable,
-  transcribeOnServer,
   useInterviewerVoice,
-  useListening,
+  useTurnTaking,
   type InterviewerVoice,
   type SpokenPart,
 } from "@ai/core";
@@ -768,37 +773,33 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     if (talkFreely) void serverAsrAvailable().then(setServerAsr);
   }, [talkFreely]);
   serverWrites.current = talkFreely && serverAsr;
-  /** When the student's current stretch of speech began, if they are speaking. */
-  const stretch = useRef<number | null>(null);
-  /** Stretches being written down: the answer waits for them. */
-  const [writing, setWriting] = useState(0);
-  const listening = useListening({
+  // The box's text, read by a turn that ends after this render.
+  const draftNow = useRef("");
+  draftNow.current = draft;
+  // Day 5: a spoken turn, start to finish — and the answer sent at its end.
+  const listening = useTurnTaking({
     enabled: talkFreely && data?.status === "live",
-    keepAudio: true,
     playing: voice.isSpeaking,
-    onSpeechEnd: (endedAt) => {
-      const began = stretch.current;
-      stretch.current = null;
-      if (began === null || !serverWrites.current) return;
-      // A little before the detector decided (the first word) and after.
-      const audio = listening.audioBetween(began - 300, endedAt + 250);
-      const fallback = () => {
-        append(held.current.join(" "));
-        held.current = [];
-      };
-      if (!audio) return fallback();
+    context: () => {
       const asked = [...(data?.transcript ?? [])].reverse().find((turn) => turn.role === "interviewer");
-      setWriting((n) => n + 1);
-      transcribeOnServer(audio, asked?.question_text ?? asked?.text)
-        .then((heard) => {
-          held.current = [];
-          append(heard.text.trim());
-        })
-        .catch(fallback)
-        .finally(() => setWriting((n) => Math.max(0, n - 1)));
+      return asked?.question_text ?? asked?.text;
+    },
+    onTurn: (turn) => {
+      if (dictation.listening) dictation.stop();
+      const browserWords = held.current.join(" ");
+      held.current = [];
+      if (turn.text === null) {
+        // No recogniser: the browser's words stay in the box for "Answer".
+        append(browserWords);
+        return;
+      }
+      if (!turn.text) return; // heard as speech, transcribed as nothing: a cough
+      const full = draftNow.current.trim() ? `${draftNow.current.trimEnd()} ${turn.text}` : turn.text;
+      const open = data?.status === "live" && Boolean(data.open_turn_id) && !waiting && !codeMode;
+      if (open) submit(full, turn.endedAt);
+      else append(turn.text);
     },
     onSpeechStart: (startedAt) => {
-      stretch.current = startedAt;
       if (!data) return;
       const round = data.current_segment;
       const contest = data.mode === "final_boss" && !contested.current.has(round);
@@ -1023,14 +1024,16 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     (voice.speakingPart && partSpeaker.get(voice.speakingPart)) ||
     (voice.speakingKey !== null ? (data.interviewer?.id ?? null) : null);
 
-  function submit() {
-    const typed = draft.trim();
-    if (!typed || !data?.open_turn_id || writing > 0) return;
+  /** Send the answer: what is in the box — or, at the end of a spoken turn,
+   *  everything said (`spoken`), which the box has not caught up with yet. */
+  function submit(spoken?: string, speechEndedAt?: number) {
+    const typed = (spoken ?? draft).trim();
+    if (!typed || !data?.open_turn_id || (spoken === undefined && listening.writing)) return;
     voice.stop("send");
-    voice.mark("answer_sent");
+    voice.mark("answer_sent", speechEndedAt);
     if (dictation.listening) dictation.stop();
     // Fenced, so the evaluator reads code as code rather than as prose.
-    const text = codeMode ? "```\n" + draft.replace(/\s+$/, "") + "\n```" : typed;
+    const text = codeMode && spoken === undefined ? "```\n" + draft.replace(/\s+$/, "") + "\n```" : typed;
     setDraft("");
     setSpoken("");
     setPreview("");
@@ -1355,8 +1358,10 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     aria-pressed={talkFreely}
                     title={
                       talkFreely
-                        ? `The mic stays open: start speaking any time, even over the interviewer, and your words go in the box.${
-                            serverAsr ? " They are written down by the voice service's recogniser; the audio is not kept." : ""
+                        ? `The mic stays open: start speaking any time, even over the interviewer.${
+                            serverAsr
+                              ? " When you finish, what you said is written down by the voice service's recogniser and sent as your answer; the audio is not kept."
+                              : " Your words go in the box; press Answer when you are done."
                           } Headphones keep their voice out of your mic.`
                         : "Keep the mic open, so you can start speaking any time — even over the interviewer"
                     }
@@ -1436,8 +1441,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                   Ctrl / ⌘ + Enter
                 </span>
                 <span className="ml-auto xl:ml-0">
-                  <Button type="submit" disabled={!canAnswer || !draft.trim() || writing > 0}>
-                    {writing > 0 ? "Writing it down…" : `${data.in_closing ? "Ask" : "Answer"} →`}
+                  <Button type="submit" disabled={!canAnswer || !draft.trim() || listening.writing}>
+                    {listening.writing ? "Writing it down…" : `${data.in_closing ? "Ask" : "Answer"} →`}
                   </Button>
                 </span>
               </div>
