@@ -48,6 +48,8 @@ export interface TurnView {
 export interface TurnPart {
   speaker_id: string;
   text: string;
+  /** Quiet after this part, ms — the note-taking pause (M11's FR-11.12). */
+  pause_after_ms?: number;
 }
 
 /** Who is asking (FR-6.3). A card — never the parameters behind the ladder. */
@@ -83,6 +85,12 @@ export interface PersonaCard {
   voice_id: string;
   /** The line this interviewer opens with — M11's voice check plays it. */
   greeting: string;
+  /** M11's FR-11.10: 0–1. How long they wait before answering is read from it. */
+  patience?: number;
+  /** M11's FR-11.11: what they say, softly, while the student talks — and the
+   *  least time between two of them, in seconds. */
+  backchannels?: string[];
+  backchannel_every_s?: number;
 }
 
 export interface SessionFlags {
@@ -237,6 +245,9 @@ export interface Exchange {
   text: string;
   move: string | null;
   depth: number;
+  /** An answer's turn: where M11 keeps its audio, when the student chose to
+   *  keep it (FR-11.19). */
+  turn_id?: string | null;
 }
 
 /** M13's words about an answer, per dimension. Never its numbers. */

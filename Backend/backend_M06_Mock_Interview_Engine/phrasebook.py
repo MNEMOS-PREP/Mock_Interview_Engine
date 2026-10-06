@@ -286,6 +286,20 @@ LINES: dict[Register, Lines] = {
     ),
 }
 
+#: M11's FR-11.11: what an interviewer says, softly, while the student is
+#: still talking — never a verdict, so never "right" or "good". Words, not
+#: sounds: M11's probe (Voice_Engine `research/backchannels`, 2026-10-06)
+#: had every cast voice say each candidate and Whisper read it back. "Mm-hm",
+#: "Uh-huh" and "Hmm" came back as themselves in one to three voices of
+#: seven, some as "Mm. Mm. Mm." over two seconds; "Okay." and "Sure." in all
+#: seven at ~0.7 s, "I see." in all seven (one read as "IC"). The warmer the
+#: register, the more of them it uses.
+BACKCHANNELS: dict[Register, tuple[str, ...]] = {
+    "friendly": ("Okay.", "I see.", "Sure."),
+    "neutral": ("Okay.", "I see."),
+    "bar_raiser": ("Okay.",),
+}
+
 #: The rung names are the fallback when a question has no follow-up of its
 #: own at that depth (spec §6.5). Phrased to be answerable about anything.
 GENERIC_RUNGS: dict[int, str] = {
@@ -341,4 +355,13 @@ def lines(register: Register = "neutral") -> Lines:
     return LINES[register]
 
 
-__all__ = ["GENERIC_RUNGS", "LINES", "RUDE", "TELEGRAPHS", "Lines", "Register", "lines"]
+__all__ = [
+    "BACKCHANNELS",
+    "GENERIC_RUNGS",
+    "LINES",
+    "RUDE",
+    "TELEGRAPHS",
+    "Lines",
+    "Register",
+    "lines",
+]

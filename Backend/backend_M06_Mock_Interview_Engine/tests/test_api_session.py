@@ -86,6 +86,10 @@ def test_a_whole_drill_over_http(client, candidate_id, as_student):
     # The first answer's turn, so the notes can link to how it was marked.
     first_answer = next(t for t in answered["transcript"] if t["role"] == "candidate")
     assert report["questions"][0]["turn_id"] == first_answer["turn_id"]
+    # Each answer in the exchange names its turn: where M11 keeps its audio,
+    # when the student chose to keep it (FR-11.19).
+    said = [e for e in report["questions"][0]["exchanges"] if e["role"] == "candidate"]
+    assert said[0]["turn_id"] == first_answer["turn_id"]
 
 
 def test_an_answer_longer_than_the_limit_is_refused(client, candidate_id, as_student):

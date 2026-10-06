@@ -48,6 +48,9 @@ class Exchange(BaseModel):
     text: str
     move: str | None = None
     depth: int = 0
+    #: The answer's turn — where M11 keeps its audio, when the student chose
+    #: to keep it (FR-11.19), so the notes can play it beside the words.
+    turn_id: str | None = None
     #: §15.4: part of a Practice retry — shown, and never the scored attempt.
     retry: bool = False
 
@@ -235,7 +238,12 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
             if current.turn_id is None and not retry_turn and p.get("turn_id"):
                 current.turn_id = str(p["turn_id"])
             current.exchanges.append(
-                Exchange(role="candidate", text=p.get("text", ""), retry=retry_turn)
+                Exchange(
+                    role="candidate",
+                    text=p.get("text", ""),
+                    retry=retry_turn,
+                    turn_id=str(p["turn_id"]) if p.get("turn_id") else None,
+                )
             )
             if current.scored and not retry_turn:
                 # Queued the moment the turn was written; `scored` once M13 has

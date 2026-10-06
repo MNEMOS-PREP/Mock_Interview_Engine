@@ -216,6 +216,25 @@ def test_the_persona_list_carries_each_voice_and_its_opening_line():
         assert "max_depth" not in cards[pid] and "follow_up_aggression" not in cards[pid]
 
 
+def test_what_an_interviewer_says_while_you_talk_is_never_a_verdict():
+    """FR-11.11's backchannels pass the same guard as every authored line,
+    and a warmer interviewer says them more often."""
+    from backend_M06_Mock_Interview_Engine.agents.guard import screen
+    from backend_M06_Mock_Interview_Engine.phrasebook import BACKCHANNELS
+    from backend_M06_Mock_Interview_Engine.router import persona_cards
+
+    for words in BACKCHANNELS.values():
+        assert words, "every register has at least one"
+        for said in words:
+            assert screen(said).ok, said
+            assert "right" not in said.lower() and "good" not in said.lower()
+    warm, cool = persona("friendly_recruiter"), persona("bar_raiser")
+    assert warm.backchannel_every_s < cool.backchannel_every_s
+    cards = {c["id"]: c for c in persona_cards()}
+    assert cards["friendly_recruiter"]["backchannels"] == list(warm.backchannels)
+    assert cards["bar_raiser"]["patience"] == cool.patience
+
+
 def test_a_voice_id_the_browser_cannot_read_fails_the_load(tmp_path):
     """`locale-voice-manner` or the boot refuses — not a session that falls
     silent at minute one because "a nice voice" names no voice."""

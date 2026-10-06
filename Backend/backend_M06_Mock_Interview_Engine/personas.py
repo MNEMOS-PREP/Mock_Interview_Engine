@@ -49,7 +49,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from .agents.guard import screen
 from .contracts import DEPTH_CAP
-from .phrasebook import LINES, Lines, Register
+from .phrasebook import BACKCHANNELS, LINES, Lines, Register
 
 PERSONA_DIR = Path(__file__).resolve().parent / "personas"
 
@@ -161,6 +161,17 @@ class Persona(BaseModel):
         return round(30 + 40 * self.patience)
 
     @property
+    def backchannels(self) -> tuple[str, ...]:
+        """M11's FR-11.11: what this interviewer says while the student talks."""
+        return BACKCHANNELS[self.speech]
+
+    @property
+    def backchannel_every_s(self) -> float:
+        """FR-11.11: the least time between two of them — the warmer, the more
+        often. Warmth 0.9 → 6.8 s; 0.5 → 10 s; 0.3 → 11.6 s."""
+        return round(6 + 8 * (1 - self.warmth), 1)
+
+    @property
     def long_answer_words(self) -> int:
         """§6.7 `interruption_threshold` in text: a typed answer longer than
         this gets one "let's keep it moving" per round."""
@@ -178,6 +189,12 @@ class Persona(BaseModel):
             "long_answer_words": self.long_answer_words,
             "hints_available": self.hints_available,
             "voice_id": self.voice_id,
+            # M11's timing (FR-11.10, FR-11.11): how long this interviewer
+            # waits before answering is read from its patience, and what it
+            # says while the student talks, how often. Neither is the ladder.
+            "patience": self.patience,
+            "backchannels": list(self.backchannels),
+            "backchannel_every_s": self.backchannel_every_s,
         }
 
 

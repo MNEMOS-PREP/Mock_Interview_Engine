@@ -51,9 +51,20 @@
  * whether it sounds finished — and the answer is sent then, the way a spoken
  * interview works: nobody presses a button to stop talking. Without M11's
  * recogniser the words wait in the box for "Answer", as before.
+ *
+ * Days 11–12 (`spokenRoom.ts`): the interviewer answers no sooner than a
+ * person would — the gap is the speaker's own, and Final Boss sometimes holds
+ * a silence on purpose — and a fresh line appears as it is said, part by part,
+ * so a hand-over reads as two people. While an answer runs the asker says
+ * "okay" now and then (never in Final Boss); "let me note that down" is
+ * followed by a pause. The room hears its own voice coming back (echo) and
+ * says so; turning Talk freely off mid-answer keeps what was said. Hold to
+ * talk is the student's choice, or the room's on a poor connection, after two
+ * drops or repeated echo; two answers nobody could write down switch to
+ * typing. With the student's say-so, spoken answers are kept for the notes.
  */
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -61,7 +72,11 @@ import {
   ErrorNote,
   Icon,
   Skeleton,
+  isEcho,
+  keepAnswerAudio,
+  keepingAnswers,
   serverAsrAvailable,
+  setKeepingAnswers,
   useInterviewerVoice,
   useTurnTaking,
   type AsrResult,
@@ -87,6 +102,17 @@ import {
   useStart,
 } from "../api";
 import { fillerCount, useDictation } from "../speech";
+import {
+  notBeforeFor,
+  nowMs,
+  poorConnection,
+  useBackchannels,
+  usePoorConnection,
+  usePushToTalk,
+  useReveal,
+  useWarmBackchannels,
+  type HeldTurn,
+} from "../spokenRoom";
 import { useInterviewStream } from "../stream";
 import type { HintOffer, PersonaCard, Session, TurnPart, TurnView } from "../types";
 import { Face, voiceKind } from "../ui/Face";
@@ -555,6 +581,19 @@ function partKey(turn: TurnView, index: number): string {
   return `${turn.turn_id}:${index}`;
 }
 
+/** A line's parts as the room shows them: consecutive parts by one voice
+ *  under one name — "let me note that down", a pause, then the question, is
+ *  still one person talking. */
+function byVoice(parts: TurnPart[]): { speaker_id: string; at: number[] }[] {
+  const groups: { speaker_id: string; at: number[] }[] = [];
+  parts.forEach((part, index) => {
+    const last = groups[groups.length - 1];
+    if (last && last.speaker_id === part.speaker_id) last.at.push(index);
+    else groups.push({ speaker_id: part.speaker_id, at: [index] });
+  });
+  return groups;
+}
+
 function Turn({
   turn,
   nameOf,
@@ -562,6 +601,7 @@ function Turn({
   fallback,
   speakingPart,
   mouth,
+  shown = () => true,
 }: {
   turn: TurnView;
   nameOf: (id: string) => string;
@@ -571,6 +611,8 @@ function Turn({
   /** The part being heard now, or null. */
   speakingPart: string | null;
   mouth?: (now: number) => number;
+  /** Whether a part may be shown yet: a fresh line appears as it is said. */
+  shown?: (partId: string) => boolean;
 }) {
   if (turn.role === "candidate") {
     return (
@@ -585,17 +627,26 @@ function Turn({
     );
   }
   const parts = partsOf(turn, fallback);
+  const groups = byVoice(parts)
+    .map((group) => ({ ...group, at: group.at.filter((index) => shown(partKey(turn, index))) }))
+    .filter((group) => group.at.length > 0);
+  if (groups.length === 0) return null;
   return (
     <div className="space-y-4">
-      {parts.map((part, index) => (
+      {groups.map((group) => (
         <Said
-          key={partKey(turn, index)}
-          name={nameOf(part.speaker_id)}
-          kind={kindOf(part.speaker_id)}
-          speaking={speakingPart === partKey(turn, index)}
+          key={partKey(turn, group.at[0]!)}
+          name={nameOf(group.speaker_id)}
+          kind={kindOf(group.speaker_id)}
+          speaking={group.at.some((index) => speakingPart === partKey(turn, index))}
           mouth={mouth}
         >
-          <HeardText text={part.text} index={index} turn={turn} />
+          {group.at.map((index, n) => (
+            <Fragment key={index}>
+              {n > 0 && " "}
+              <HeardText text={parts[index]!.text} index={index} turn={turn} />
+            </Fragment>
+          ))}
         </Said>
       ))}
     </div>
@@ -802,14 +853,21 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   }, [data?.plan, cards]);
   const nameOf = (id: string) => cards.get(id)?.name ?? data?.interviewer?.name ?? "Interviewer";
   const kindOf = (id: string) => voiceKind(cards.get(id)?.voice_id ?? data?.interviewer?.voice_id);
-  /** A line as the voice says it: each part in its own speaker's voice. */
+  /** A line as the voice says it: each part in its own speaker's voice, with
+   *  any quiet inside it — the note-taking pause (M11's FR-11.12). */
   const voiced = (turn: TurnView): SpokenPart[] =>
     partsOf(turn, data?.interviewer?.id ?? null).map((part, index) => ({
       text: part.text,
       personaId: part.speaker_id || null,
       voiceId: cards.get(part.speaker_id)?.voice_id ?? null,
       id: partKey(turn, index),
+      ...(part.pause_after_ms ? { pauseAfterMs: part.pause_after_ms } : {}),
     }));
+  // FR-11.17: a connection too poor for the open mic is too poor to fetch
+  // every sentence's audio as well. Decided once, as the room opens — the
+  // browser's own voice downloads nothing, and a voice never changes
+  // mid-interview.
+  const [poorAtStart] = useState(poorConnection);
   // Each line it speaks is measured and posted to M11's latency ledger
   // (`@ai/core` v0.15.0); the room adds the two marks only it knows. Since
   // v0.16.0 it speaks in the voice M11 casts for this interviewer when M11 is
@@ -817,9 +875,16 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const voice = useInterviewerVoice(data?.interviewer?.voice_id, {
     sessionId,
     personaId: data?.interviewer?.id,
+    server: !poorAtStart,
   });
+  // Spec §8: while the voice can be heard, a fresh line appears as it is said.
+  const followVoice = voice.supported && voice.enabled && !voice.blocked;
+  const reveal = useReveal(voice, followVoice);
   const waiting =
     answer.isPending || start.isPending || retry.isPending || moveOn.isPending;
+  /** When the student last finished an answer: the interviewer's calibrated
+   *  silence (FR-11.10) counts from there, not from when the line landed. */
+  const answeredAt = useRef<number | null>(null);
 
   // M11 day 3: the mic open while the interviewer speaks, so the student can
   // start any time — and the interviewer stops when they do.
@@ -832,65 +897,165 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
       /* still applies for this visit */
     }
   };
+  // FR-11.17's ladder: hold to talk where the open mic cannot work — the
+  // student's choice, or the room's on a poor connection, after two drops,
+  // or when the mic keeps hearing the interviewer. `ladder` says why.
+  const [holdToTalk, setHoldToTalk] = useState(false);
+  const [ladder, setLadder] = useState<string | null>(null);
+  const poor = usePoorConnection();
   // Final Boss contests a barge-in once a round (§6.5); these rounds have.
   const contested = useRef(new Set<number>());
-  // Day 4: M11's recogniser, if it can run. Asked when talking freely starts.
+  // Day 4: M11's recogniser, if it can run.
   const [serverAsr, setServerAsr] = useState(false);
   useEffect(() => {
-    if (talkFreely) void serverAsrAvailable().then(setServerAsr);
-  }, [talkFreely]);
-  serverWrites.current = talkFreely && serverAsr;
+    void serverAsrAvailable().then(setServerAsr);
+  }, []);
+  const freeMic = talkFreely && !holdToTalk;
+  serverWrites.current = freeMic && serverAsr;
+  // FR-11.19: whether the student chose to keep their spoken answers.
+  const [keep, setKeep] = useState(keepingAnswers);
+  const [keepNote, setKeepNote] = useState<string | null>(null);
+  // EC-11.8, EC-11.9: what the room noticed about the mic, said once.
+  const [micNote, setMicNote] = useState<string | null>(null);
+  const echoes = useRef(0);
+  const unheard = useRef(0);
   // The box's text, read by a turn that ends after this render.
   const draftNow = useRef("");
   draftNow.current = draft;
+  const lastAsked = () =>
+    [...(data?.transcript ?? [])].reverse().find((turn) => turn.role === "interviewer");
+  /** The question being answered: the recogniser's prompt. */
+  const askedNow = () => {
+    const asked = lastAsked();
+    return asked?.question_text ?? asked?.text;
+  };
+  /** The student came in over the interviewer, who stops — and where they
+   *  came in goes on the record: the part being heard ("turn:part") and how
+   *  far through it (FR-11.9). */
+  const comeIn = (startedAt: number) => {
+    if (!data) return;
+    const round = data.current_segment;
+    const contest = data.mode === "final_boss" && !contested.current.has(round);
+    const onCut = (cut: { key: string; partId: string | null; heard: number }) => {
+      const [turnId, part] = (cut.partId ?? `${cut.key}:0`).split(":");
+      heardLine.mutate({ turn_id: turnId!, part_index: Number(part ?? 0) || 0, heard: cut.heard });
+    };
+    if (voice.bargeIn(startedAt, { contest, onCut }) && contest) contested.current.add(round);
+  };
+  /** EC-11.9, spec §6.9: an answer the recogniser could not write down.
+   *  Twice running, and the room switches to typing for now. */
+  const missed = () => {
+    unheard.current += 1;
+    if (unheard.current < 2) {
+      setMicNote("I couldn't make that out — could you say it again?");
+      return;
+    }
+    unheard.current = 0;
+    setTalkFreelyState(false); // for now, not as the student's preference
+    setHoldToTalk(false);
+    setLadder("Switching to typing for now — the voice service couldn't write down your last two answers.");
+  };
+  /** A spoken answer, either way of speaking. "switch" is the student turning
+   *  the mic off mid-answer to type (FR-11.14): what they said so far goes in
+   *  the box and waits for them. */
+  const takeTurn = (turn: HeldTurn, how: "end" | "switch") => {
+    if (dictation.listening) dictation.stop();
+    const browserWords = held.current.join(" ");
+    held.current = [];
+    const long = turn.endedAt - turn.startedAt;
+    if (turn.text === null) {
+      // No recogniser: the browser's words stay in the box for "Answer".
+      append(browserWords);
+      if (serverAsr && !browserWords && long > 1500) missed();
+      return;
+    }
+    if (!turn.text) {
+      // Heard as speech, written as nothing: a cough — unless it went on.
+      if (long > 2500) missed();
+      return;
+    }
+    unheard.current = 0;
+    if (how === "switch") {
+      append(turn.text);
+      return;
+    }
+    // EC-11.8: the interviewer's own words, back through the speakers.
+    if (isEcho(turn.text, lastAsked()?.text ?? "")) {
+      echoes.current += 1;
+      if (echoes.current >= 2) {
+        setHoldToTalk(true);
+        setLadder(
+          "Your mic keeps picking up the interviewer's voice, so it's hold-to-talk for now. With headphones you can talk freely again.",
+        );
+      } else {
+        setMicNote("That sounded like the interviewer's own voice coming back through your mic — headphones fix it.");
+      }
+      return;
+    }
+    const full = draftNow.current.trim() ? `${draftNow.current.trimEnd()} ${turn.text}` : turn.text;
+    const open = data?.status === "live" && Boolean(data.open_turn_id) && !waiting && !codeMode;
+    // How sure the recogniser was, and of which words (FR-11.15/11.16):
+    // M06 asks again rather than judging words nobody could make out.
+    const note = turn.asr
+      ? {
+          mean_confidence: turn.asr.mean_confidence,
+          unsure: unsureRanges(turn.asr, full.length - turn.text.length),
+          model: turn.asr.model,
+        }
+      : undefined;
+    const audio = turn.audio ? { audio: turn.audio, startedAt: turn.startedAt, endedAt: turn.endedAt } : undefined;
+    if (open) submit(full, turn.endedAt, note, audio);
+    else append(turn.text);
+  };
+  // FR-11.11: while an answer runs, the asker says "okay" now and then.
+  const backchannel = useBackchannels({
+    enabled: freeMic && data?.mode !== "final_boss",
+    voice,
+    asker: () => {
+      const id = lastAsked()?.speaker_id ?? data?.interviewer?.id;
+      return id ? cards.get(id) : undefined;
+    },
+  });
+  useWarmBackchannels(
+    freeMic &&
+      data?.status === "live" &&
+      data.mode !== "final_boss" &&
+      voice.tier === "server" &&
+      voice.speakingKey === null,
+    panel,
+  );
   // Day 5: a spoken turn, start to finish — and the answer sent at its end.
   const listening = useTurnTaking({
-    enabled: talkFreely && data?.status === "live",
+    enabled: freeMic && data?.status === "live",
     playing: voice.isSpeaking,
-    context: () => {
-      const asked = [...(data?.transcript ?? [])].reverse().find((turn) => turn.role === "interviewer");
-      return asked?.question_text ?? asked?.text;
-    },
-    onTurn: (turn) => {
-      if (dictation.listening) dictation.stop();
-      const browserWords = held.current.join(" ");
-      held.current = [];
-      if (turn.text === null) {
-        // No recogniser: the browser's words stay in the box for "Answer".
-        append(browserWords);
-        return;
-      }
-      if (!turn.text) return; // heard as speech, transcribed as nothing: a cough
-      const full = draftNow.current.trim() ? `${draftNow.current.trimEnd()} ${turn.text}` : turn.text;
-      const open = data?.status === "live" && Boolean(data.open_turn_id) && !waiting && !codeMode;
-      // How sure the recogniser was, and of which words (FR-11.15/11.16):
-      // M06 asks again rather than judging words nobody could make out.
-      const note = turn.asr
-        ? {
-            mean_confidence: turn.asr.mean_confidence,
-            unsure: unsureRanges(turn.asr, full.length - turn.text.length),
-            model: turn.asr.model,
-          }
-        : undefined;
-      if (open) submit(full, turn.endedAt, note);
-      else append(turn.text);
-    },
+    context: askedNow,
+    onTurn: (turn) => takeTurn(turn, turn.how === "switch" ? "switch" : "end"),
+    onPause: backchannel,
     onSpeechStart: (startedAt) => {
       if (!data) return;
-      const round = data.current_segment;
-      const contest = data.mode === "final_boss" && !contested.current.has(round);
-      // FR-11.9: where they came in goes on the record — the part being
-      // heard (its key is "turn:part") and how far through it.
-      const onCut = (cut: { key: string; partId: string | null; heard: number }) => {
-        const [turnId, part] = (cut.partId ?? `${cut.key}:0`).split(":");
-        heardLine.mutate({ turn_id: turnId!, part_index: Number(part ?? 0) || 0, heard: cut.heard });
-      };
-      if (voice.bargeIn(startedAt, { contest, onCut }) && contest) contested.current.add(round);
+      comeIn(startedAt);
       // Their words go in the box, as if they had pressed the mic.
       const open = data.status === "live" && Boolean(data.open_turn_id) && !waiting;
       if (open && !codeMode && dictation.supported && !dictation.listening) dictation.start();
     },
   });
+  // FR-11.17: hold to talk — one answer per hold, sent when it is let go,
+  // and the interviewer stops when the button goes down.
+  const ptt = usePushToTalk({
+    enabled: holdToTalk && serverAsr && data?.status === "live",
+    context: askedNow,
+    onPress: comeIn,
+    onTurn: (turn) => takeTurn(turn, "end"),
+  });
+  // A poor connection moves the open mic to hold-to-talk, once, and says why.
+  useEffect(() => {
+    if (!poor || !talkFreely || holdToTalk) return;
+    setHoldToTalk(true);
+    setLadder(
+      "Your connection looks slow, so it's hold-to-talk for now: hold the button while you speak, and let go when you're done.",
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poor, talkFreely]);
 
   const { connected } = useInterviewStream(
     data?.status === "live" ? sessionId : undefined,
@@ -913,10 +1078,28 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   // said stays said: a reload does not read the interview back. A session
   // started from the plan screen is the exception — its opening was asked as
   // the student arrived, so the lines since the student last spoke are said.
+  //
+  // M11 day 11: not before a person would answer (FR-11.10) — the gap after
+  // the student's last word is the first speaker's own, from their patience,
+  // and in Final Boss sometimes longer on purpose — and each part appears as
+  // it is said. A layout effect, so a held part is never painted first.
   const heard = useRef<Set<string> | null>(null);
   const idleHeard = useRef<string | null>(null);
   const lastTurnId = data?.transcript.at(-1)?.turn_id;
-  useEffect(() => {
+  const say = (lines: TurnView[]) => {
+    const final = lines.at(-1);
+    if (!final || !data) return;
+    const first = partsOf(lines[0]!, data.interviewer?.id ?? null)[0];
+    const notBefore = notBeforeFor(answeredAt.current, final, cards.get(first?.speaker_id ?? ""), data.mode);
+    answeredAt.current = null;
+    const parts = lines.flatMap(voiced);
+    reveal.hold(
+      parts.map((part) => part.id!),
+      notBefore,
+    );
+    voice.speak(parts, final.turn_id, { notBefore });
+  };
+  useLayoutEffect(() => {
     if (!data) return;
     const lines = data.transcript.filter((turn) => turn.role === "interviewer");
     const idleKey = data.idle_line ? `${data.open_turn_id}:${data.idle_prompts}` : null;
@@ -928,16 +1111,14 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
         const opening = data.transcript
           .slice(lastStudent + 1)
           .filter((turn) => turn.role === "interviewer");
-        const final = opening.at(-1);
-        if (final) voice.speak(opening.flatMap(voiced), final.turn_id);
+        say(opening);
       }
       return;
     }
     const fresh = lines.filter((turn) => !heard.current!.has(turn.turn_id));
     for (const turn of fresh) heard.current.add(turn.turn_id);
-    const final = fresh.at(-1);
-    if (final) {
-      voice.speak(fresh.flatMap(voiced), final.turn_id);
+    if (fresh.length > 0) {
+      say(fresh);
     } else if (idleKey && idleKey !== idleHeard.current && data.status === "live") {
       // EC-6.1's prompt is the interviewer talking too.
       voice.speak(data.idle_line!, "idle");
@@ -952,19 +1133,24 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.status]);
 
-  // Under 800 ms nothing changes on screen (spec §8).
+  // Under 800 ms nothing changes on screen (spec §8). A line waiting on its
+  // voice past the silence meant for it is the same wait, so the dots stay
+  // on across the hand-off rather than blinking out and back.
+  const busy = waiting || reveal.overdue;
   useEffect(() => {
-    if (!waiting) {
-      setThinking(false);
-      return;
+    if (!busy) {
+      const timer = window.setTimeout(() => setThinking(false), 60);
+      return () => window.clearTimeout(timer);
     }
+    if (thinking) return;
     const timer = window.setTimeout(() => setThinking(true), THINKING_AFTER_MS);
     return () => window.clearTimeout(timer);
-  }, [waiting]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [data?.transcript.length, preview, thinking]);
+  }, [data?.transcript.length, preview, thinking, reveal.version]);
 
   // §6.8: "Welcome back — we were on question 4". Said when this page joins a
   // session already under way (a reload) or the feed comes back after a drop
@@ -973,13 +1159,25 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const underWayAtLoad = useRef<boolean | null>(null);
   const everConnected = useRef(false);
   const dropped = useRef(false);
+  const drops = useRef(0);
   if (data && underWayAtLoad.current === null) {
     underWayAtLoad.current =
       !justStarted && data.status === "live" && data.transcript.length > 0;
   }
   useEffect(() => {
     if (!connected) {
-      if (everConnected.current) dropped.current = true;
+      if (everConnected.current) {
+        dropped.current = true;
+        drops.current += 1;
+        // FR-11.17, spec §6.9: two drops and the open mic gives way to
+        // hold-to-talk — one upload per answer survives a poor line.
+        if (drops.current === 2 && talkFreely && !holdToTalk) {
+          setHoldToTalk(true);
+          setLadder(
+            "The connection keeps dropping, so it's hold-to-talk for now: hold the button while you speak, and let go when you're done.",
+          );
+        }
+      }
       return;
     }
     const returning =
@@ -1014,6 +1212,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const [keptThinking, setKeptThinking] = useState(false);
   useEffect(() => setKeptThinking(false), [data?.open_turn_id]);
   useEffect(() => {
+    setMicNote(null);
     setRepeated(null);
     setFlagged(null);
     setFlagging(false);
@@ -1112,18 +1311,37 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     spoken?: string,
     speechEndedAt?: number,
     asr?: { mean_confidence: number; unsure: [number, number][]; model?: string | null },
+    audio?: { audio: Blob; startedAt: number; endedAt: number },
   ) {
     const typed = (spoken ?? draft).trim();
     if (!typed || !data?.open_turn_id || (spoken === undefined && listening.writing)) return;
     voice.stop("send");
     voice.mark("answer_sent", speechEndedAt);
+    answeredAt.current = speechEndedAt ?? nowMs();
     if (dictation.listening) dictation.stop();
     // Fenced, so the evaluator reads code as code rather than as prose.
     const text = codeMode && spoken === undefined ? "```\n" + draft.replace(/\s+$/, "") + "\n```" : typed;
     setDraft("");
     setSpoken("");
     setPreview("");
-    answer.mutate({ question_turn_id: data.open_turn_id, text, ...(asr ? { asr } : {}) });
+    answer.mutate(
+      { question_turn_id: data.open_turn_id, text, ...(asr ? { asr } : {}) },
+      {
+        onSuccess: (after) => {
+          // FR-11.19: kept only with the student's say-so, beside the turn
+          // it answered, on the clock it was said on.
+          if (!audio || !keep) return;
+          const turnId = after.transcript.filter((turn) => turn.role === "candidate").at(-1)?.turn_id;
+          if (!turnId) return;
+          keepAnswerAudio(sessionId, turnId, audio.audio, {
+            startedAt: audio.startedAt,
+            endedAt: audio.endedAt,
+          })
+            .then(() => setKeepNote(null))
+            .catch(() => setKeepNote("That answer's audio couldn't be kept. Your words are saved as usual."));
+        },
+      },
+    );
   }
   const fillers = spoken.trim() ? fillerCount(spoken) : null;
 
@@ -1251,9 +1469,13 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               const title = data.plan?.segments.find(
                 (segment) => segment.index === turn.segment_index,
               )?.title;
+              // A round's rule appears with its first words, not before.
+              const showing =
+                turn.role !== "interviewer" ||
+                partsOf(turn, data.interviewer?.id ?? null).some((_, i) => reveal.shown(partKey(turn, i)));
               return (
                 <Fragment key={turn.turn_id}>
-                  {crossed && title && <RoundRule title={title} />}
+                  {crossed && title && showing && <RoundRule title={title} />}
                   <Turn
                     turn={turn}
                     nameOf={nameOf}
@@ -1261,18 +1483,21 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     fallback={data.interviewer?.id ?? null}
                     speakingPart={voice.speakingPart}
                     mouth={voice.mouth}
+                    shown={reveal.shown}
                   />
                 </Fragment>
               );
             })}
 
-            {preview && (
+            {/* The line writing itself — unless the voice is to be heard,
+                when it appears as it is said instead. */}
+            {preview && !followVoice && (
               <Said name={who} soft kind={voiceKind(data.interviewer?.voice_id)}>
                 {preview}
               </Said>
             )}
 
-            {thinking && !preview && (
+            {thinking && (!preview || followVoice) && (
               <div className="flex gap-3" aria-hidden>
                 <Avatar name={who} kind={voiceKind(data.interviewer?.voice_id)} />
                 <span className="mt-1 flex h-9 items-center gap-1.5 rounded-2xl rounded-tl-md bg-surface-sunken px-4">
@@ -1413,6 +1638,53 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                   Listening{dictation.interim ? `: ${dictation.interim}` : " — speak your answer"}
                 </p>
               )}
+              {holdToTalk && serverAsr && (
+                // FR-11.17, spec §6.9: "a big hold-to-talk button, a visible
+                // upload progress, and the same interviewer behaviour".
+                <div className="border-t border-line px-3 py-3">
+                  <button
+                    type="button"
+                    disabled={!canAnswer || !ptt.active || ptt.sending}
+                    onPointerDown={(event) => {
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                      ptt.press();
+                    }}
+                    onPointerUp={ptt.release}
+                    onPointerCancel={ptt.release}
+                    onKeyDown={(event) => {
+                      if ((event.key === " " || event.key === "Enter") && !event.repeat) {
+                        event.preventDefault();
+                        ptt.press();
+                      }
+                    }}
+                    onKeyUp={(event) => {
+                      if (event.key === " " || event.key === "Enter") {
+                        event.preventDefault();
+                        ptt.release();
+                      }
+                    }}
+                    aria-pressed={ptt.held}
+                    className={`flex h-14 w-full touch-none select-none items-center justify-center gap-3 rounded-xl text-sm font-semibold disabled:opacity-50 ${
+                      ptt.held ? "bg-session-listening text-white" : "bg-brand-soft text-brand hover:brightness-95"
+                    }`}
+                  >
+                    <Icon name="mic" size={18} />
+                    {ptt.sending
+                      ? "Sending your answer…"
+                      : ptt.held
+                        ? "Listening — let go when you're done"
+                        : !ptt.active
+                          ? "Opening the microphone…"
+                          : "Hold to talk"}
+                    {ptt.held && <LevelMeter level={ptt.level} />}
+                  </button>
+                  {ptt.sending && (
+                    <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-sunken" role="progressbar" aria-label="Sending your answer">
+                      <div className="h-full w-1/3 animate-pulse rounded-full bg-brand" />
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-2">
                 {dictation.supported && !codeMode && (
                   <button
@@ -1440,24 +1712,80 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                 {voice.supported && (
                   <button
                     type="button"
-                    onClick={() => setTalkFreely(!talkFreely)}
-                    aria-pressed={talkFreely}
+                    onClick={() => {
+                      if (freeMic) {
+                        // Type instead: what was said so far goes in the box.
+                        listening.flush();
+                        setTalkFreely(false);
+                        return;
+                      }
+                      setTalkFreely(true);
+                      setHoldToTalk(false);
+                      setLadder(null);
+                      echoes.current = 0;
+                    }}
+                    aria-pressed={freeMic}
                     title={
-                      talkFreely
+                      freeMic
                         ? `The mic stays open: start speaking any time, even over the interviewer.${
                             serverAsr
-                              ? " When you finish, what you said is written down by the voice service's recogniser and sent as your answer; the audio is not kept."
+                              ? ` When you finish, what you said is written down by the voice service's recogniser and sent as your answer; ${
+                                  keep ? "the audio is kept for your notes." : "the audio is not kept."
+                                }`
                               : " Your words go in the box; press Answer when you are done."
-                          } Headphones keep their voice out of your mic.`
+                          } Headphones keep their voice out of your mic. Turn this off to type instead — what you've said so far stays in the box.`
                         : "Keep the mic open, so you can start speaking any time — even over the interviewer"
                     }
                     className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-2xs font-medium ${
-                      talkFreely ? "bg-brand-soft text-brand" : "text-ink-soft hover:bg-surface-sunken hover:text-ink"
+                      freeMic ? "bg-brand-soft text-brand" : "text-ink-soft hover:bg-surface-sunken hover:text-ink"
                     }`}
                   >
                     Talk freely
-                    {talkFreely && listening.active && <LevelMeter level={listening.level} />}
+                    {freeMic && listening.active && <LevelMeter level={listening.level} />}
                   </button>
+                )}
+                {voice.supported && serverAsr && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (holdToTalk) {
+                        setHoldToTalk(false);
+                        setLadder(null);
+                        return;
+                      }
+                      if (freeMic) listening.flush();
+                      setHoldToTalk(true);
+                      setLadder(null);
+                    }}
+                    aria-pressed={holdToTalk}
+                    title={
+                      holdToTalk
+                        ? "Hold the big button while you speak and let go when you're done — the answer is sent then. Turn this off to talk freely or type."
+                        : "Speak only while you hold a button: for a slow connection, a noisy room, or speakers without headphones"
+                    }
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-2xs font-medium ${
+                      holdToTalk ? "bg-brand-soft text-brand" : "text-ink-soft hover:bg-surface-sunken hover:text-ink"
+                    }`}
+                  >
+                    Hold to talk
+                  </button>
+                )}
+                {serverAsr && (freeMic || holdToTalk) && (
+                  <label
+                    className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-2xs text-ink-soft hover:bg-surface-sunken hover:text-ink"
+                    title="Keeps the audio of each spoken answer so you can hear yourself in the notes afterwards. Only you — and the platform's staff — can play it back, and you can delete it from the notes at any time."
+                  >
+                    <input
+                      type="checkbox"
+                      checked={keep}
+                      onChange={(event) => {
+                        setKeep(event.target.checked);
+                        setKeepingAnswers(event.target.checked);
+                      }}
+                      className="accent-(--color-brand)"
+                    />
+                    Keep my answers
+                  </label>
                 )}
                 {!data.in_closing && (
                   <button
@@ -1536,8 +1864,16 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               <p className="mt-2 text-center text-2xs text-ink-faint">
                 {dictation.error
                   ? dictation.error
-                  : talkFreely && listening.error
+                  : freeMic && listening.error
                     ? listening.error
+                  : holdToTalk && ptt.error
+                    ? ptt.error
+                  : ladder
+                    ? ladder
+                  : micNote
+                    ? micNote
+                  : keepNote
+                    ? keepNote
                   : fillers && fillers.total > 0
                     ? `You said ${fillers.total} filler word${fillers.total === 1 ? "" : "s"} (${fillers.top.join(", ")}) — worth noticing, not a mark.`
                     : "There is no score on this screen — the notes come at the end."}

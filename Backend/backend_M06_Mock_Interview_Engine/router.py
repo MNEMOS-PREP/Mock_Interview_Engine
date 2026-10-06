@@ -555,7 +555,19 @@ def persona_cards() -> list[dict]:
     """
     return [
         {
-            **{k: card[k] for k in ("id", "name", "title", "style", "voice_id")},
+            **{
+                k: card[k]
+                for k in (
+                    "id",
+                    "name",
+                    "title",
+                    "style",
+                    "voice_id",
+                    "patience",
+                    "backchannels",
+                    "backchannel_every_s",
+                )
+            },
             "greeting": p.said().greeting,
         }
         for p in personas().values()

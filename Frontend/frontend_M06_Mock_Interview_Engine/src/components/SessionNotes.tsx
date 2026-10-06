@@ -26,10 +26,15 @@
  * practise that topic as a focused interview, and see how the answer was
  * marked (M13's evidence page). And the notes can be shared, as text the
  * student copies or sends themselves — nothing is published for them.
+ *
+ * 2026-10-06 — M11's FR-11.19: a spoken answer the student chose to keep
+ * plays back beside its words ("you rarely know how you sound until you hear
+ * it"), and every kept answer of the interview can be deleted from here.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   ANSWER_BAND_LABEL,
@@ -38,7 +43,11 @@ import {
   ErrorNote,
   Icon,
   SkeletonRows,
+  forgetKeptAnswers,
+  keptAnswerUrl,
+  keptAnswers,
   type AnswerBand,
+  type KeptAnswer,
 } from "@ai/core";
 
 import { useReport } from "../api";
@@ -102,6 +111,106 @@ function ShareButton({ data }: { data: SessionReport }) {
   );
 }
 
+/** FR-11.19: the spoken answers M11 kept for this interview — none when the
+ *  student kept none, or M11 is not running. */
+function useKept(sessionId: string) {
+  return useQuery({
+    queryKey: ["m11", "kept", sessionId],
+    queryFn: () => keptAnswers(sessionId).catch(() => [] as KeptAnswer[]),
+    staleTime: 60_000,
+  });
+}
+
+/** One kept answer, played as it was said. */
+function HearIt({ sessionId, turnId, label = "Hear it" }: { sessionId: string; turnId: string; label?: string }) {
+  const [state, setState] = useState<"idle" | "loading" | "playing" | "failed">("idle");
+  const audio = useRef<HTMLAudioElement | null>(null);
+  useEffect(
+    () => () => {
+      audio.current?.pause();
+      if (audio.current) URL.revokeObjectURL(audio.current.src);
+    },
+    [],
+  );
+  const toggle = async () => {
+    if (state === "playing") {
+      audio.current?.pause();
+      setState("idle");
+      return;
+    }
+    setState("loading");
+    try {
+      if (!audio.current) {
+        audio.current = new Audio(await keptAnswerUrl(sessionId, turnId));
+        audio.current.onended = () => setState("idle");
+      }
+      audio.current.currentTime = 0;
+      await audio.current.play();
+      setState("playing");
+    } catch {
+      setState("failed");
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      title="Your answer, as you said it"
+      className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-ink-soft hover:bg-surface-sunken hover:text-ink"
+    >
+      <span aria-hidden>{state === "playing" ? "■" : "▶"}</span>
+      {state === "playing" ? "Stop" : state === "loading" ? "Loading…" : state === "failed" ? "Couldn't play it" : label}
+    </button>
+  );
+}
+
+/** Every kept answer of the interview, deleted at once — the files, not
+ *  just the list (M11 removes them). Asked once more before it happens. */
+function KeptAnswers({ sessionId, count }: { sessionId: string; count: number }) {
+  const client = useQueryClient();
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const forget = async () => {
+    setBusy(true);
+    try {
+      await forgetKeptAnswers(sessionId);
+      await client.invalidateQueries({ queryKey: ["m11", "kept", sessionId] });
+      setAsking(false);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <p className="mt-2 flex flex-wrap items-center gap-2 text-sm leading-relaxed text-ink-soft">
+      {count === 1 ? "One spoken answer is" : `${count} spoken answers are`} kept, because you chose to
+      keep them — only you and the platform's staff can play them.
+      {asking ? (
+        <span className="inline-flex items-center gap-2">
+          <button
+            type="button"
+            onClick={forget}
+            disabled={busy}
+            className="rounded-lg border border-line px-2 py-0.5 text-xs font-medium text-ink hover:border-line-strong"
+          >
+            {busy ? "Deleting…" : `Delete ${count === 1 ? "it" : `all ${count}`}`}
+          </button>
+          <button type="button" onClick={() => setAsking(false)} className="text-xs text-ink-faint hover:text-ink">
+            Keep them
+          </button>
+        </span>
+      ) : (
+        <button type="button" onClick={() => setAsking(true)} className="text-xs font-medium text-brand hover:underline">
+          Delete the recordings
+        </button>
+      )}
+      {failed && <span className="text-xs text-session-degraded">That didn't go through — try again.</span>}
+    </p>
+  );
+}
+
 function depthSentence(question: QuestionReport): string {
   if (
     question.moved_on &&
@@ -141,10 +250,18 @@ function Stat({ value, label }: { value: string | number; label: string }) {
 function QuestionBlock({
   question,
   index,
+  sessionId,
+  kept,
 }: {
   question: QuestionReport;
   index: number;
+  sessionId: string;
+  /** Answers with audio kept (FR-11.19), by turn id. */
+  kept: Set<string>;
 }) {
+  const firstHeard = question.exchanges.find(
+    (exchange) => exchange.role === "candidate" && exchange.turn_id && kept.has(exchange.turn_id),
+  )?.turn_id;
   return (
     <section className="border-b border-line py-6 last:border-0">
       <p className="flex flex-wrap items-center gap-2 text-2xs text-ink-faint">
@@ -232,8 +349,9 @@ function QuestionBlock({
         </div>
       )}
 
-      {(question.concept_id || question.turn_id) && (
+      {(question.concept_id || question.turn_id || firstHeard) && (
         <div className="mt-4 flex flex-wrap gap-2">
+          {firstHeard && <HearIt sessionId={sessionId} turnId={firstHeard} label="Hear your answer" />}
           {question.concept_id && (
             <Link
               to={`/mock?focus=${encodeURIComponent(question.concept_id)}&label=${encodeURIComponent(topicName(question) ?? "")}`}
@@ -260,16 +378,20 @@ function QuestionBlock({
         </summary>
         <div className="mt-3 space-y-3">
           {question.exchanges.map((exchange, position) => (
-            <p
-              key={`${position}-${exchange.text.slice(0, 12)}`}
-              className={
-                exchange.role === "candidate"
-                  ? "turn-candidate whitespace-pre-wrap"
-                  : "whitespace-pre-wrap text-sm text-ink"
-              }
-            >
-              {exchange.text}
-            </p>
+            <div key={`${position}-${exchange.text.slice(0, 12)}`}>
+              <p
+                className={
+                  exchange.role === "candidate"
+                    ? "turn-candidate whitespace-pre-wrap"
+                    : "whitespace-pre-wrap text-sm text-ink"
+                }
+              >
+                {exchange.text}
+              </p>
+              {exchange.role === "candidate" && exchange.turn_id && kept.has(exchange.turn_id) && (
+                <HearIt sessionId={sessionId} turnId={exchange.turn_id} />
+              )}
+            </div>
           ))}
         </div>
       </details>
@@ -279,6 +401,8 @@ function QuestionBlock({
 
 export function SessionNotes({ sessionId }: { sessionId: string }) {
   const report = useReport(sessionId);
+  const keptList = useKept(sessionId);
+  const kept = new Set((keptList.data ?? []).map((answer) => answer.turn_id));
 
   if (report.isLoading) {
     return (
@@ -364,7 +488,13 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
           </div>
         ) : (
           data.questions.map((question, index) => (
-            <QuestionBlock key={index} question={question} index={index} />
+            <QuestionBlock
+              key={index}
+              question={question}
+              index={index}
+              sessionId={sessionId}
+              kept={kept}
+            />
           ))
         )}
       </div>
@@ -418,6 +548,7 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
             it reached. The evaluator never sees who you are, and its numbers
             stay hidden until they agree with human raters.
           </p>
+          {kept.size > 0 && <KeptAnswers sessionId={sessionId} count={kept.size} />}
         </Card>
         <Link
           to="/mock"
