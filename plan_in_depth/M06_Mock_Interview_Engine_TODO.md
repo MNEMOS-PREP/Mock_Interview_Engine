@@ -953,6 +953,56 @@ while you're answering — realism is the key to victory"*.
   needs streaming speech (M11 day 3 on: VAD, then ASR). The text-mode cut-in
   above is its stand-in. Long term (the user): question sources per expert.
 
+### 2026-10-06/07 — the panel, heard live end to end, and what it found
+
+A whole mock in headless Edge with every service running (M01, M02, M04, M05,
+M11, M13): a model-written student answering the question actually asked,
+typed until the round came back to the lead, then SPOKEN into a microphone
+stream the script controls.
+
+- ✅ **Heard live, as the user asked for it:** the panel introduced first,
+  each part on screen only as its speaker began (Priya at +0.6 s, Dr. Raghavan
+  at +5.3 s, Priya's question at +8.8 s); the hand-over ("Dr. Raghavan, over
+  to you." / "Thanks, Priya…") and the hand-back ("Priya, over to you." /
+  "Thanks, Dr. Raghavan…"), each in the speaker's own cast voice
+  (`chatterbox-default`, `indictts-103607`); follow-ups on the student's own
+  resume claims; spoken answers heard, judged finished (Smart Turn 0.96) and
+  sent; "okay" / "I see" said softly while the student spoke (five times);
+  and the lead closing. No page errors.
+- ✅ **Fixed: the same question three times in one interview** (M06 `26f987e`,
+  M05 `897748d`). M06 sent the student's whole history as M05's hard "never"
+  filter as well as its freshness filter, so M05 could not relax freshness and
+  fell to a playlist that ignored what the session had asked. Now
+  `seen_item_ids` is this interview's questions and `recent_item_ids` adds the
+  history (M05 §6.6); a repeat offered anyway is refused; M05's disclosure for
+  a deliberate re-ask ("You've seen this one before…") is said with the
+  question — it had been dropped since it was written.
+- ✅ **Fixed: "Take your time." the moment a spoken answer ended** (`779146c`).
+  The idle count ran through the question's synthesis and the whole answer —
+  only keystrokes reset it. It now starts when the interviewer stops and the
+  student is quiet; any speech starts it again.
+- ✅ **Fixed in Core v0.24.0: a student explaining in three sentences was
+  answered after the first** — a ~700 ms pause after a complete sentence. A
+  long answer now gets a full second before the turn model is asked, and a
+  turn taken too soon (the student carries on within 1.5 s) is learned from.
+- ✅ **The room on M11 days 11–12** (`870f184`, `spokenRoom.ts`): the
+  interviewer answers no sooner than a person would (the speaker's own gap,
+  from patience; Final Boss sometimes holds a silence); a fresh line appears
+  as it is said; backchannels by warmth, never in Final Boss; the note-taking
+  line then 1.5 s of quiet (`fda446f`); the interviewer's own voice coming
+  back through the mic is not sent (twice → hold-to-talk); Talk freely off
+  mid-answer keeps what was said; hold-to-talk by choice, on a poor connection
+  or after two drops; two answers nobody could write down → typing; an answer
+  heard but not written is asked for again aloud by the asker; spoken answers
+  kept with consent and played back in the notes.
+- Earlier the same day, all from live walks: "Sorry, I didn't catch that" on
+  a low-confidence answer and unsure words never quoted (`3eeb88d`); the
+  project round reads the CURRENT resume (`eb88907`); recovery hands the
+  session to someone gentle, or keeps the panel (`80fbf2d`); nobody closes a
+  question the same way twice running (`364719e`); joining midway is a
+  joining line, not an opening (`fbc0fa4`); what the student heard of a line
+  they cut in on (`7b67a60`).
+
 ### What is left — and whose it is
 
 **Waiting on another module:**
@@ -1003,7 +1053,7 @@ Spec §4, Revision 2. This is the authoritative list.
 | FR-6.7 | ✅ M05's ladder served, `POST /hint` takes one, M13's published factor shown BEFORE it is taken and frozen at plan time, `hint_level_used` carried to M13 | P0 | 1 |
 | FR-6.8 | ✅ Four modes as one table (`modes.py`): personas per segment kind, hints, ensemble, overrun allowance, retry, steelman flag; `GET /v1/interviews/modes` serves only true mechanics | P0 | 1 |
 | FR-6.9 | ✅ No hints, the deepest ladder, the shortest patience, a `RUDE` screen on every line, and the hard clock — 0% overrun, enforced at the next question boundary | P0 | 1 |
-| FR-6.10 | 🟡 Text runs; the turn contract carries `modality`. Spoken answers through the browser's recognition since 2026-10-04, and the interviewer speaks each line in its persona's `voice_id` since 2026-10-05 — both interims until M11 | P0 | 1·text · voice ⛔ M11 · coding ⛔ M07 · canvas ⛔ M08 |
+| FR-6.10 | 🟡 Text runs; the turn contract carries `modality`. **Voice runs, on M11** (2026-10-06): spoken answers heard, endpointed, written down by M11's recogniser and sent; each line said in its speaker's cast voice; barge-in, what was heard, calibrated silence, backchannels, hold-to-talk. Still partial for coding (M07) and canvas (M08) | P0 | 1·text · voice ⛔ M11 · coding ⛔ M07 · canvas ⛔ M08 |
 | FR-6.11 | 🟡 Contract fixed and carried, and `POST /switch-modality` exists (day 13): text is a no-op, anything else names the module it waits on — nothing to switch to yet | P0 | 1·text |
 | FR-6.12 | ✅ Pauses of ≤ 5 min, one per 15 planned minutes (2026-10-04; the spec's row still says once), and resume. The cap is applied on `/resume` for a student who comes back, and by the sweeper (EC-6.14) for one who does not — which used to lock them out of every future interview | P1 | 1 |
 | FR-6.13 | ✅ Reconnect and resume: checkpoint recovery (stale, unreadable, failed write); presence — a disconnect stops the clock, a return restarts it after a 30 s grace; `GET /resume-state` with "welcome back, we were on question N"; the stage re-attaches | P0 | 1 |
