@@ -349,6 +349,9 @@ class TurnView(BaseModel):
     unsure: list[tuple[int, int]] = Field(default_factory=list)
     #: The language the recogniser heard it in (FR-11.22), lower case.
     language: str | None = None
+    #: M11's FR-11.6 for this answer: prefills its question had ("tried") and
+    #: whether one was used — AC-11.7's cancel rate. None when there were none.
+    prefill: dict | None = None
     at: datetime
 
 

@@ -185,6 +185,16 @@ class AnswerIn(BaseModel):
     asr: AsrNote | None = None
 
 
+class PrefillIn(BaseModel):
+    """What the student has said so far, sent while they pause (M11's
+    FR-11.6). The same words, cut from the same recording, as the answer will
+    be if they say nothing more."""
+
+    question_turn_id: uuid.UUID
+    text: str = Field(max_length=MAX_ANSWER_CHARS)
+    asr: AsrNote | None = None
+
+
 class SessionOut(BaseModel):
     id: uuid.UUID
     candidate_id: uuid.UUID
@@ -923,6 +933,25 @@ def answer(
         raise _conflict(exc) from exc
     background.add_task(_deliver, session_id)
     return session_out(state)
+
+
+@router.post("/interviews/{session_id}/prefill", status_code=204)
+def prefill_answer(
+    session_id: uuid.UUID, body: PrefillIn, engine: Engine = Depends(get_engine)
+) -> Response:
+    """M11's FR-11.6: think while the student pauses. Nothing is written and
+    nothing is said; the model's answers are kept for the answer that follows,
+    and used only if it is these exact words (`prefill.py`)."""
+    try:
+        engine.prefill(
+            session_id,
+            body.question_turn_id,
+            body.text,
+            asr=body.asr.model_dump(mode="json") if body.asr else None,
+        )
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
+    return Response(status_code=204)
 
 
 def _deliver(session_id: uuid.UUID) -> None:

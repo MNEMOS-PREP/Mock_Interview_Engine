@@ -232,6 +232,24 @@ export function useAnswer(id: string) {
   });
 }
 
+/** M11's FR-11.6: what the student has said so far, sent while they pause.
+ *  Nothing comes back and nothing is written: M06 thinks ahead, and uses it
+ *  only if the answer is these exact words. */
+export function usePrefill(id: string) {
+  return useMutation({
+    mutationFn: (body: {
+      question_turn_id: string;
+      text: string;
+      asr?: {
+        mean_confidence: number;
+        unsure: [number, number][];
+        model?: string | null;
+        language?: string | null;
+      };
+    }) => api.post<void>(`/v1/interviews/${id}/prefill`, body),
+  });
+}
+
 export function usePause(id: string) {
   const write = useSessionWriter(id);
   return useMutation({

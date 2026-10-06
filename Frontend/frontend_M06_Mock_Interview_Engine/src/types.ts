@@ -43,6 +43,9 @@ export interface TurnView {
   unsure?: [number, number][];
   /** The language the recogniser heard (M11's FR-11.22), lower case. */
   language?: string | null;
+  /** M11's FR-11.6: prefills this answer's question had, and whether one was
+   *  used (its words were exactly these). */
+  prefill?: { tried: number; used: boolean } | null;
   at: string;
 }
 

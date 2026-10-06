@@ -125,7 +125,9 @@ def project_for_interviewer(
         profile_prefix=profile_prefix,
         move=move,
         ladder_depth=ladder_depth,
-        time_remaining_s=int(time_remaining_s),
+        # To the half-minute: all an interviewer keeps of the clock, and the
+        # same in a prefill a second before the answer (M11's FR-11.6).
+        time_remaining_s=int(time_remaining_s) // 30 * 30,
     )
 
 

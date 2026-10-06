@@ -31,7 +31,7 @@ from ai_core.timeutil import utcnow
 from ai_core.versions import VersionStamp
 from sqlmodel import Session, select
 
-from . import PROMPT_VERSION, degrade, outbox, pacing, planner, presence, replan, store
+from . import PROMPT_VERSION, degrade, outbox, pacing, planner, prefill, presence, replan, store
 from .adapters import Upstreams, UpstreamUnavailable
 from .agents import Interviewer, ProbeStrategist, Summariser, summariser
 from .agents.guard import SafetyGuard
@@ -57,6 +57,7 @@ from .orchestration import Deps, Selected, StepInput, StepResult, build, enabled
 from .orchestration.graph import MIN_SECONDS_FOR_A_QUESTION, UNJUDGED
 from .personas import Persona, persona
 from .state import InvalidTransition, SessionState
+from .state import apply as apply_event
 
 log = logging.getLogger("uvicorn.error")
 
@@ -462,6 +463,9 @@ class Engine:
     clock: Callable[[], datetime] = utcnow
     #: One plan change per step (§6.4, Trap 4). Reset by `_step`.
     _changed_this_step: bool = field(default=False, init=False, repr=False)
+    #: M11's FR-11.6: the model answers a prefill kept for this answer's exact
+    #: words, for the step about to run. Taken by `_step`.
+    _replay: prefill.Kept | None = field(default=None, init=False, repr=False)
 
     # ── lookups ──────────────────────────────────────────────────────────
 
@@ -885,6 +889,16 @@ class Engine:
             if already.text != text:
                 raise AnswerRejected("That question has already been answered.")
             return self.continue_session(session_id)
+        payload = self._answer_payload(row, answer_index, question_turn_id, text, asr)
+        # M11's FR-11.6: the thinking done while the student paused is used
+        # only for these exact words — anything else and the model is asked.
+        ahead = prefill.take(session_id, question_turn_id)
+        if ahead is not None:
+            used = ahead.text == text
+            payload["prefill"] = {"tried": ahead.tried, "used": used}
+            if used:
+                ahead.done.wait(timeout=prefill.WAIT_S)
+                self._replay = ahead.kept
         try:
             store.record(
                 self.db,
@@ -892,20 +906,84 @@ class Engine:
                 "answer.received",
                 step="answer",
                 turn_index=answer_index,
-                payload={
-                    "turn_id": str(_turn_id(row.id, answer_index)),
-                    "turn_index": answer_index,
-                    "text": text,
-                    "question_turn_id": str(question_turn_id),
-                    "completion_reason": "submit",
-                    "modality": "verbal",
-                    # M11's recogniser: how sure, and which words were not.
-                    **({"asr": asr} if asr else {}),
-                },
+                payload=payload,
             )
         except InvalidTransition as exc:
+            self._replay = None
             raise AnswerRejected(str(exc)) from exc
-        return self.continue_session(session_id)
+        try:
+            return self.continue_session(session_id)
+        finally:
+            self._replay = None
+
+    def _answer_payload(
+        self,
+        row: InterviewSession,
+        answer_index: int,
+        question_turn_id: uuid.UUID,
+        text: str,
+        asr: dict | None,
+    ) -> dict:
+        """What `answer.received` records — one shape for the answer and for
+        the prefill that thinks ahead of it, so their requests can match."""
+        return {
+            "turn_id": str(_turn_id(row.id, answer_index)),
+            "turn_index": answer_index,
+            "text": text,
+            "question_turn_id": str(question_turn_id),
+            "completion_reason": "submit",
+            "modality": "verbal",
+            # M11's recogniser: how sure, and which words were not.
+            **({"asr": asr} if asr else {}),
+        }
+
+    def prefill(
+        self,
+        session_id: uuid.UUID,
+        question_turn_id: uuid.UUID,
+        text: str,
+        *,
+        asr: dict | None = None,
+    ) -> bool:
+        """M11's FR-11.6: think about what the student has said so far, while
+        they pause — in memory, writing nothing. The model's answers are kept
+        by their exact requests for the answer that follows (`prefill.py`).
+        False when there was nothing to think about."""
+        row = self.row(session_id)
+        state = self.state(session_id)
+        asked = state.turn(question_turn_id)
+        if (
+            state.status is not SessionStatus.live
+            or state.open_turn_id != question_turn_id
+            or asked is None
+            or state.retry_offer is not None
+        ):
+            return False
+        now = self.clock()
+        if degrade.circuit_open(state.flags.model_failures, state.flags.model_tried_at, now):
+            return False  # the model is resting; nothing to get ready
+        text = text[:MAX_ANSWER_CHARS]
+        entry = prefill.begin(session_id, question_turn_id, text)
+        try:
+            answer_index = asked.turn_index + 1
+            payload = self._answer_payload(row, answer_index, question_turn_id, text, asr)
+            ahead = apply_event(state, "answer.received", payload, now, state.last_seq + 1)
+            inp = StepInput(
+                state=ahead,
+                now=now,
+                item=self._current_item(ahead),
+                answer=text,
+                recorded=None,
+                # No selecting ahead: choosing the next question writes to the
+                # log, and nothing here may. Its phrasing is asked for fresh.
+                select=None,
+            )
+            run_step(compiled_step(prefill.Recording(self.llm, entry.kept)), inp)
+        except Exception as exc:  # noqa: BLE001 - a failed prefill costs nothing
+            log.info("M06: prefill for %s did not finish: %r", session_id, exc)
+        finally:
+            entry.done.set()
+        return True
 
     def end(self, session_id: uuid.UUID, reason: str) -> SessionState:
         """A student pressing End gets the same closing line as running out of
@@ -1021,6 +1099,11 @@ class Engine:
         llm = self.llm
         if degrade.circuit_open(state.flags.model_failures, state.flags.model_tried_at, now):
             llm = degrade.CIRCUIT_OPEN
+        elif self._replay is not None:
+            # FR-11.6: requests the prefill made for these exact words are
+            # answered from what it kept; any other goes to the model.
+            llm = prefill.Replaying(llm, self._replay)
+        self._replay = None
         try:
             result = run_step(
                 compiled_step(llm),
