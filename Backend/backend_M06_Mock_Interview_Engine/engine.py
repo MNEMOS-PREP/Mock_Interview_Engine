@@ -684,13 +684,20 @@ class Engine:
             return ()
         try:
             resumes = up.m01.resumes_for(row.candidate_id)
-            confirmed = next(
-                (r for r in resumes if str(r.get("status")) == "confirmed"),
-                resumes[0] if resumes else None,
+            # The student's CURRENT resume: M01 marks it `is_active` (the one
+            # they chose, or the newest that parsed). Until 2026-10-07 this
+            # read a `status` field M01 never sends — the stub had invented it
+            # — so the first resume in M01's list was taken, which for the
+            # demo student was an old seed with no claims: no project round,
+            # and no professor on the panel.
+            chosen = (
+                next((r for r in resumes if r.get("is_active") is True), None)
+                or next((r for r in resumes if r.get("confirmed") is True), None)
+                or (resumes[0] if resumes else None)
             )
-            if confirmed is None:
+            if chosen is None:
                 return ()
-            found = up.m01.claims(uuid.UUID(str(confirmed["id"])), row.candidate_id)
+            found = up.m01.claims(uuid.UUID(str(chosen["id"])), row.candidate_id)
         except (UpstreamUnavailable, KeyError, ValueError) as exc:
             log.info("M06: M01 claims unavailable for %s: %s", row.id, exc)
             return ()

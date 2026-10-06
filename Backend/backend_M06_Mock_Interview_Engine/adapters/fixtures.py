@@ -407,11 +407,29 @@ class FixtureResumes:
         self.resume_id = uuid.UUID("0b1e0000-0000-4000-8000-000000000001")
 
     def resumes_for(self, candidate_id: UUID) -> list[dict[str, Any]]:
+        # M01's own shape (`GET /v1/resumes/candidate/{id}`): the current
+        # resume is `is_active`; `confirmed` is the student's own say-so.
+        # An older one first, as M01 lists them, so a test sees the choice.
         return [
-            {"id": str(self.resume_id), "candidate_id": str(candidate_id), "status": "confirmed"}
+            {
+                "id": str(uuid5(self.resume_id, "older")),
+                "candidate_id": str(candidate_id),
+                "is_active": False,
+                "confirmed": False,
+            },
+            {
+                "id": str(self.resume_id),
+                "candidate_id": str(candidate_id),
+                "is_active": True,
+                "confirmed": True,
+            },
         ]
 
     def claims(self, resume_id: UUID, candidate_id: UUID) -> dict[str, Any]:
+        if resume_id != self.resume_id:
+            # The older resume has nothing shaky on it: picking it instead of
+            # the current one loses the project round, and a test sees that.
+            return {"resume_id": str(resume_id), "claims": []}
         claim = {
             "id": "c1",
             "text": "Built a crop-disease classifier reaching 94% accuracy",

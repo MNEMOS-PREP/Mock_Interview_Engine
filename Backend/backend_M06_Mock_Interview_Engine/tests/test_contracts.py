@@ -156,8 +156,28 @@ def test_fixture_profile_summary_is_pinned_per_session():
     assert memory.profile_summary(cid, sid) is memory.profile_summary(cid, sid)
 
 
+def test_the_project_round_reads_the_students_current_resume(db):
+    """M01 marks the current resume `is_active`; M06 read a `status` field
+    M01 never sends, and took the first resume in the list — for the demo
+    student an old seed with no claims, so no project round (found live,
+    2026-10-07). The fixture now lists an older, claim-less resume first."""
+    from backend_M06_Mock_Interview_Engine import store
+
+    from .stubs import BankQuestions, StubLLM, verdict
+    from .test_engine import make
+
+    engine = make(db, llm=StubLLM([verdict()]), m05=BankQuestions())
+    row, _ = store.create_session(
+        engine.db, candidate_id=uuid.uuid4(), kind="mock", mode="mock", minutes=30
+    )
+    state = engine.plan(row.id)
+    assert any(s.kind == "project" for s in state.plan.segments)
+    assert state.plan.claims and state.plan.claims[0]["id"] == "c1"
+
+
 def test_fixture_claims_carry_m01s_probe_shape():
-    claims = FixtureResumes().claims(uuid.uuid4(), uuid.uuid4())
+    resumes = FixtureResumes()
+    claims = resumes.claims(resumes.resume_id, uuid.uuid4())
     for probe in claims["claims"][0]["probes"]:
         conforms(probe, contract("M01", "DrillProbe"))
 
