@@ -291,6 +291,9 @@ class SpokenPart(BaseModel):
 
     speaker_id: str
     text: str
+    #: Silence after this part, ms — the note-taking pause (M11's FR-11.12):
+    #: the interviewer says "let me note that down" and is quiet a moment.
+    pause_after_ms: int = 0
 
 
 class TurnView(BaseModel):

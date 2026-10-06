@@ -309,3 +309,34 @@ def test_someone_joining_midway_says_so_instead_of_their_opening():
     assert technical.title in said
     # Nobody has spoken yet: the opening greeting, as before.
     assert bridge_line(joining, frozenset()) == meera.said().greeting
+
+
+def test_a_note_taking_line_is_said_on_its_own_then_a_pause(db, monkeypatch):
+    """M11's FR-11.12: "let me note that down", then quiet while they write —
+    a part of its own with a pause after it, not run into the next words."""
+    from backend_M06_Mock_Interview_Engine.orchestration.graph import NOTE_TAKING_PAUSE_MS
+
+    table = dict(personas_module.personas())
+    table["methodical_engineer"] = table["methodical_engineer"].model_copy(
+        update={"note_taking_cadence": 1}
+    )
+    monkeypatch.setattr(personas_module, "personas", lambda: table)
+    monkeypatch.setattr(seating, "personas", lambda: table)
+    # Thirty minutes: rounds of more than one question. A note is never taken
+    # at a hand-over, where it would read as a verdict on the round.
+    engine, row = session(
+        db, minutes=30, llm=StubLLM([verdict(band="at", justification="held")] * 60)
+    )
+    state = run(
+        engine,
+        row,
+        HELD,
+        until=lambda s: any(p.pause_after_ms for t in asked(s) for p in t.parts),
+        limit=24,
+    )
+    noted = next(t for t in asked(state) if any(p.pause_after_ms for p in t.parts))
+    note = next(p for p in noted.parts if p.pause_after_ms)
+    priya = table["methodical_engineer"]
+    assert note.text == priya.said().note_taking
+    assert note.pause_after_ms == NOTE_TAKING_PAUSE_MS
+    assert noted.parts[-1].text != note.text, "the question follows, after the pause"

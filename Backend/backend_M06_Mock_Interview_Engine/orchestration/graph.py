@@ -436,17 +436,25 @@ def _fresh_exit(state: SessionState, persona: Persona, line: str) -> str:
     return line
 
 
-def _merge_voices(parts: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """Adjacent words by one voice are one part; empty ones are dropped."""
-    out: list[tuple[str, str]] = []
-    for who, text in parts:
-        text = text.strip()
+#: M11's FR-11.12: how long an interviewer is quiet after "let me note that
+#: down" — long enough to be writing, short enough not to read as a stall.
+NOTE_TAKING_PAUSE_MS = 1500
+
+
+def _merge_voices(parts: list[tuple]) -> list[tuple]:
+    """Adjacent words by one voice are one part — unless a pause sits
+    between them (a third element, ms) — and empty ones are dropped."""
+    out: list[tuple] = []
+    for part in parts:
+        who, text = part[0], part[1].strip()
+        pause = int(part[2]) if len(part) > 2 else 0
         if not text:
             continue
-        if out and out[-1][0] == who:
-            out[-1] = (who, f"{out[-1][1]} {text}")
+        if out and out[-1][0] == who and len(out[-1]) == 2:
+            text = f"{out[-1][1]} {text}"
+            out[-1] = (who, text, pause) if pause else (who, text)
         else:
-            out.append((who, text))
+            out.append((who, text, pause) if pause else (who, text))
     return out
 
 
@@ -455,7 +463,7 @@ def _voiced(utterance: Utterance, parts: list[tuple[str, str]]) -> Utterance:
     the question (what a repeat says) is the asker's question alone."""
     merged = _merge_voices(parts)
     return Utterance(
-        " ".join(text for _, text in merged),
+        " ".join(part[1] for part in merged),
         utterance.source,
         call=utterance.call,
         fallback_reason=utterance.fallback_reason,
@@ -751,7 +759,8 @@ def build(deps: Deps):
             ):
                 # Realism only (§6.7): it says nothing about the answer, and
                 # never follows a break, where it would read as a verdict.
-                exit_line = f"{said_leaving.note_taking} {exit_line}"
+                # Said on its own, then a pause while they write (FR-11.12).
+                before.append((leaving.id, said_leaving.note_taking, NOTE_TAKING_PAUSE_MS))
         exit_line = f"{exit_line} {pace}".strip()
         bridge = s.get("bridge") or inp.state.pending_bridge
         if bridge and arriving.id != leaving.id:

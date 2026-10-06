@@ -67,7 +67,8 @@ class Utterance:
     #: (persona id, words) per voice, in order, when more than one panelist
     #: says this line — or when the graph names who says it. Empty means the
     #: segment's interviewer said all of it.
-    parts: tuple[tuple[str, str], ...] = ()
+    #: A third element, when present, is a pause after that part in ms.
+    parts: tuple[tuple, ...] = ()
 
 
 TokenSink = Callable[[str], None]

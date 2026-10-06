@@ -288,11 +288,18 @@ def bridge_line(
     return said.bridge_to.format(topic=arriving.title)
 
 
-def _parts_payload(spoken: list[tuple[str, str]]) -> list[dict[str, str]]:
-    """A line's voices for its event — none for a line one person said."""
+def _parts_payload(spoken: list[tuple]) -> list[dict]:
+    """A line's voices for its event — none for a line one person said in
+    one breath. A pause inside a line (M11's FR-11.12) rides on its part."""
     if len(spoken) < 2:
         return []
-    return [{"speaker_id": who, "text": text} for who, text in spoken]
+    out = []
+    for part in spoken:
+        entry = {"speaker_id": part[0], "text": part[1]}
+        if len(part) > 2:
+            entry["pause_after_ms"] = part[2]
+        out.append(entry)
+    return out
 
 
 #: EC-6.1: a gentle prompt, a second, then the offer to move on.
