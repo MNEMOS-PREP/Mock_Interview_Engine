@@ -36,6 +36,11 @@
  * said in their own voice (`@ai/core` v0.17.0). The header shows the panel,
  * with whoever is speaking lit. Before this every line was labelled with the
  * CURRENT interviewer's name, so a hand-over relabelled the whole transcript.
+ *
+ * 2026-10-06: "Talk freely" (M11 day 3, `useListening`): the student may keep
+ * the mic open and start speaking at any time — over the interviewer too,
+ * who stops (barge-in, spec §6.5; Final Boss finishes up to 1.5 s first, once
+ * a round) — and their words land in the box. Off unless they turn it on.
  */
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -47,6 +52,7 @@ import {
   Icon,
   Skeleton,
   useInterviewerVoice,
+  useListening,
   type InterviewerVoice,
   type SpokenPart,
 } from "@ai/core";
@@ -115,6 +121,36 @@ function VoiceToggle({ voice, name }: { voice: Voice; name: string }) {
     >
       <SpeakerIcon on={voice.enabled} />
     </button>
+  );
+}
+
+/** "Talk freely" is remembered for this browser, like the voice switch. */
+const TALK_FREELY_KEY = "m06.talkFreely";
+
+function readTalkFreely(): boolean {
+  try {
+    return localStorage.getItem(TALK_FREELY_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+/** How loud the student is, drawn per frame without re-rendering the room. */
+function LevelMeter({ level }: { level: () => number }) {
+  const bar = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    let frame = 0;
+    const draw = () => {
+      if (bar.current) bar.current.style.transform = `scaleX(${Math.max(0.04, level()).toFixed(3)})`;
+      frame = requestAnimationFrame(draw);
+    };
+    frame = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frame);
+  }, [level]);
+  return (
+    <span aria-hidden className="inline-block h-1.5 w-10 overflow-hidden rounded-full bg-surface-sunken">
+      <span ref={bar} className="block h-full origin-left rounded-full bg-session-listening" />
+    </span>
   );
 }
 
@@ -697,6 +733,33 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const waiting =
     answer.isPending || start.isPending || retry.isPending || moveOn.isPending;
 
+  // M11 day 3: the mic open while the interviewer speaks, so the student can
+  // start any time — and the interviewer stops when they do.
+  const [talkFreely, setTalkFreelyState] = useState(readTalkFreely);
+  const setTalkFreely = (on: boolean) => {
+    setTalkFreelyState(on);
+    try {
+      localStorage.setItem(TALK_FREELY_KEY, on ? "on" : "off");
+    } catch {
+      /* still applies for this visit */
+    }
+  };
+  // Final Boss contests a barge-in once a round (§6.5); these rounds have.
+  const contested = useRef(new Set<number>());
+  const listening = useListening({
+    enabled: talkFreely && data?.status === "live",
+    playing: voice.isSpeaking,
+    onSpeechStart: (startedAt) => {
+      if (!data) return;
+      const round = data.current_segment;
+      const contest = data.mode === "final_boss" && !contested.current.has(round);
+      if (voice.bargeIn(startedAt, { contest }) && contest) contested.current.add(round);
+      // Their words go in the box, as if they had pressed the mic.
+      const open = data.status === "live" && Boolean(data.open_turn_id) && !waiting;
+      if (open && !codeMode && dictation.supported && !dictation.listening) dictation.start();
+    },
+  });
+
   const { connected } = useInterviewStream(
     data?.status === "live" ? sessionId : undefined,
     {
@@ -1236,6 +1299,24 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     <Icon name="mic" size={16} />
                   </button>
                 )}
+                {voice.supported && (
+                  <button
+                    type="button"
+                    onClick={() => setTalkFreely(!talkFreely)}
+                    aria-pressed={talkFreely}
+                    title={
+                      talkFreely
+                        ? "The mic stays open: start speaking any time, even over the interviewer, and your words go in the box. Headphones keep their voice out of your mic."
+                        : "Keep the mic open, so you can start speaking any time — even over the interviewer"
+                    }
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-2xs font-medium ${
+                      talkFreely ? "bg-brand-soft text-brand" : "text-ink-soft hover:bg-surface-sunken hover:text-ink"
+                    }`}
+                  >
+                    Talk freely
+                    {talkFreely && listening.active && <LevelMeter level={listening.level} />}
+                  </button>
+                )}
                 {!data.in_closing && (
                   <button
                     type="button"
@@ -1300,17 +1381,21 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     ⚑ Flag
                   </Button>
                 )}
-                <span className="ml-auto hidden text-2xs text-ink-faint sm:inline">
+                <span className="ml-auto hidden text-2xs text-ink-faint xl:inline">
                   Ctrl / ⌘ + Enter
                 </span>
-                <Button type="submit" disabled={!canAnswer || !draft.trim()}>
-                  {data.in_closing ? "Ask" : "Answer"} →
-                </Button>
+                <span className="ml-auto xl:ml-0">
+                  <Button type="submit" disabled={!canAnswer || !draft.trim()}>
+                    {data.in_closing ? "Ask" : "Answer"} →
+                  </Button>
+                </span>
               </div>
               </div>
               <p className="mt-2 text-center text-2xs text-ink-faint">
                 {dictation.error
                   ? dictation.error
+                  : talkFreely && listening.error
+                    ? listening.error
                   : fillers && fillers.total > 0
                     ? `You said ${fillers.total} filler word${fillers.total === 1 ? "" : "s"} (${fillers.top.join(", ")}) — worth noticing, not a mark.`
                     : "There is no score on this screen — the notes come at the end."}
