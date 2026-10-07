@@ -70,6 +70,22 @@ class LocalQuestions:
     def question(self, question_id: UUID) -> dict[str, Any]:
         return self.by_id[UUID(str(question_id))]
 
+    def tracks(self) -> dict[str, Any]:
+        """M05's `/v1/bank/tracks` shape, for the round types this set holds.
+        No names: the playlist does not have any, and the planner's own
+        fallback is the honest one."""
+        found: dict[str, int] = {}
+        for item in self.items:
+            for round_type in item["round_types"]:
+                found[round_type] = found.get(round_type, 0) + 1
+        return {
+            "groups": [],
+            "tracks": [
+                {"round_type": rt, "kind": "technical", "approved": n, "drafts": 0}
+                for rt, n in found.items()
+            ],
+        }
+
     def seed(
         self, session_id: UUID, candidate_id: UUID, posterior: dict[str, float], snapshot_id: str
     ) -> dict[str, Any]:

@@ -104,13 +104,15 @@ def test_the_warm_up_and_the_closing_come_off_the_top():
     """§6.1. M02 is asked to price what is LEFT, so the plan it returns
     already fits — trimming its allocations afterwards is re-allocating
     them, which is Trap 8."""
-    assert planner.reserved_minutes(45) == (4.0, 5.0)  # 10% capped at 4
+    assert planner.reserved_minutes(45) == (4.0, 4.5)  # 10% each, warm-up capped at 4
     assert planner.minutes_for_m02(45) == 36
 
-    # A short session gets a proportionally short warm-up, not four minutes
-    # of a ten-minute interview.
-    assert planner.reserved_minutes(10) == (1.0, 5.0)
-    assert planner.minutes_for_m02(10) == 4
+    # A short session gets a proportionally short warm-up and closing, not
+    # four and five minutes of a ten-minute interview — but the closing never
+    # drops below the two minutes "any questions for me?" needs.
+    assert planner.reserved_minutes(10) == (1.0, 2.0)
+    assert planner.minutes_for_m02(10) == 7
+    assert planner.reserved_minutes(60) == (4.0, 5.0)  # and never above five
 
     # And never zero, however short the request.
     assert planner.minutes_for_m02(1) == 1
@@ -285,9 +287,9 @@ def test_without_a_job_description_the_plan_says_it_is_not_tailored():
     assert plan.coverage_plan is None
     assert all(s.requirement_ids == [] for s in plan.segments)
     # The budget is what is left after the reserve, split over what M05 can
-    # fill — 45 − 4 − 5 = 36 minutes, one round type.
-    assert middle[0].minutes == 36.0
-    assert middle[0].question_budget == 10  # 36 // 3.5
+    # fill — 45 − 4 − 4.5 = 36.5 minutes, one round type.
+    assert middle[0].minutes == 36.5
+    assert middle[0].question_budget == 18  # 36.5 // 2
 
 
 def test_with_no_job_description_and_no_bank_there_is_still_a_report():
@@ -314,16 +316,17 @@ def test_the_project_segment_is_paid_for_by_the_largest_round_not_the_closing():
     """§6.1. The closing is reserved (FR-6.17), so the minutes come from the
     largest verbal segment — and not all of them: a session that was 14
     minutes of SQL should not become 4 because the resume had a shaky line."""
-    plan = planner.assemble(inputs(claims=(claim(), claim("c2"))))
+    plan = planner.assemble(inputs(claims=(claim(), claim("c2")), resume_included=True))
     kinds_in_order = kinds(plan)
     assert kinds_in_order == ["warmup", "project", "technical", "closing"]
 
     project = plan.segments[1]
     technical = plan.segments[2]
     closing = plan.segments[3]
-    assert project.minutes == 7.0  # two claims at 3.5, and under half of 14
-    assert technical.minutes == 7.0  # 14 − 7, paid by the largest round
-    assert closing.minutes == planner.CLOSING_MINUTES  # untouched
+    assert project.minutes == 4.0  # two claims at 2, and under half of 14
+    assert technical.minutes == 10.0  # 14 − 4, paid by the largest round
+    assert technical.question_budget == 4, "M02's count, carried (Trap 8)"
+    assert closing.minutes == planner.reserved_minutes(45)[1]  # untouched
     assert project.question_budget == 2
     assert project.source == "m01_claims"
 
@@ -331,22 +334,27 @@ def test_the_project_segment_is_paid_for_by_the_largest_round_not_the_closing():
 def test_a_resume_with_nothing_shaky_gets_no_project_segment():
     """Not a degraded session — a student with nothing to defend is not
     missing a feature."""
-    assert "project" not in kinds(planner.assemble(inputs()))
-    assert "project" not in kinds(planner.assemble(inputs(claims=(claim(band="safe"),))))
+    opted_in = {"resume_included": True}
+    assert "project" not in kinds(planner.assemble(inputs(**opted_in)))
+    assert "project" not in kinds(
+        planner.assemble(inputs(claims=(claim(band="safe"),), **opted_in))
+    )
     # A claim M01 could not write probes for is one M06 has no question for,
     # and inventing one would be M06 deciding what to ask about a resume.
-    assert "project" not in kinds(planner.assemble(inputs(claims=(claim(probes=0),))))
+    assert "project" not in kinds(
+        planner.assemble(inputs(claims=(claim(probes=0),), **opted_in))
+    )
 
 
 def test_the_project_segment_never_eats_more_than_half_a_round():
     """Five shaky claims is a resume problem, not a reason to cancel the
     interview the posting asked for."""
     many = tuple(claim(f"c{i}") for i in range(5))
-    plan = planner.assemble(inputs(claims=many))
+    plan = planner.assemble(inputs(claims=many, resume_included=True))
     project = next(s for s in plan.segments if s.kind == "project")
     technical = next(s for s in plan.segments if s.kind == "technical")
     assert project.minutes == 7.0 == technical.minutes
-    assert project.question_budget == 2  # what 7 minutes actually holds
+    assert project.question_budget == 3  # what 7 minutes actually holds
     assert len(plan.claims) == 5, "the plan still records every claim it saw"
 
 
@@ -354,10 +362,16 @@ def test_with_no_round_to_take_from_the_project_segment_is_the_interview():
     """No JD and no bank — but a resume with something worth defending is
     still an interview worth having."""
     plan = planner.assemble(
-        inputs(coverage=None, jd_id=None, available_round_types=(), claims=(claim(),))
+        inputs(
+            coverage=None,
+            jd_id=None,
+            available_round_types=(),
+            claims=(claim(),),
+            resume_included=True,
+        )
     )
     assert kinds(plan) == ["warmup", "project", "closing"]
-    assert next(s for s in plan.segments if s.kind == "project").minutes == 3.5
+    assert next(s for s in plan.segments if s.kind == "project").minutes == 2.0
 
 
 # ── a focused session ("Practise Recursion" on Today) ────────────────────
@@ -378,7 +392,7 @@ def test_a_chosen_focus_is_the_whole_interview():
     assert len(middle) == 1
     assert middle[0].title == "Focus: Recursion"
     assert middle[0].concept_ids == ["concept:recursion"]
-    assert middle[0].minutes == 36.0
+    assert middle[0].minutes == 36.5
     assert "You chose to practise Recursion" in middle[0].rationale
 
 

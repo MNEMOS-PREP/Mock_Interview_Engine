@@ -197,6 +197,9 @@ class LiveQuestions:
         # (Platform_Core v0.12.0). A browser gets the stem alone.
         return self.http.get(f"/v1/questions/{question_id}", service=True).body
 
+    def tracks(self) -> dict[str, Any]:
+        return self.http.get("/v1/bank/tracks").body or {}
+
     def seed(
         self,
         session_id: UUID,

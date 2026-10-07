@@ -29,8 +29,15 @@ HELD = "It hashes the key to a bucket and reads that bucket."
 
 def session(db, mode="mock", minutes=10, llm=None):
     engine = make(db, llm=llm or StubLLM([verdict()] * 60), m05=BankQuestions())
+    # The student opted in to resume questions, so the project round brings
+    # its professor and the panel has someone to hand over to.
     row, _ = store.create_session(
-        engine.db, candidate_id=uuid.uuid4(), kind="mock", mode=mode, minutes=minutes
+        engine.db,
+        candidate_id=uuid.uuid4(),
+        kind="mock",
+        mode=mode,
+        minutes=minutes,
+        include_resume=True,
     )
     engine.start(row.id)
     return engine, row

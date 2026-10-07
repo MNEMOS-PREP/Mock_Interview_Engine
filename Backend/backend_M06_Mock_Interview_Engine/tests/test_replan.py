@@ -228,8 +228,11 @@ def test_a_70_percent_narrowing_takes_the_crossings_one_change(db):
     what a boundary answers first anyway. A second change at that crossing
     is two live notes at once, and the wandering plan Trap 4 is about."""
     clock = Clock()
+    # Four questions in each later round: at two minutes a question, the
+    # eight they owe cannot fit in what is left at 70%, so there is debt to
+    # narrow (with two each, everything still fit and nothing narrowed).
     engine = make(
-        db, plan=rounds_plan(("r1", 3, 10.0), ("r2", 2, 7.0), ("r3", 2, 7.0)), clock=clock
+        db, plan=rounds_plan(("r1", 3, 10.0), ("r2", 4, 7.0), ("r3", 4, 7.0)), clock=clock
     )
     row = session(engine, minutes=45)
     for _ in range(3):  # the warm-up, then two of the first round's three

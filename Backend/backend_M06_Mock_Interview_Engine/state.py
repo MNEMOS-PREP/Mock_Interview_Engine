@@ -70,6 +70,12 @@ class SessionState(BaseModel):
     #: no job description; the label is for display only.
     focus_concepts: list[str] = Field(default_factory=list)
     focus_label: str | None = None
+    #: What the student chose on the setup page (2026-10-07): the track (a
+    #: round type) or None for a mixed interview, and whether — and from
+    #: which resume — to ask about their own work.
+    track: str | None = None
+    include_resume: bool = False
+    resume_id: UUID | None = None
     #: M04's pinned summary text (AC-4.13). The interviewer's cached prefix.
     profile_prefix: str = ""
 
@@ -235,6 +241,10 @@ def _created(_s: SessionState | None, p: dict, at: datetime) -> SessionState:
         drill=p.get("drill"),
         focus_concepts=[str(c) for c in p.get("focus_concepts") or []],
         focus_label=p.get("focus_label"),
+        track=p.get("track"),
+        # Sessions created before 2026-10-07 always read the resume.
+        include_resume=bool(p.get("include_resume", "track" not in p)),
+        resume_id=UUID(str(p["resume_id"])) if p.get("resume_id") else None,
         flags=SessionFlags(pauses_allowed=pause_allowance(int(p.get("requested_minutes", 45)))),
         created_at=at,
     )

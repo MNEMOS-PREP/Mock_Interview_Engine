@@ -57,9 +57,16 @@ def drill(engine: Engine, candidate=None):
     return row
 
 
-def mock(engine: Engine, minutes=10, candidate=None):
+def mock(engine: Engine, minutes=10, candidate=None, include_resume=True):
+    """A mock whose student opted in to resume questions — the fixture
+    resume has one shaky claim, so it has a project round."""
     row, _ = store.create_session(
-        engine.db, candidate_id=candidate or uuid.uuid4(), kind="mock", mode="mock", minutes=minutes
+        engine.db,
+        candidate_id=candidate or uuid.uuid4(),
+        kind="mock",
+        mode="mock",
+        minutes=minutes,
+        include_resume=include_resume,
     )
     return row
 

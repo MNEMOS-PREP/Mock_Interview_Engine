@@ -16,7 +16,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from .contracts import M05_OWNED, SessionStatus
+from .contracts import DRAFT_NOT_SCORED, M05_OWNED, SessionStatus
 from .items import expected_statements
 from .models import SessionEvent
 from .modes import mode_config
@@ -34,6 +34,7 @@ NOT_SCORED = {
         "Asked from the backup set while the question bank was offline, so it was not scored."
     ),
     "template": "Not a scored question.",
+    "m05_draft": DRAFT_NOT_SCORED,
 }
 
 WARM_UP_SHARE = 0.25

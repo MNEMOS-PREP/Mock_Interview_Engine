@@ -206,13 +206,16 @@ def test_the_agent_registry_is_published(client):
 def test_the_plan_can_be_seen_before_the_interview_starts(client, as_student):
     """A student should know what they are about to be asked."""
     sid = client.post(
-        "/v1/interviews", json={"minutes": 45, "jd_id": str(uuid.uuid4())}, headers=as_student
+        "/v1/interviews",
+        json={"minutes": 45, "jd_id": str(uuid.uuid4()), "include_resume": True},
+        headers=as_student,
     ).json()["id"]
 
     previewed = client.post(f"/v1/interviews/{sid}/plan", headers=as_student).json()
     assert previewed["status"] == "planned", "previewing is not starting"
-    # The fixture resume has one risky claim, so the plan opens with the
-    # student's own work before the posting's requirements (§6.1's order).
+    # The student asked for resume questions and the fixture resume has one
+    # risky claim, so the plan opens with their own work before the
+    # posting's requirements (§6.1's order).
     assert [s["kind"] for s in previewed["plan"]["segments"]] == [
         "warmup",
         "project",

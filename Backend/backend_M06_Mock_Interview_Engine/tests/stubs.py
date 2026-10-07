@@ -167,7 +167,7 @@ class DownQuestions:
 
         raise UpstreamUnavailable("M05", "connection refused")
 
-    select = question = seed = observe = close = flag = _fail
+    select = question = tracks = seed = observe = close = flag = _fail
 
 
 class NoClaims:

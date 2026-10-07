@@ -40,7 +40,12 @@ def make(db, llm=None, **upstreams) -> Engine:
 
 def live(engine: Engine, mode: str):
     row, _ = store.create_session(
-        engine.db, candidate_id=uuid.uuid4(), kind="mock", mode=mode, minutes=30
+        engine.db,
+        candidate_id=uuid.uuid4(),
+        kind="mock",
+        mode=mode,
+        minutes=30,
+        include_resume=True,
     )
     engine.start(row.id)
     return row
@@ -63,6 +68,7 @@ def panel_plan(mode: str):
             requirements=REQUIREMENTS,
             available_round_types=("dsa_verbal",),
             claims=(claim,),
+            resume_included=True,
         )
     )
 

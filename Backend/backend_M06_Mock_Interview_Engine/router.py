@@ -128,6 +128,14 @@ class SessionCreate(BaseModel):
     #: Concept ids to practise ("Practise Recursion" on Today). Up to three.
     focus_concepts: list[str] = Field(default_factory=list, max_length=3)
     focus_label: str | None = Field(default=None, max_length=80)
+    #: The track the student picked on the setup page — an M05 round type
+    #: from `GET /v1/bank/tracks`. None is a mixed interview.
+    track: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{1,40}$")
+    #: Questions from the student's own resume: off unless they ask for them
+    #: (2026-10-07 — "not every interview is meant to ask from resume"), and
+    #: from the resume they pick, when they have several.
+    include_resume: bool = False
+    resume_id: uuid.UUID | None = None
     mode: Mode = "mock"
     minutes: int = Field(default=45, ge=MIN_MINUTES, le=MAX_MINUTES)
 
@@ -654,6 +662,9 @@ def create_session(
             jd_id=jd_id,
             focus_concepts=body.focus_concepts,
             focus_label=body.focus_label,
+            track=body.track,
+            include_resume=body.include_resume or body.resume_id is not None,
+            resume_id=body.resume_id,
         )
     except store.LiveSessionExists as exc:
         raise _live_conflict(exc) from exc

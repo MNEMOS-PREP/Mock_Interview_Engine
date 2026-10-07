@@ -92,6 +92,11 @@ class Questions(Protocol):
     def question(self, question_id: UUID) -> dict[str, Any]:
         """`GET /v1/questions/{id}` — hint_ladder, follow_ups, key_points."""
 
+    def tracks(self) -> dict[str, Any]:
+        """`GET /v1/bank/tracks` — `{groups, tracks: [{round_type, title,
+        group, kind, approved, drafts, ...}]}`: what each round type is called
+        and who runs it."""
+
     def seed(
         self,
         session_id: UUID,

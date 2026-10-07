@@ -32,6 +32,9 @@ SegmentKind = Literal["warmup", "technical", "project", "behavioural", "closing"
 QuestionSource = Literal[
     "m05_bank",
     "m05_fallback",
+    # A generated item no person has approved yet (M05 FR-5.6): asked, and
+    # never scored. 2026-10-07.
+    "m05_draft",
     "m01_probe",
     "local_fallback",
     "template",
@@ -40,7 +43,13 @@ QuestionSource = Literal[
 ]
 #: Sources whose items M05 owns: what M13 can resolve a package for, and what
 #: the ⚑ can ask M05 to exclude. `local_fallback` is M06's own backup set.
-M05_OWNED: frozenset[str] = frozenset({"m05_bank", "m05_fallback"})
+M05_OWNED: frozenset[str] = frozenset({"m05_bank", "m05_fallback", "m05_draft"})
+#: Why a drafted item's answer has no score, in the student's words. One
+#: sentence, shared by the outbox that declines to send it and the notes.
+DRAFT_NOT_SCORED = (
+    "A newly written practice question nobody has reviewed yet, so it is not scored — "
+    "the notes show what a strong answer covers."
+)
 CompletionReason = Literal["submit", "timeout", "interrupted", "endpoint", "barge_in"]
 
 
@@ -197,6 +206,13 @@ class InterviewPlan(BaseModel):
     #: (`panel.sit_in`). Empty on plans from before 2026-10-06, whose panel is
     #: whoever runs a segment.
     panel: list[str] = Field(default_factory=list)
+    #: The track the student picked (an M05/M13 round type), or None for a
+    #: mixed interview. 2026-10-07.
+    track: str | None = None
+    #: Whether the student asked for questions from their resume, and which
+    #: one. Off unless they opt in: an interview is not a resume review.
+    resume_included: bool = False
+    resume_id: UUID | None = None
     versions: VersionStamp = Field(default_factory=VersionStamp)
 
 

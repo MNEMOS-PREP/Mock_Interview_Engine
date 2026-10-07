@@ -658,7 +658,11 @@ class Engine:
         )
         rubrics = self._rubrics()
         scoreable = tuple(str(r["round_type"]) for r in rubrics) or (DEFAULT_ROUND_TYPE,)
-        round_types = self._available_round_types(row, state, scoreable)
+        # The track the student picked is the only one asked about: an ML
+        # interview that probes every round type and splits the time among
+        # them asks DSA (2026-10-07). No track is a mixed interview.
+        candidates = (state.track,) if state.track else scoreable
+        round_types = self._available_round_types(row, state, candidates)
         plan = planner.assemble(
             planner.PlanInputs(
                 session_id=row.id,
@@ -668,10 +672,14 @@ class Engine:
                 coverage=coverage,
                 requirements={str(r.get("id")): r for r in requirements if r.get("id")},
                 available_round_types=round_types,
-                claims=self._claims(row),
+                claims=self._claims(row, state),
                 hint_penalty=self._hint_penalty(rubrics, round_types),
                 focus_concepts=tuple(state.focus_concepts),
                 focus_label=state.focus_label,
+                track=state.track,
+                tracks=self._tracks(),
+                resume_included=state.include_resume,
+                resume_id=state.resume_id,
             )
         )
         store.record(
@@ -690,16 +698,28 @@ class Engine:
             )
             self.db.commit()
 
-    def _claims(self, row: InterviewSession) -> tuple[dict, ...]:
+    def _claims(self, row: InterviewSession, state: SessionState) -> tuple[dict, ...]:
         """M01's risky and vague claims, for the project segment (§6.1).
+
+        Only when the student asked for them (2026-10-07): an interview is
+        not a resume review, and one that always opened on the resume was
+        "too much into my resume … preventing me from actual interview
+        content". From the resume they picked, when they picked one.
 
         Optional like every upstream: no M01, no resume, or a resume nobody
         has confirmed means no project segment — not a degraded one. A student
         with nothing shaky on their resume is not missing a feature.
         """
         up = self.upstreams
-        if not up.available("M01"):
+        if not state.include_resume or not up.available("M01"):
             return ()
+        if state.resume_id is not None:
+            try:
+                found = up.m01.claims(state.resume_id, row.candidate_id)
+            except (UpstreamUnavailable, KeyError, ValueError) as exc:
+                log.info("M06: M01 claims unavailable for %s: %s", row.id, exc)
+                return ()
+            return tuple(found.get("claims") or [])
         try:
             resumes = up.m01.resumes_for(row.candidate_id)
             # The student's CURRENT resume: M01 marks it `is_active` (the one
@@ -777,6 +797,10 @@ class Engine:
                         "is_first_of_round": True,
                         "time_remaining_s": state.requested_minutes * 60,
                         "modality_allowed": ["verbal"],
+                        # As `_select_from_bank` will ask: a track with only
+                        # drafted items is still a track (FR-5.6 — asked,
+                        # not scored).
+                        "allow_drafts": True,
                     }
                 )
             except UpstreamUnavailable as exc:
@@ -785,6 +809,20 @@ class Engine:
             if chosen is not None:
                 served.append(round_type)
         return tuple(served)
+
+    def _tracks(self) -> dict[str, dict]:
+        """M05's names for its tracks, by round type — what the plan calls a
+        part and who runs it. Empty when M05 cannot say; the planner then
+        names the round type itself."""
+        up = self.upstreams
+        if not up.available("M05"):
+            return {}
+        try:
+            body = up.m05.tracks()
+        except (UpstreamUnavailable, AttributeError) as exc:
+            log.info("M06: M05 tracks unavailable: %s", exc)
+            return {}
+        return {str(t["round_type"]): t for t in body.get("tracks") or [] if t.get("round_type")}
 
     def _rubrics(self) -> list[dict]:
         """M13's rubric table: which round types it can score, and what each
@@ -2355,6 +2393,11 @@ class Engine:
             "is_first_of_round": state.questions_asked == 0,
             "round_progress": min(state.questions_asked / question_budget(state), 1.0),
             "modality_allowed": ["verbal"],
+            # 2026-10-07: twelve approved items, eleven of them DSA, made
+            # every interview the same handful. A drafted item is asked when
+            # nothing approved fits, and M05 says so (`scored_use`); it is
+            # then practised, never scored and never moves θ (FR-5.6).
+            "allow_drafts": True,
         }
         degraded: dict[str, str] = {}
         if up.available("M05"):
@@ -2364,7 +2407,12 @@ class Engine:
                     return Selected(None, empty_reason="bank_exhausted")
                 if str(chosen["question_id"]) not in asked_here:
                     question = up.m05.question(uuid.UUID(str(chosen["question_id"])))
-                    source = "m05_fallback" if chosen.get("reason") == "fallback" else "m05_bank"
+                    if chosen.get("scored_use") is False:
+                        source = "m05_draft"
+                    elif chosen.get("reason") == "fallback":
+                        source = "m05_fallback"
+                    else:
+                        source = "m05_bank"
                     item = from_m05(question, round_type=chosen["round_type"], source=source)
                     return Selected(item, chosen)
                 # A question this interview has already asked: never again,

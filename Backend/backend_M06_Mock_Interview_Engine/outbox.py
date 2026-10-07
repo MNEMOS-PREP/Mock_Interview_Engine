@@ -62,7 +62,7 @@ from sqlmodel import Session, select
 
 from .adapters import Upstreams, UpstreamUnavailable
 from .clarify import scored
-from .contracts import SessionKind
+from .contracts import DRAFT_NOT_SCORED, SessionKind
 from .items import Item
 from .models import ArtifactOutbox, EvaluationOutbox, InterviewSession, LedgerOutbox
 from .modes import ENSEMBLE_BY_MODE as _ENSEMBLE_BY_MODE
@@ -162,6 +162,8 @@ def scoreable(state: SessionState, turn, item: Item | None) -> str | None:
         # scored under the ordinary rubric, agreeing with a falsehood would be
         # scored as knowledge.
         return "A deliberately false probe needs M13's push_back rubric."
+    if turn.question_source == "m05_draft":
+        return DRAFT_NOT_SCORED
     if turn.question_id is None or turn.rubric_round_type is None:
         return "Asked from the backup set, so it was not scored."
     return None

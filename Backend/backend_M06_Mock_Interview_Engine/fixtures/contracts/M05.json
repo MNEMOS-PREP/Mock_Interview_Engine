@@ -130,6 +130,7 @@
   "SelectionRequest": {
     "enums": {},
     "properties": [
+      "allow_drafts",
       "bypass_freshness",
       "candidate_id",
       "coverage_debt",
@@ -167,6 +168,7 @@
       "question_id",
       "reason",
       "round_type",
+      "scored_use",
       "theta_eligible"
     ],
     "required": [

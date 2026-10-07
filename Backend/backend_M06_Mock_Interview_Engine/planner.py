@@ -53,15 +53,27 @@ MODALITY_BLOCKED = {
 }
 
 #: The closing is reserved: never dropped by a re-plan or by the clock
-#: (FR-6.17). Five minutes, per §6.1.
+#: (FR-6.17). §6.1 gave it five minutes flat, which was a third of a
+#: 15-minute interview spent on "any questions for me?" (2026-10-07). It is
+#: now 10% of the session, between two minutes and five.
 CLOSING_MINUTES = 5.0
+CLOSING_MIN_MINUTES = 2.0
+CLOSING_SHARE = 0.10
 
 #: `min(4, 10% of budget)` — §6.1. One question, to get the student talking.
 WARMUP_MAX_MINUTES = 4.0
 WARMUP_SHARE = 0.10
 
-#: M02 prices a verbal question at 3.5 minutes and so does M06 (§6.5).
-MINUTES_PER_VERBAL_QUESTION = 3.5
+#: What one verbal question costs, its follow-ups included. §6.5 said 3.5
+#: minutes, which made a 15-minute interview two questions and a warm-up;
+#: the student asked for five to seven (2026-10-07), and a campus panel's
+#: pace is nearer two. M02 prices at the same figure, so a plan built from a
+#: job description holds as many questions as one built without.
+MINUTES_PER_VERBAL_QUESTION = 2.0
+
+#: A part of a mixed interview has to be long enough to be a part: fewer
+#: than this many questions and it is a sampler, not a round.
+MIN_QUESTIONS_PER_PART = 3
 
 #: M02's measurement modes that make a round behavioural rather than
 #: technical. The distinction is which module scores it, not how it is asked.
@@ -107,12 +119,24 @@ class PlanInputs:
     #: What the student asked to practise, from the skill graph's bottleneck.
     focus_concepts: tuple[str, ...] = ()
     focus_label: str | None = None
+    #: The track the student picked (2026-10-07). When set, it is the only
+    #: round type offered as `available_round_types`; here it names the plan.
+    track: str | None = None
+    #: M05's `/v1/bank/tracks`, by round type: what each is called (`title`)
+    #: and who runs it (`kind`). Empty when M05 could not say.
+    tracks: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: Whether the student opted in to resume questions, and from which one.
+    resume_included: bool = False
+    resume_id: uuid.UUID | None = None
 
 
 def reserved_minutes(requested_minutes: int) -> tuple[float, float]:
     """`(warmup, closing)` — taken off the top, before M02 prices anything."""
     warmup = min(WARMUP_MAX_MINUTES, round(requested_minutes * WARMUP_SHARE, 1))
-    return warmup, CLOSING_MINUTES
+    closing = min(
+        CLOSING_MINUTES, max(CLOSING_MIN_MINUTES, round(requested_minutes * CLOSING_SHARE, 1))
+    )
+    return warmup, closing
 
 
 def minutes_for_m02(requested_minutes: int) -> int:
@@ -214,7 +238,7 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
         if inputs.coverage
         else _without_a_job_description(inputs, mode, warmup_minutes, closing_minutes)
     )
-    claims = defendable(inputs.claims)
+    claims = defendable(inputs.claims) if inputs.resume_included else []
     project = _project_segment(claims, mode, middle)
     if project is not None:
         # §6.1's order: warm-up, then the student's own work, then the
@@ -272,21 +296,50 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
         claims=list(claims),
         uncovered=[str(u) for u in coverage.get("uncovered") or []],
         panel=seated,
+        track=inputs.track,
+        resume_included=inputs.resume_included,
+        resume_id=inputs.resume_id,
     )
 
 
 def defendable(claims: tuple[dict[str, Any], ...] | list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The claims worth a project segment: risky or vague, with probes.
+    """The claims worth a project segment: risky or vague, with probes —
+    spread across the resume rather than taken in M01's order.
 
     A claim M01 could not write probes for is one M06 has no question for,
     and inventing one here would be the model deciding what to ask about
     somebody's resume — which is M01's job and it already did it.
+
+    The order matters because the segment asks the first few. M01 lists
+    claims as they appear, so a resume whose first project has four shaky
+    lines was questioned on that project alone (2026-10-07: "only from 1
+    particular project"). Now each pick prefers a section, then a subject,
+    not yet asked about; riskier first within that.
     """
-    return [
+    shaky = [
         claim
         for claim in claims
         if str(claim.get("risk_band")) in DEFENDABLE_BANDS and claim.get("probes")
     ]
+    shaky.sort(key=lambda c: -float(c.get("risk_score") or 0.0))
+    ordered: list[dict[str, Any]] = []
+    sections: set[str] = set()
+    subjects: set[str] = set()
+
+    def staleness(claim: dict[str, Any]) -> tuple[bool, bool]:
+        section = str(claim.get("section_id") or "")
+        topics = {str(c) for c in claim.get("subject_concepts") or []}
+        return (section in sections, bool(topics) and topics <= subjects)
+
+    while shaky:
+        pick = min(shaky, key=staleness)  # stable: the riskiest of the freshest
+        shaky.remove(pick)
+        ordered.append(pick)
+        sections.add(str(pick.get("section_id") or ""))
+        subjects.update(str(c) for c in pick.get("subject_concepts") or [])
+        if all(str(c.get("section_id") or "") in sections for c in shaky):
+            sections.clear()  # every section has had a turn; go round again
+    return ordered
 
 
 def _project_segment(
@@ -310,6 +363,11 @@ def _project_segment(
     else:
         minutes = min(wanted, round(payer.minutes * MAX_PROJECT_SHARE, 1))
         payer.minutes = round(payer.minutes - minutes, 1)
+        if not payer.requirement_ids:
+            # A round M06 priced itself (no job description) is re-priced for
+            # the minutes it has left, or it promises questions its clock
+            # cannot hold. M02's rounds keep M02's count (Trap 8).
+            payer.question_budget = max(1, int(payer.minutes // MINUTES_PER_VERBAL_QUESTION))
     budget = max(1, int(minutes // MINUTES_PER_CLAIM))
     return PlannedSegment(
         index=0,
@@ -320,7 +378,7 @@ def _project_segment(
         question_budget=min(budget, len(claims)),
         source="m01_claims",
         rationale=(
-            "Lines from your own resume that an interviewer would push on. "
+            "Lines from the resume you chose that an interviewer would push on. "
             "Not scored — M13 scores questions from the bank."
         ),
     )
@@ -396,26 +454,51 @@ def _without_a_job_description(
                 ),
             )
         ]
-    each = usable / len(available)
+    # A mixed interview (no track picked): as many parts as the time holds
+    # at MIN_QUESTIONS_PER_PART each — splitting fifteen minutes nine ways
+    # is nine one-question samplers. WHICH parts is seeded by the session,
+    # so two mixed interviews in a row are not the same two rounds.
+    room = max(1, int(usable // (MIN_QUESTIONS_PER_PART * MINUTES_PER_VERBAL_QUESTION)))
+    chosen = (
+        list(available)
+        if len(available) <= room
+        else sorted(available, key=lambda rt: uuid.uuid5(inputs.session_id, rt).hex)[:room]
+    )
+    each = usable / len(chosen)
     return [
         PlannedSegment(
             index=0,
-            kind="technical",
-            title=_round_type_title(round_type),
+            kind=_track_kind(inputs, round_type),
+            title=_round_type_title(round_type, inputs.tracks),
             persona_id=mode.persona_for("technical"),
             minutes=round(each, 1),
             question_budget=max(1, int(each // MINUTES_PER_VERBAL_QUESTION)),
             rubric_round_types=[round_type],
-            rationale="Not tailored to a job description — add one and the plan follows it.",
+            rationale=(
+                "The track you picked. Not tailored to a job description — add one and the "
+                "plan follows it."
+                if inputs.track is not None
+                else "Not tailored to a job description — add one and the plan follows it."
+            ),
         )
-        for round_type in available
+        for round_type in chosen
     ]
 
 
-def _round_type_title(round_type: str) -> str:
-    """`dsa_verbal` is an id, not a title. M13 owns the display name and does
-    not publish one yet, so this is the honest guess: the id split on its
+def _track_kind(inputs: PlanInputs, round_type: str) -> SegmentKind:
+    """Who runs a track's part: M05's `kind` for it. Behavioural brings the
+    HR side of the panel (`panel.py`); anything else is technical."""
+    kind = (inputs.tracks.get(round_type) or {}).get("kind")
+    return "behavioural" if kind == "behavioural" else "technical"
+
+
+def _round_type_title(round_type: str, tracks: dict[str, dict[str, Any]] | None = None) -> str:
+    """`dsa_verbal` is an id, not a title. M05 names its tracks
+    (`/v1/bank/tracks`); without that, the honest guess: the id split on its
     separators, short parts left upper-case because they are acronyms."""
+    title = ((tracks or {}).get(round_type) or {}).get("title")
+    if title:
+        return str(title)
     parts = round_type.replace("-", "_").split("_")
     return " ".join(part.upper() if len(part) <= 3 else part.capitalize() for part in parts)
 
@@ -445,6 +528,7 @@ __all__ = [
     "defendable",
     "CLOSING_MINUTES",
     "MINUTES_PER_VERBAL_QUESTION",
+    "MIN_QUESTIONS_PER_PART",
     "MODALITY_BLOCKED",
     "SERVABLE_MODALITIES",
     "WARMUP_MAX_MINUTES",

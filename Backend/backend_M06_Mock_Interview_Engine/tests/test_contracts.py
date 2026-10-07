@@ -168,7 +168,12 @@ def test_the_project_round_reads_the_students_current_resume(db):
 
     engine = make(db, llm=StubLLM([verdict()]), m05=BankQuestions())
     row, _ = store.create_session(
-        engine.db, candidate_id=uuid.uuid4(), kind="mock", mode="mock", minutes=30
+        engine.db,
+        candidate_id=uuid.uuid4(),
+        kind="mock",
+        mode="mock",
+        minutes=30,
+        include_resume=True,
     )
     state = engine.plan(row.id)
     assert any(s.kind == "project" for s in state.plan.segments)
