@@ -67,6 +67,31 @@ def decisive_terms(item: Any) -> dict[str, str]:
     return terms
 
 
+def on_topic(answer: str, item: Any, asked: str = "") -> bool:
+    """Whether an answer is about the question at all (2026-10-07).
+
+    The strategist may call a confused attempt "off question"; an answer that
+    uses two of the question's own content words — "binary search tree",
+    "log n", "lookup" — is an attempt at it, wrong or not. Words are compared
+    by stem, so "searching" counts for "search"."""
+    words = {w.lower().strip("'-") for w in _TOKEN.findall(answer or "")}
+    words = {w for w in words if w not in _STOP}
+    if not words:
+        return False
+    sources = [asked, getattr(item, "stem", "") or "", getattr(item, "label", "") or ""]
+    sources += [kp.statement for kp in getattr(item, "key_points", ())]
+    question_words = {
+        w.lower().strip("'-")
+        for source in sources
+        for w in _TOKEN.findall(source or "")
+        if w.lower() not in _STOP and (len(w) >= 4 or w.isupper() or w.isdigit())
+    }
+    shared = {
+        q for q in question_words if any(_same_stem(q, w) for w in words if len(w) >= 3 or w == q)
+    }
+    return len(shared) >= 2
+
+
 def _same_stem(a: str, b: str) -> bool:
     """One word with an ending added or changed: "sort"/"sorted",
     "partitions"/"partitioning". A shared stem of four letters at least, so

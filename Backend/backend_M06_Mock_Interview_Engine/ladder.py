@@ -91,6 +91,14 @@ def decide(
         if config.hints_available and hints_left > 0:
             return Outcome(Move(kind="hint"), success=None)
         return Outcome(Move(kind="move_on", graceful=True), success=None, break_depth=depth)
+    if verdict.asks_to_rephrase:
+        # Twice a question, in other words; a third time it is a question
+        # they cannot do yet, and a hint or the graceful exit is kinder.
+        if ladder.moves.count("rephrase") < 2:
+            return Outcome(Move(kind="rephrase"), success=None)
+        if config.hints_available and hints_left > 0:
+            return Outcome(Move(kind="hint"), success=None)
+        return Outcome(Move(kind="move_on", graceful=True), success=None, break_depth=depth)
     if verdict.ambiguous and "clarify" not in ladder.moves[-1:]:
         # Once. A second unclear answer is treated as the answer it is.
         return Outcome(Move(kind="clarify"), success=None)

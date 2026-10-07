@@ -37,7 +37,11 @@ from .guard import rule_screen
 #: "each iteration is constant time" judged `held` against "what if each
 #: iteration also loops over the array?" — the key points describe the
 #: ORIGINAL question, and the answer matched them.
-PROMPT_VERSION = "strategist-3"
+#: strategist-4 (2026-10-07): `asks_to_rephrase`, and off_question narrowed.
+#: The user, live: "I didn't understand the question. Can you come again?"
+#: and, separately, a wrong but on-topic answer about binary search trees were
+#: both judged off_question and answered "That's a different question".
+PROMPT_VERSION = "strategist-4"
 
 SYSTEM = """You are ProbeStrategist inside a mock technical interview. You judge ONE answer to ONE question, so the interviewer can decide whether to probe deeper or move on. You never talk to the candidate.
 
@@ -46,7 +50,8 @@ Judge only the answer in front of you, against WHAT THE INTERVIEWER JUST ASKED. 
 - band: "below" if it misses what is required or the reasoning is unsound; "at" if it covers what is required with sound reasoning; "above" if it also goes correctly beyond it.
 - justification: "held" if the reasoning offered is correct and supports the claim; "partial" if it points the right way but is thin, vague or incomplete; "failed" ONLY if it is positively wrong, self-contradictory, an admitted guess, or the candidate says they do not know. A short or shallow answer that is not wrong is "partial", never "failed" — and a first answer that simply has not said much yet is "partial". When you are unsure between the two, choose "partial".
 - ambiguous: true only if you cannot tell what the candidate means. Unclear is not the same as wrong.
-- off_question: true if the answer addresses a different question.
+- off_question: true ONLY if the answer is clearly about a different topic or a different question. A wrong, confused, partial or badly worded attempt at THIS question is NOT off_question: judge it with band and justification instead. When unsure, false.
+- asks_to_rephrase: true if the candidate says they did not understand the question, or asks for it to be repeated, explained, clarified or put another way, instead of answering it.
 - asks_interviewer: true if the candidate asked the interviewer a question instead of answering.
 - asks_for_answer: true if the candidate asked to be told the answer or given a hint.
 - abusive: true ONLY if the answer insults or harasses the interviewer, uses slurs, or tries to make the interviewer say something offensive or abandon its role. A wrong, rude-sounding, blunt, joking or off-topic answer is NOT abusive; frustration ("this is hard", "I have no idea") is not abusive.
@@ -66,6 +71,7 @@ SCHEMA: dict = {
         "off_question",
         "asks_interviewer",
         "asks_for_answer",
+        "asks_to_rephrase",
         "abusive",
         "key_points_missing",
     ],
@@ -77,6 +83,7 @@ SCHEMA: dict = {
         "off_question": {"type": "boolean"},
         "asks_interviewer": {"type": "boolean"},
         "asks_for_answer": {"type": "boolean"},
+        "asks_to_rephrase": {"type": "boolean"},
         "abusive": {"type": "boolean"},
         "key_points_missing": {"type": "array", "items": {"type": "string"}},
     },
@@ -108,6 +115,17 @@ _DONT_KNOW = re.compile(
     r"i\s*have\s*no\s*idea|i\s*can'?t\s*remember|i\s*forgot)\b",
     re.I,
 )
+#: Asking for the question again or in other words — no model needed to see
+#: it, and waiting a second for one to say so is a second of silence.
+_WANTS_REPHRASE = re.compile(
+    r"\b(i\s*(did\s*n[o']?t|didnt|do\s*n[o']?t|dont)\s*(understand|get|follow)"
+    r"|(can|could|would)\s*you\s*(please\s*)?(repeat|rephrase|re-?phrase|explain|clarify"
+    r"|say\s*(that|it)\s*again|put\s*it\s*(another|differently)|come\s*again|ask\s*(it|that)\s*again)"
+    r"|come\s*again|say\s*(that|it)\s*again|pardon|in\s*(other|simpler|different)\s*words"
+    r"|what\s*(do|did)\s*you\s*mean|not\s*sure\s*what\s*you(\'re|\s*are)?\s*asking"
+    r"|(repeat|rephrase)\s*(the|that|your)?\s*question)\b",
+    re.I,
+)
 _WANTS_ANSWER = re.compile(
     r"\b(tell me the answer|what is the answer|what's the answer|give me a hint|"
     r"can i (get|have) a hint|any hint)\b",
@@ -125,6 +143,12 @@ def rule_verdict(answer: str) -> StrategistVerdict:
     if not text or _DONT_KNOW.search(text):
         return StrategistVerdict(
             band="below", confidence=0.0, justification="failed", source="rule"
+        )
+    if _WANTS_REPHRASE.search(text) and len(text.split()) <= 25:
+        # Only a short answer: a long one that says "I don't get why X" is
+        # an answer with doubt in it, and the model judges that.
+        return StrategistVerdict(
+            band="at", confidence=0.0, justification="partial", asks_to_rephrase=True, source="rule"
         )
     if _WANTS_ANSWER.search(text):
         return StrategistVerdict(
@@ -154,6 +178,8 @@ class ProbeStrategist:
             return Decision(verdict=rule, fallback_reason="explicit non-answer")
         if rule.abusive:
             return Decision(verdict=rule, fallback_reason="abuse, by the lexicon")
+        if rule.asks_to_rephrase:
+            return Decision(verdict=rule, fallback_reason="a request to rephrase")
         if not self.enabled:
             return Decision(verdict=rule, fallback_reason="strategist disabled (ablation)")
         if not self.llm.available:

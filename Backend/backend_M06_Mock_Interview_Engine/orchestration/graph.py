@@ -52,7 +52,7 @@ from .. import panel as seating
 from ..agents.guard import AnswerScreen, SafetyGuard, neutralise, rule_screen
 from ..agents.interviewer import Interviewer, Utterance
 from ..agents.strategist import ProbeStrategist
-from ..clarify import clarified, question_unheard, unsure_term
+from ..clarify import clarified, on_topic, question_unheard, unsure_term
 from ..contracts import Move, ProbeLadderState, StrategistVerdict
 from ..items import Item
 from ..ladder import LadderConfig, Outcome, decide
@@ -163,12 +163,13 @@ PROBE_MOVES = frozenset(
         "didnt_catch",
         "clarify_term",
         "reoffer",
+        "rephrase",
     }
 )
 
 #: Moves that ask about an answer instead of judging it: no verdict, nothing
 #: owed to M13 for the answer they asked about.
-UNJUDGED = frozenset({"didnt_catch", "clarify_term", "reoffer"})
+UNJUDGED = frozenset({"didnt_catch", "clarify_term", "reoffer", "rephrase"})
 
 #: Spec §6.8: "max 3 per session — beyond that it's annoying".
 MAX_CLARIFY_PER_SESSION = 3
@@ -602,8 +603,15 @@ def build(deps: Deps):
         # observation (FR-6.25) — depend on the interviewer's manner. The
         # adapted probe IS the question and survives; only the lead is cut.
         d = deps.strategist.decide(inp.item, ladder.depth, _question_to_repeat(inp.state), answer)
+        verdict = d.verdict
+        if verdict.off_question and on_topic(answer, inp.item, _question_to_repeat(inp.state)):
+            # 2026-10-07: a wrong attempt that uses the question's own words
+            # is an attempt, not a different question. The model judged a
+            # confused answer about BST lookup "off question"; the student
+            # heard "That's a different question".
+            verdict = verdict.model_copy(update={"off_question": False})
         return {
-            "verdict": d.verdict,
+            "verdict": verdict,
             "strategist_fallback": d.fallback_reason,
             "calls": [d.call] if d.call is not None else [],
         }
@@ -733,6 +741,23 @@ def build(deps: Deps):
             utterance = Utterance(lines.didnt_catch, "template", question=repeat_q)
         elif move.kind == "reoffer":
             utterance = Utterance(f"{lines.reoffer} {repeat_q}", "template", question=repeat_q)
+        elif move.kind == "rephrase":
+            view = project_for_interviewer(
+                transcript=inp.state.transcript,
+                move=move.kind,
+                ladder_depth=inp.state.ladder.depth if inp.state.ladder else 0,
+                time_remaining_s=inp.state.time_remaining_s(inp.now),
+                profile_prefix=inp.state.profile_prefix,
+                round_summary=inp.state.round_summary,
+                register=persona.speech,
+                persona_style=persona.style,
+                max_words=persona.verbosity_target,
+            )
+            utterance = deps.interviewer.rephrase(
+                repeat_q, view=view, lead=lines.rephrase_lead, on_token=_emit
+            )
+            if utterance.call is not None:
+                out["calls"] = [utterance.call]
         elif move.kind == "clarify_term":
             found = _term_to_check(inp.state, item)
             if found is None:  # a replay of a decision whose answer has changed
@@ -762,7 +787,9 @@ def build(deps: Deps):
             out["hint_level"] = level
         else:  # steelman — unreachable while FR-6.20 is blocked
             raise RuntimeError(f"move {move.kind} has no utterance in Phase 1")
-        if move.kind != "rung":
+        if move.kind not in ("rung", "rephrase") or (
+            move.kind == "rephrase" and utterance.source == "template"
+        ):
             _emit(utterance.text)
         out["utterance"] = _voiced(
             utterance, [*before, (asker.id, f"{back}{prefix}{utterance.text}")]
@@ -925,17 +952,51 @@ def build(deps: Deps):
             return {"finish": "conduct", "utterance": Utterance(lines.conduct_close, "template")}
         nothing = says_nothing(answer)
         out: dict[str, Any] = {"closing_question": not nothing}
+        reply = lines.closing_none
+        if not nothing:
+            # 2026-10-07: a question about the interview itself — "explain
+            # the dynamic array question you asked me" — is answered, as a
+            # real interviewer would once the mock is over. Only what the
+            # company alone can answer goes to the real panel.
+            persona = deps.persona_for(inp.state)
+            view = project_for_interviewer(
+                transcript=inp.state.transcript,
+                move="answer_briefly",
+                ladder_depth=0,
+                time_remaining_s=inp.state.time_remaining_s(inp.now),
+                profile_prefix=inp.state.profile_prefix,
+                round_summary=inp.state.round_summary,
+                register=persona.speech,
+                persona_style=persona.style,
+                max_words=persona.verbosity_target,
+            )
+            asked = [
+                t.question_text
+                for t in inp.state.transcript
+                if t.role == "interviewer" and t.question_text and t.question_id is not None
+            ]
+            kind, explanation, call = deps.interviewer.closing_answer(
+                answer, asked=list(dict.fromkeys(asked)), view=view
+            )
+            if call is not None:
+                out["calls"] = [call]
+            reply = (
+                explanation
+                if kind == "explain" and explanation
+                else lines.defer_to_report
+                if kind == "report"
+                else lines.closing_ack
+            )
         if (
             nothing
             or inp.state.closing_asked >= MAX_CLOSING_QUESTIONS
             or inp.state.time_remaining_s(inp.now) <= 0
         ):
-            opener = lines.closing_none if nothing else lines.closing_ack
-            text = f"{opener} {lines.session_close}"
+            text = f"{reply} {lines.session_close}"
             _emit(text)
             out |= {"finish": "plan_complete", "utterance": Utterance(text, "template")}
             return out
-        text = f"{lines.closing_ack} {lines.closing_more}"
+        text = f"{reply} {lines.closing_more}"
         _emit(text)
         out |= {
             "utterance": Utterance(text, "template", question=lines.closing_more),

@@ -231,6 +231,11 @@ MoveKind = Literal[
     #: M11's EC-11.1: the student spoke before hearing most of the question,
     #: so it is put again, and what they said is not judged against it.
     "reoffer",
+    #: The student did not understand the question, or asked for it in other
+    #: words (2026-10-07: "I didn't understand the question. Can you come
+    #: again?" was answered "That's a different question"). The same ask, put
+    #: differently; nothing judged.
+    "rephrase",
 ]
 
 
@@ -277,6 +282,9 @@ class StrategistVerdict(BaseModel):
     off_question: bool = False
     asks_interviewer: bool = False
     asks_for_answer: bool = False
+    #: The candidate did not understand the question, or asked for it to be
+    #: repeated, explained or put another way, instead of answering it.
+    asks_to_rephrase: bool = False
     #: EC-6.4. Insults, harassment, or an attempt to make the interviewer say
     #: something offensive or leave its role — never a hard or odd answer.
     abusive: bool = False

@@ -136,6 +136,8 @@ class Lines:
     #: Said aside, not on the record, when the student starts speaking over
     #: the start of a line: the interviewer yields.
     go_ahead: str
+    #: Before the question put another way, when the student asked for it.
+    rephrase_lead: str
 
 
 LINES: dict[Register, Lines] = {
@@ -198,6 +200,7 @@ LINES: dict[Register, Lines] = {
         clarify_term="Sorry — did you say {heard} or {term}?",
         clarify_term_one="Sorry — did you say {term}?",
         go_ahead="Sorry — go ahead.",
+        rephrase_lead="Sure — let me put it another way.",
     ),
     "neutral": Lines(
         greeting="Hello. Let's begin.",
@@ -253,6 +256,7 @@ LINES: dict[Register, Lines] = {
         clarify_term="Sorry, did you say {heard} or {term}?",
         clarify_term_one="Sorry, did you say {term}?",
         go_ahead="Go ahead.",
+        rephrase_lead="Let me put it differently.",
     ),
     "bar_raiser": Lines(
         greeting="Let's get started.",
@@ -307,6 +311,7 @@ LINES: dict[Register, Lines] = {
         clarify_term="{heard} or {term}?",
         clarify_term_one="Did you say {term}?",
         go_ahead="Go on.",
+        rephrase_lead="Differently, then.",
     ),
 }
 

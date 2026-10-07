@@ -38,9 +38,15 @@ class StubLLM:
         *,
         fail_structured: str | None = None,
         fail_stream: str | None = None,
+        rephrased: str = "Put simply: what does that change, and when?",
+        closing: str = "ROLE",
     ):
         self.verdicts = list(verdicts or [verdict()])
         self.probe = probe
+        #: What the real model returns to the rephrase prompt (one question)
+        #: and to the closing prompt (an explanation, or ROLE / REPORT).
+        self.rephrased = rephrased
+        self.closing = closing
         self.fail_structured = fail_structured
         self.fail_stream = fail_stream
         self.structured_calls: list[dict[str, Any]] = []
@@ -72,12 +78,19 @@ class StubLLM:
         if self.fail_stream:
             yield LLMResult(ok=False, reason=self.fail_stream, job=job, model="stub")
             return
-        words = self.probe.split(" ")
+        said = (
+            self.closing
+            if "output exactly ROLE" in system
+            else self.rephrased
+            if "asked for it another way" in system
+            else self.probe
+        )
+        words = said.split(" ")
         for i, word in enumerate(words):
             yield word + (" " if i < len(words) - 1 else "")
         yield LLMResult(
             ok=True,
-            text=self.probe,
+            text=said,
             job=job,
             tier="generation",
             model="stub",
