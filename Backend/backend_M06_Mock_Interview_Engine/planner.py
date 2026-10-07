@@ -128,6 +128,9 @@ class PlanInputs:
     #: Whether the student opted in to resume questions, and from which one.
     resume_included: bool = False
     resume_id: uuid.UUID | None = None
+    #: Who the student met in their last few interviews (`store.recent_
+    #: panelists`): they stand back, so the next panel is someone else.
+    recent_personas: frozenset[str] = frozenset()
 
 
 def reserved_minutes(requested_minutes: int) -> tuple[float, float]:
@@ -272,14 +275,20 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
     for index, segment in enumerate(segments):
         segment.index = index
     # FR-6.3: the panel, seated from the personas' own data for the parts
-    # this plan actually has (`panel.py`) — not a table per mode.
-    assignment = panel.assign(segments, mode.temperament, inputs.requested_minutes)
+    # this plan actually has (`panel.py`) — not a table per mode. Rotated by
+    # the session, and away from who the student met last time (2026-10-07).
+    rotation = {"seed": str(inputs.session_id), "recent": inputs.recent_personas}
+    assignment = panel.assign(
+        segments, mode.temperament, inputs.requested_minutes, **rotation
+    )
     for segment, persona_id in zip(segments, assignment, strict=True):
         segment.persona_id = persona_id
     # Everyone the opening introduces: the lead, whoever runs a part, and
     # anyone sitting in on what would otherwise be a panel of one.
-    sitting = panel.sit_in(segments, assignment, mode.temperament, inputs.requested_minutes)
-    lead = panel.lead_for(mode.temperament)
+    sitting = panel.sit_in(
+        segments, assignment, mode.temperament, inputs.requested_minutes, **rotation
+    )
+    lead = assignment[0]  # the warm-up's: the lead opens
     seated = list(dict.fromkeys([lead, *assignment, *([sitting] if sitting else [])]))
 
     coverage = inputs.coverage or {}

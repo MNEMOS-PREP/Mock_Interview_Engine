@@ -104,6 +104,13 @@ class Persona(BaseModel):
     #: browser picks a voice for the locale and kind and paces it by the
     #: manner; M11 will map the same id to its own voices.
     voice_id: str = Field(pattern=r"^[a-z]{2}-[A-Z]{2}-[a-z]+-[a-z]+$")
+    #: The M11 voice this persona speaks in — a key of Voice_Engine's
+    #: `voices/cast.json`, where the same persona is cast (2026-10-07). M11
+    #: has seven voices and the cast is five times that, so voices are shared
+    #: across the cast; this is how a panel avoids seating two people who
+    #: sound the same (`panel.py`). Optional: without it, M11 matches the
+    #: `voice_id`, and the panel treats the persona as a voice of its own.
+    voice: str | None = Field(default=None, pattern=r"^[a-z0-9-]+$")
     note_taking_cadence: int = Field(ge=0, le=12)
     hints_available: bool
 
@@ -159,6 +166,12 @@ class Persona(BaseModel):
         Patience 0.4 → 46 s, the spec's 45; 0.9 → 66 s; 0.2 → 38 s.
         """
         return round(30 + 40 * self.patience)
+
+    @property
+    def sound(self) -> str:
+        """What this persona sounds like, for "never two alike on one panel":
+        its M11 voice, or itself when it names none."""
+        return self.voice or f"persona:{self.id}"
 
     @property
     def backchannels(self) -> tuple[str, ...]:

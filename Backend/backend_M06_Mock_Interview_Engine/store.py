@@ -193,6 +193,37 @@ def seen_item_ids(
     return {row for row in rows if row is not None}
 
 
+def recent_panelists(
+    db: Session,
+    candidate_id: uuid.UUID,
+    *,
+    exclude: uuid.UUID | None = None,
+    sessions: int = 3,
+) -> frozenset[str]:
+    """Who this student met in their last few interviews: everyone the plans
+    of those that started seated (2026-10-07). The panel seats others first,
+    so the same two people do not run every interview."""
+    ids = db.exec(
+        select(InterviewSession.id)
+        .where(InterviewSession.candidate_id == candidate_id)
+        .where(InterviewSession.started_at.is_not(None))  # type: ignore[union-attr]
+        .order_by(InterviewSession.created_at.desc())  # type: ignore[attr-defined]
+        .limit(sessions + 1)
+    ).all()
+    met: set[str] = set()
+    for session_id in [i for i in ids if i != exclude][:sessions]:
+        event = db.exec(
+            select(SessionEvent)
+            .where(SessionEvent.session_id == session_id)
+            .where(SessionEvent.kind == "plan.set")
+            .order_by(SessionEvent.seq.desc())  # type: ignore[attr-defined]
+        ).first()
+        plan = (event.payload or {}).get("plan") or {} if event is not None else {}
+        met.update(str(p) for p in plan.get("panel") or [])
+        met.update(str(s["persona_id"]) for s in plan.get("segments") or [] if s.get("persona_id"))
+    return frozenset(met)
+
+
 # ─────────────────────────────────────────────────────────────────────────
 #  Writing
 # ─────────────────────────────────────────────────────────────────────────

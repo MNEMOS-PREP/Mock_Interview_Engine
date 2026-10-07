@@ -13,6 +13,9 @@ follow_up_aggression: 0.3
 verbosity_target: 25
 domain_bias: [teamwork, communication, behavioural, people, conflict]
 voice_id: en-IN-female-neutral
+# The M11 voice the team cast in its listening test (Voice_Engine
+# `voices/cast.json`).
+voice: indictts-017689
 note_taking_cadence: 3
 hints_available: true
 lines:
