@@ -71,8 +71,12 @@ def recovery_persona(plan) -> str | None:
     if gentle:
         return warmest(gentle)
     temperament = mode_config(plan.mode).temperament
+    # Someone new joins: never one who sounds like a person already there.
+    sounds = {p.sound for p in seated}
     admitted = [
-        p for p in people.values() if p.speech == "friendly" and seating.fits(p, temperament)
+        p
+        for p in people.values()
+        if p.speech == "friendly" and seating.fits(p, temperament) and p.sound not in sounds
     ]
     return warmest(admitted) if admitted else None
 

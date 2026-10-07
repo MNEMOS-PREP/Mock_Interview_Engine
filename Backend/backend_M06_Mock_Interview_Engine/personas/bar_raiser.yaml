@@ -14,6 +14,9 @@ follow_up_aggression: 1.0
 verbosity_target: 20
 domain_bias: [depth, edge cases, problem solving, technical]
 voice_id: en-IN-male-neutral
+# The M11 voice the team cast in its listening test (Voice_Engine
+# `voices/cast.json`).
+voice: indictts-022743
 note_taking_cadence: 0
 hints_available: false
 lines:

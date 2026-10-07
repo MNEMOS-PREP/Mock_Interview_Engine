@@ -14,6 +14,9 @@ follow_up_aggression: 0.6
 verbosity_target: 22
 domain_bias: [trade-offs, product, projects, ownership]
 voice_id: en-IN-male-casual
+# The M11 voice the team cast in its listening test (Voice_Engine
+# `voices/cast.json`).
+voice: dailytalk-0
 note_taking_cadence: 0
 hints_available: true
 lines:

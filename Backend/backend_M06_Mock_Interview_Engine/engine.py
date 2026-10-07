@@ -680,6 +680,9 @@ class Engine:
                 tracks=self._tracks(),
                 resume_included=state.include_resume,
                 resume_id=state.resume_id,
+                recent_personas=store.recent_panelists(
+                    self.db, row.candidate_id, exclude=row.id
+                ),
             )
         )
         store.record(
