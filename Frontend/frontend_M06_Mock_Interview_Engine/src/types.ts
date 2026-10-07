@@ -28,6 +28,12 @@ export interface TurnView {
   deliberately_false: boolean;
   /** Practice retry (§15.4): recorded beside the first attempt, never scored. */
   retry: boolean;
+  /** Question turns the student skipped (2026-10-07): `replaced` when a
+   *  different question was asked at the same number, else left — counted
+   *  as not answered — or a follow-up moved on from. */
+  skipped?: boolean;
+  replaced?: boolean;
+  follow_up_skip?: boolean;
   /** Interviewer turns: the persona who asks — the line's last voice. */
   speaker_id?: string | null;
   /** Interviewer turns said by more than one panelist (FR-6.3), part by
@@ -185,6 +191,11 @@ export interface InterviewPlan {
   /** FR-6.3: who sits on the panel, the lead first — including anyone
    *  sitting in without a part of their own. Absent on older plans. */
   panel?: string[];
+  /** The track the student picked (a round type), or null for a mixed one. */
+  track?: string | null;
+  /** Whether the student asked for questions from their resume, and which. */
+  resume_included?: boolean;
+  resume_id?: string | null;
 }
 
 export interface HintOffer {
@@ -286,6 +297,10 @@ export interface QuestionReport {
   strong_answer_covers: string[];
   /** EC-6.1: moved on after a silence — nothing was answered, nothing scored. */
   moved_on: boolean;
+  /** 2026-10-07: skipped — `replaced` by another question at the same number
+   *  (nothing against it), `left` (a second skip there: counted as not
+   *  answered), or `follow_up` (moved on from a follow-up). */
+  skipped?: "replaced" | "left" | "follow_up" | null;
   /** Once M13 has scored the answer and the session is over. */
   feedback: Feedback[];
   /** The concept the item measures — "practise this topic again". */
@@ -295,6 +310,43 @@ export interface QuestionReport {
   /** The first answer's turn: M13's evidence page is `/turns/{turn_id}`. */
   turn_id: string | null;
   asked_by: string | null;
+}
+
+/** One track on the setup page (`GET /v1/interviews/tracks`). */
+export interface TrackOption {
+  round_type: string;
+  title: string;
+  group: string;
+  blurb: string;
+  /** Who runs it: an HR interviewer for `behavioural`. */
+  kind: "technical" | "behavioural" | string;
+  /** Questions a person has approved for scoring, and drafts awaiting one. */
+  approved: number;
+  drafts: number;
+  /** Whether answers here can be scored yet (a rubric and an approved item). */
+  scored: boolean;
+}
+
+export interface TracksResponse {
+  groups: string[];
+  tracks: TrackOption[];
+  /** Why the list is short, when the bank could not be asked. */
+  note: string | null;
+}
+
+/** One of the student's resumes, for the picker (`GET /v1/interviews/resumes`). */
+export interface ResumeOption {
+  id: string;
+  filename: string | null;
+  created_at: string | null;
+  is_active: boolean;
+  /** Lines an interviewer would push on. None means no project round. */
+  defendable: number;
+}
+
+export interface ResumesResponse {
+  resumes: ResumeOption[];
+  note: string | null;
 }
 
 export interface SessionReport {

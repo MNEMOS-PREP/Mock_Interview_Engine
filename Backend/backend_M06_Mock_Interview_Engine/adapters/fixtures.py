@@ -423,21 +423,31 @@ class FixtureResumes:
         self.resume_id = uuid.UUID("0b1e0000-0000-4000-8000-000000000001")
 
     def resumes_for(self, candidate_id: UUID) -> list[dict[str, Any]]:
-        # M01's own shape (`GET /v1/resumes/candidate/{id}`): the current
-        # resume is `is_active`; `confirmed` is the student's own say-so.
-        # An older one first, as M01 lists them, so a test sees the choice.
+        # M01's own shape (`ResumeOut`, `GET /v1/resumes/candidate/{id}`),
+        # the fields M06 reads: the current resume is `is_active`;
+        # `confirmed` is the student's own say-so; `claims` rides along. M01
+        # lists newest first, and the current resume need not be the newest
+        # (a student can make an older one current) — so here it is second,
+        # and a test that takes the first resume sees the difference.
+        older = uuid5(self.resume_id, "older")
         return [
             {
-                "id": str(uuid5(self.resume_id, "older")),
+                "id": str(older),
                 "candidate_id": str(candidate_id),
+                "filename": "resume_second_year.pdf",
+                "created_at": "2026-09-30T10:00:00+00:00",
                 "is_active": False,
                 "confirmed": False,
+                "claims": self.claims(older, candidate_id)["claims"],
             },
             {
                 "id": str(self.resume_id),
                 "candidate_id": str(candidate_id),
+                "filename": "resume_final.pdf",
+                "created_at": "2026-09-01T10:00:00+00:00",
                 "is_active": True,
                 "confirmed": True,
+                "claims": self.claims(self.resume_id, candidate_id)["claims"],
             },
         ]
 

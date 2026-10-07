@@ -103,8 +103,9 @@ MODES: dict[str, ModeConfig] = {
         id="mock",
         label="Mock",
         summary=(
-            "A realistic panel: a lead engineer, a professor for your projects, and HR for the "
-            "people questions. Hints cost what the evaluator publishes."
+            "A realistic panel: a lead who opens and closes, someone who knows each part, a "
+            "professor if you include your projects, HR for the people questions. Hints cost "
+            "what the evaluator publishes."
         ),
         hints=True,
         no_hints_reason=None,

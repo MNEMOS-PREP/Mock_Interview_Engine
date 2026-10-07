@@ -22,10 +22,12 @@ import type {
   ModeOption,
   PersonaCard,
   Reliability,
+  ResumesResponse,
   ResumeState,
   Session,
   SessionReport,
   SessionSummary,
+  TracksResponse,
   TurnView,
 } from "./types";
 
@@ -36,6 +38,8 @@ export const m06Keys = {
   reliability: ["m06", "reliability"] as const,
   modes: ["m06", "modes"] as const,
   personas: ["m06", "personas"] as const,
+  tracks: ["m06", "tracks"] as const,
+  resumes: ["m06", "resumes"] as const,
   session: (id: string) => ["m06", "session", id] as const,
   resume: (id: string) => ["m06", "resume", id] as const,
   report: (id: string) => ["m06", "report", id] as const,
@@ -107,6 +111,26 @@ export function usePersonas() {
   });
 }
 
+/** What can be interviewed on: every track the bank holds questions for,
+ *  grouped, and whether answers in it are scored yet. */
+export function useTracks() {
+  return useQuery({
+    queryKey: m06Keys.tracks,
+    queryFn: () => api.get<TracksResponse>("/v1/interviews/tracks"),
+    staleTime: 5 * 60_000,
+  });
+}
+
+/** The student's resumes, for "include questions from my resume". */
+export function useResumes() {
+  return useQuery({
+    queryKey: m06Keys.resumes,
+    queryFn: () => api.get<ResumesResponse>("/v1/interviews/resumes"),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export function useSession(id: string | undefined) {
   return useQuery({
     queryKey: m06Keys.session(id ?? "none"),
@@ -175,6 +199,11 @@ export function useCreateSession() {
       /** Up to three concept ids: "Practise Recursion" plans one segment on them. */
       focus_concepts?: string[];
       focus_label?: string;
+      /** The track picked on the setup page; absent for a mixed interview. */
+      track?: string;
+      /** Questions from the resume — off unless asked for — and which one. */
+      include_resume?: boolean;
+      resume_id?: string;
     }) =>
       api.post<Session>("/v1/interviews", body),
     onSuccess: write,
@@ -336,6 +365,18 @@ export function useSwitchModality(id: string) {
   return useMutation({
     mutationFn: (to: string) =>
       api.post<Session>(`/v1/interviews/${id}/switch-modality`, { to }),
+    onSuccess: write,
+  });
+}
+
+/** Skip the open question (2026-10-07). The first skip at a question's
+ *  number brings a different one in its place; skipping that one too leaves
+ *  it, counted as not answered. A stale line (a double-click) is a 409. */
+export function useSkip(id: string) {
+  const write = useSessionWriter(id);
+  return useMutation({
+    mutationFn: (questionTurnId: string) =>
+      api.post<Session>(`/v1/interviews/${id}/skip`, { question_turn_id: questionTurnId }),
     onSuccess: write,
   });
 }

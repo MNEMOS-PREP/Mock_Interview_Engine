@@ -13,6 +13,12 @@
  * (`?focus=`, planned by M06 as one segment on that concept). The panel they
  * may meet is shown with faces before they start, and the pause rule says
  * what it now is: one per 15 planned minutes.
+ *
+ * 2026-10-07 — WHAT to be interviewed on is a choice too: every track the
+ * bank holds questions for (`/v1/interviews/tracks`), grouped, or a mixed
+ * interview. An ML interview used to ask DSA and the resume because nothing
+ * here said "ML". The resume is opt-in — "not every interview is meant to ask
+ * from resume" — and, with several, the student picks which.
  */
 
 import { useContext, useEffect, useRef, useState } from "react";
@@ -20,13 +26,20 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { ErrorNote, Icon, PageHeader, SkeletonRows, relativeDays } from "@ai/core";
 
-import { useCreateSession, useHistory, useModes, usePersonas } from "../api";
+import {
+  useCreateSession,
+  useHistory,
+  useModes,
+  usePersonas,
+  useResumes,
+  useTracks,
+} from "../api";
 import { MockTargetsContext } from "../targets";
-import type { Mode, SessionSummary } from "../types";
+import type { Mode, ResumeOption, SessionSummary, TrackOption } from "../types";
 import { Face, voiceKind } from "../ui/Face";
 
 const LENGTHS = [
-  { minutes: 15, label: "15 min", hint: "a few questions" },
+  { minutes: 15, label: "15 min", hint: "5–7 questions" },
   { minutes: 30, label: "30 min", hint: "a proper round" },
   { minutes: 45, label: "45 min", hint: "a full interview" },
 ];
@@ -71,6 +84,52 @@ function Choice({
       </span>
     </button>
   );
+}
+
+/** One track: its name, what it covers, and — when no person has reviewed
+ *  its questions yet — that answers in it are practised, not scored. */
+function TrackChoice({
+  track,
+  active,
+  onClick,
+}: {
+  track: TrackOption;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`min-w-0 rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
+        active
+          ? "border-brand bg-brand-soft text-ink"
+          : "border-line bg-surface text-ink-soft hover:border-line-strong"
+      }`}
+    >
+      <span className="flex items-start justify-between gap-2">
+        <span className="min-w-0 text-sm font-medium leading-snug">{track.title}</span>
+        {!track.scored && (
+          <span
+            className="shrink-0 rounded-full bg-surface-sunken px-1.5 py-px text-2xs text-ink-faint"
+            title="Its questions are new and no person has reviewed them yet, so answers are practised, not scored."
+          >
+            practice
+          </span>
+        )}
+      </span>
+      {track.blurb && (
+        <span className="mt-0.5 line-clamp-2 block text-2xs leading-relaxed text-ink-faint">
+          {track.blurb}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function resumeName(resume: ResumeOption): string {
+  return resume.filename ?? `Resume from ${resume.created_at ? relativeDays(resume.created_at) : "earlier"}`;
 }
 
 function HistoryRow({ session }: { session: SessionSummary }) {
@@ -129,6 +188,17 @@ export function MockHome() {
   const create = useCreateSession();
   const history = useHistory();
   const navigate = useNavigate();
+  const tracks = useTracks();
+  const resumes = useResumes();
+  // `?track=ml_verbal` from a link; otherwise a mixed interview.
+  const [track, setTrack] = useState<string | null>(() => params.get("track"));
+  const [withResume, setWithResume] = useState(false);
+  const [resumeId, setResumeId] = useState<string | null>(null);
+  const myResumes = resumes.data?.resumes ?? [];
+  // The one the student is asked about unless they pick another: the
+  // current one, as M01 marks it, else the newest.
+  const pickedResume =
+    myResumes.find((r) => r.id === resumeId) ?? myResumes.find((r) => r.is_active) ?? myResumes[0];
 
   // A student who has never sat one gets the gentlest real start: 15 minutes
   // of Practice — hints on, a retry allowed — rather than 30 of Mock.
@@ -155,6 +225,17 @@ export function MockHome() {
         ? label ?? "This drive"
         : null;
   const pauses = pausesFor(minutes);
+  // A posting, a drive or one topic decides what is asked; a track only
+  // narrows general practice.
+  const general = currentKey === "general";
+  const groups = (() => {
+    const all = tracks.data?.tracks ?? [];
+    const named = tracks.data?.groups ?? [];
+    const order = [...named, ...all.map((t) => t.group).filter((g) => !named.includes(g))];
+    return [...new Set(order)]
+      .map((group) => ({ group, tracks: all.filter((t) => t.group === group) }))
+      .filter((g) => g.tracks.length > 0);
+  })();
 
   return (
     <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -212,6 +293,102 @@ export function MockHome() {
               + Pick a topic from your skill graph
             </Link>
           </p>
+        </fieldset>
+
+        {general && groups.length > 0 && (
+          <fieldset className="mt-7">
+            <legend className="text-sm font-medium text-ink">Interview on</legend>
+            <div className="mt-2.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <button
+                type="button"
+                aria-pressed={track === null}
+                onClick={() => setTrack(null)}
+                className={`min-w-0 rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
+                  track === null
+                    ? "border-brand bg-brand-soft text-ink"
+                    : "border-line bg-surface text-ink-soft hover:border-line-strong"
+                }`}
+              >
+                <span className="block text-sm font-medium">A mix</span>
+                <span className="mt-0.5 block text-2xs leading-relaxed text-ink-faint">
+                  A few rounds on different topics, different each time.
+                </span>
+              </button>
+            </div>
+            {groups.map(({ group, tracks: inGroup }) => (
+              <div key={group} className="mt-3">
+                <p className="text-2xs font-medium uppercase tracking-wide text-ink-faint">{group}</p>
+                <div className="mt-1.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {inGroup.map((t) => (
+                    <TrackChoice
+                      key={t.round_type}
+                      track={t}
+                      active={track === t.round_type}
+                      onClick={() => setTrack(t.round_type)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+            {tracks.data?.note && <p className="mt-2.5 text-2xs text-ink-faint">{tracks.data.note}</p>}
+          </fieldset>
+        )}
+
+        <fieldset className="mt-7">
+          <legend className="text-sm font-medium text-ink">Your resume</legend>
+          {myResumes.length === 0 ? (
+            <p className="mt-2 text-2xs text-ink-faint">
+              {resumes.isLoading
+                ? "Looking for your resume…"
+                : resumes.data?.note ?? "No resume yet, so the questions are all about the topics."}{" "}
+              {!resumes.isLoading && !resumes.data?.note && (
+                <Link to="/resume" className="font-medium text-brand">
+                  Add one
+                </Link>
+              )}
+            </p>
+          ) : (
+            <>
+              <label className="mt-2.5 flex cursor-pointer items-start gap-2.5 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={withResume}
+                  onChange={(e) => setWithResume(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-[var(--color-brand)]"
+                />
+                <span>
+                  Ask me about my projects too
+                  <span className="block text-2xs text-ink-faint">
+                    Off: every question is on the topics. On: a short part on lines from your resume
+                    an interviewer would push on, not scored.
+                  </span>
+                </span>
+              </label>
+              {withResume && myResumes.length > 1 && (
+                <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+                  {myResumes.map((r) => (
+                    <Choice
+                      key={r.id}
+                      active={pickedResume?.id === r.id}
+                      onClick={() => setResumeId(r.id)}
+                      title={resumeName(r)}
+                      sub={
+                        r.defendable === 0
+                          ? "Nothing on it to push on"
+                          : `${r.defendable} line${r.defendable === 1 ? "" : "s"} to defend${r.is_active ? " · current" : ""}`
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+              {withResume && pickedResume && pickedResume.defendable === 0 && (
+                <p className="mt-2 text-2xs text-ink-faint">
+                  Nothing on {myResumes.length > 1 ? "that resume" : "your resume"} reads as a line an
+                  interviewer would push on, so there won't be a projects part.
+                </p>
+              )}
+            </>
+          )}
         </fieldset>
 
         <fieldset className="mt-7">
@@ -281,6 +458,9 @@ export function MockHome() {
                   drive_id: drive ?? undefined,
                   focus_concepts: focus ? [focus] : undefined,
                   focus_label: focus ? (label ?? undefined) : undefined,
+                  track: general && track ? track : undefined,
+                  include_resume: withResume && Boolean(pickedResume),
+                  resume_id: withResume && pickedResume ? pickedResume.id : undefined,
                 },
                 { onSuccess: (s) => navigate(`/mock/${s.id}/plan`) },
               )

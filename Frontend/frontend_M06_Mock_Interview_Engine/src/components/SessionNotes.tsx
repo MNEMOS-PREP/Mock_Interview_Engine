@@ -212,6 +212,14 @@ function KeptAnswers({ sessionId, count }: { sessionId: string; count: number })
 }
 
 function depthSentence(question: QuestionReport): string {
+  const unanswered = !question.exchanges.some((e) => e.role === "candidate");
+  if (question.skipped === "replaced" && unanswered) {
+    // The student's choice, and it cost nothing: a different one came instead.
+    return "You skipped this one, and a different question came in its place.";
+  }
+  if (question.skipped === "left" && unanswered) {
+    return "You skipped this one too, so it counts as not answered.";
+  }
   if (
     question.moved_on &&
     !question.exchanges.some((e) => e.role === "candidate")

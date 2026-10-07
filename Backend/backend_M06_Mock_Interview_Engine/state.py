@@ -127,6 +127,13 @@ class SessionState(BaseModel):
     idle_prompts: int = 0
     idle_line: str | None = None
     idle_offer: bool = False
+    #: Skips (2026-10-07). A question skipped at number N is replaced by a
+    #: different one at the same number; skip that one too and it is left,
+    #: counted as not answered. `skips_at` is how many skips each number has
+    #: had; `pending_skip` is what the next question's lead says about the
+    #: last one ("replaced" or "left"), cleared when it is asked.
+    skips_at: dict[int, int] = Field(default_factory=dict)
+    pending_skip: str | None = None
     #: The index the NEXT turn will take.
     next_turn_index: int = 0
     transcript: list[TurnView] = Field(default_factory=list)
@@ -186,7 +193,8 @@ class SessionState(BaseModel):
         """New questions asked in one segment — follow-up rungs are the same
         question going deeper, and a retry is the same question again, so
         neither counts against its budget. Neither does a line that asked
-        nothing (a retry offer, a closing line): it has no source."""
+        nothing (a retry offer, a closing line): it has no source. Nor does a
+        question skipped and replaced: the replacement takes its place."""
         return sum(
             1
             for t in self.transcript
@@ -195,6 +203,24 @@ class SessionState(BaseModel):
             and t.probe_move is None
             and t.question_source is not None
             and not t.retry
+            and not t.replaced
+        )
+
+    @property
+    def opened(self) -> bool:
+        """Whether the opening has been said: any question asked, including
+        one since skipped and replaced. Not `questions_asked == 0` — a
+        replaced question gives its number back, and the first one's
+        replacement must not have the panel introduce itself again."""
+        return any(
+            t.role == "interviewer" and t.question_source is not None for t in self.transcript
+        )
+
+    @property
+    def skips_left(self) -> int:
+        """Questions skipped twice: left, and counted as not answered."""
+        return sum(
+            1 for t in self.transcript if t.skipped and not t.replaced and not t.follow_up_skip
         )
 
     def open_question_turn(self) -> TurnView | None:
@@ -328,6 +354,8 @@ def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
     s.open_turn_id = turn_id
     s.pending_move = None
     s.awaiting_next = False
+    if not closing:
+        s.pending_skip = None
     s.flags.step_failures = 0
     _clear_idle(s)
     # Said with this question, like the bridge, so not owed twice.
@@ -403,6 +431,43 @@ def _idle_moved_on(s: SessionState, p: dict, _at: datetime) -> None:
     s.open_turn_id = None
     s.pending_move = None
     s.awaiting_next = True
+    _clear_idle(s)
+
+
+def _question_skipped(s: SessionState, p: dict, _at: datetime) -> None:
+    """The student skipped the open question (2026-10-07).
+
+    At its opening, the first skip at this question number REPLACES it: the
+    number is given back, so the next question asked takes it and the
+    segment's budget does not count the skipped one. A second skip at the
+    same number LEAVES it: it counts, as not answered. Past the opening —
+    a follow-up open, the question already answered once — a skip moves on
+    and the question counts as asked, with nothing against it.
+    """
+    _require_open(s, "question.skipped")
+    if s.open_turn_id is None or str(s.open_turn_id) != str(p.get("for")):
+        raise InvalidTransition("That question has already moved on.")
+    question = next(
+        (t for t in s.transcript if str(t.turn_id) == str(p.get("question_turn"))), None
+    )
+    number = int(p.get("number", s.questions_asked))
+    follow_up = bool(p.get("follow_up"))
+    replaced = bool(p.get("replaced"))
+    if question is not None:
+        question.skipped = True
+        question.replaced = replaced
+        question.follow_up_skip = follow_up
+    if not follow_up:
+        s.skips_at[number] = s.skips_at.get(number, 0) + 1
+    if replaced:
+        # The number is given back: the replacement is asked as this one.
+        s.questions_asked = max(s.questions_asked - 1, 0)
+    s.pending_skip = "replaced" if replaced else ("left" if not follow_up else None)
+    s.open_turn_id = None
+    s.pending_move = None
+    s.awaiting_next = True
+    s.ladder = None
+    s.hint_level = 0
     _clear_idle(s)
 
 
@@ -684,6 +749,7 @@ _REDUCERS = {
     "connection.resumed": _connection_resumed,
     "idle.prompted": _idle_prompted,
     "idle.moved_on": _idle_moved_on,
+    "question.skipped": _question_skipped,
     "session.ended": _ended,
     "session.aborted": _aborted,
     "upstream.degraded": _degraded,

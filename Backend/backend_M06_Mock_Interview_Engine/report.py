@@ -27,6 +27,10 @@ from .state import SessionState
 VOIDED = "Not scored — the session failed on our side, so it doesn't count."
 #: EC-6.1: the student moved on after a silence, so there was no answer.
 MOVED_ON = "We moved on from this one after a pause, so there was nothing to score."
+#: 2026-10-07: skips. The first at a question's number is replaced and costs
+#: nothing; the second at the same number is left, and counts.
+SKIPPED_REPLACED = "You skipped this one, so a different question was asked in its place."
+SKIPPED_LEFT = "You skipped this one too, so it counts as not answered."
 
 NOT_SCORED = {
     "m01_probe": "Practice drill — drills are not scored yet.",
@@ -95,6 +99,11 @@ class QuestionReport(BaseModel):
     #: EC-6.1: after a silence, the interviewer offered to move on and the
     #: student took it. Not a break and not a fail — nothing was answered.
     moved_on: bool = False
+    #: 2026-10-07: the student skipped it — `replaced` (another question at
+    #: the same number, nothing against them), `left` (the second skip at a
+    #: number: counted as not answered), or `follow_up` (moved on from a
+    #: follow-up after answering).
+    skipped: str | None = None
     #: What M13 said about the answer, once it has scored it and the session
     #: is over. Mid-session it would be a live verdict (§2.2).
     feedback: list[Feedback] = Field(default_factory=list)
@@ -259,6 +268,17 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
                 current.ceiling = int(p["ceiling"])
         elif event.kind == "hint.given" and current is not None:
             current.hints_used = int(p.get("level", current.hints_used))
+        elif event.kind == "question.skipped" and current is not None:
+            if p.get("follow_up"):
+                current.skipped = "follow_up"
+                continue
+            current.skipped = "replaced" if p.get("replaced") else "left"
+            if not any(e.role == "candidate" for e in current.exchanges):
+                current.scored = False
+                current.scoring_status = "not_scored"
+                current.not_scored_reason = (
+                    SKIPPED_REPLACED if p.get("replaced") else SKIPPED_LEFT
+                )
         elif event.kind == "idle.moved_on" and current is not None and not p.get("closing"):
             current.moved_on = True
             if not any(e.role == "candidate" for e in current.exchanges):
@@ -290,6 +310,17 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
             "Each answer's band is the share of a strong answer's key points it covered. "
             "Numerical scores appear once they are calibrated against human raters."
         )
+    replaced = sum(1 for q in questions if q.skipped == "replaced")
+    left = sum(1 for q in questions if q.skipped == "left")
+    if replaced or left:
+        said = [f"{replaced} {'was' if replaced == 1 else 'were'} replaced with another question"]
+        if left:
+            said.append(
+                f"{left} {'was' if left == 1 else 'were'} skipped a second time and "
+                f"{'counts' if left == 1 else 'count'} as not answered"
+            )
+        total = replaced + left
+        notes.append(f"You skipped {total} question{'s' if total != 1 else ''}: {'; '.join(said)}.")
     if any(q.retried for q in questions):
         notes.append("Where you took another go, the first attempt is the one that was scored.")
     spoken_in = sorted(

@@ -810,6 +810,78 @@ class Engine:
                 served.append(round_type)
         return tuple(served)
 
+    # ── what the setup page offers (2026-10-07) ──────────────────────────
+
+    def offered_tracks(self) -> dict[str, Any]:
+        """The tracks a student can pick: M05's, each a round type the bank
+        holds questions for, and whether an answer in it can be scored — M13
+        has a rubric for it and the bank has an approved item. A track with
+        drafts only is still offered: it is practised, and says so.
+
+        Without M05, the backup set's round types, and the sentence saying
+        why the list is short."""
+        up = self.upstreams
+        note: str | None = None
+        body: dict[str, Any] = {}
+        if up.available("M05"):
+            try:
+                body = up.m05.tracks() or {}
+            except UpstreamUnavailable as exc:
+                log.info("M06: M05 tracks unavailable: %s", exc)
+                note = up.on_missing("M05")
+        else:
+            note = up.on_missing("M05")
+        if not body.get("tracks"):
+            body = up.local_questions.tracks()
+        scoreable = {str(r["round_type"]) for r in self._rubrics()}
+        tracks = []
+        for track in body.get("tracks") or []:
+            round_type = str(track.get("round_type") or "")
+            if not round_type:
+                continue
+            approved = int(track.get("approved") or 0)
+            tracks.append(
+                {
+                    "round_type": round_type,
+                    "title": track.get("title") or planner.round_type_title(round_type),
+                    "group": track.get("group") or "Other",
+                    "blurb": track.get("blurb") or "",
+                    "kind": track.get("kind") or "technical",
+                    "approved": approved,
+                    "drafts": int(track.get("drafts") or 0),
+                    "scored": round_type in scoreable and approved > 0,
+                }
+            )
+        return {"groups": list(body.get("groups") or []), "tracks": tracks, "note": note}
+
+    def resumes(self, candidate_id: uuid.UUID) -> dict[str, Any]:
+        """The student's resumes, for the setup page's picker: newest first,
+        by file name, the current one marked, and how many of its lines an
+        interviewer would push on — a resume with none gets no project round,
+        and the picker says so before the plan does."""
+        up = self.upstreams
+        if not up.available("M01"):
+            return {"resumes": [], "note": up.on_missing("M01")}
+        try:
+            rows = up.m01.resumes_for(candidate_id)
+        except UpstreamUnavailable as exc:
+            log.info("M06: M01 resumes unavailable for %s: %s", candidate_id, exc)
+            return {"resumes": [], "note": up.on_missing("M01")}
+        return {
+            "resumes": [
+                {
+                    "id": str(r["id"]),
+                    "filename": r.get("filename"),
+                    "created_at": r.get("created_at"),
+                    "is_active": bool(r.get("is_active")),
+                    "defendable": len(planner.defendable(r.get("claims") or [])),
+                }
+                for r in rows
+                if r.get("id")
+            ],
+            "note": None,
+        }
+
     def _tracks(self) -> dict[str, dict]:
         """M05's names for its tracks, by round type — what the plan calls a
         part and who runs it. Empty when M05 cannot say; the planner then
@@ -1697,6 +1769,76 @@ class Engine:
         )
         return self.continue_session(session_id)
 
+    def skip(self, session_id: uuid.UUID, question_turn_id: uuid.UUID) -> SessionState:
+        """The student skips the open question (2026-10-07): "if a candidate
+        skips a question another question should come as replacement — 2
+        skips of same question number means points go down".
+
+        At a question's opening, the first skip at its number brings a
+        different question at the same number, and the skipped one costs
+        nothing. Skipping that one too leaves it: it counts against the
+        segment's questions, as not answered, and the session's estimate for
+        its concept goes down (`_count_unanswered`) — so what follows is
+        pitched lower, as it would be after a failed answer. Past the
+        opening, with a follow-up open, a skip is moving on: the question was
+        answered once and counts as asked, with nothing against it.
+
+        `question_turn_id` is the line the student meant: a double-click or a
+        retried request names a line that has moved on, and is refused rather
+        than skipping the replacement too.
+        """
+        row = self.row(session_id)
+        self.back(session_id)
+        state = self.state(session_id)
+        if state.status is not SessionStatus.live:
+            raise InvalidTransition("The interview isn't running.")
+        if state.kind == SessionKind.drill.value:
+            raise InvalidTransition("A drill is one question — end it instead.")
+        if state.open_turn_id is None or state.open_turn_id != question_turn_id:
+            raise InvalidTransition("That question has already moved on.")
+        asked = state.turn(state.open_turn_id)
+        question = state.open_question_turn()
+        if asked is None or question is None or "closing" in (
+            asked.question_source,
+            question.question_source,
+        ):
+            raise InvalidTransition("This part is for your questions — there's nothing to skip.")
+        follow_up = state.ladder is not None and state.ladder.depth > 0
+        number = state.questions_asked
+        replaced = not follow_up and state.skips_at.get(number, 0) == 0
+        store.record(
+            self.db,
+            row,
+            "question.skipped",
+            step=f"skip:{asked.turn_index}",
+            turn_index=asked.turn_index,
+            payload={
+                "for": str(asked.turn_id),
+                "question_turn": str(question.turn_id),
+                "number": number,
+                "segment_index": question.segment_index,
+                "concept_id": question.concept_id,
+                "replaced": replaced,
+                "follow_up": follow_up,
+            },
+        )
+        if not follow_up and not replaced:
+            self._count_unanswered(row, question)
+        return self.continue_session(session_id)
+
+    def _count_unanswered(self, row: InterviewSession, question) -> None:
+        """A question skipped twice is not answered, and the session's
+        estimate says so: a `below` for its concept, FR-6.25's route.
+
+        Only for an approved bank item, as for any verdict — a drafted or
+        backup question moves no θ (FR-5.6), and a resume probe has no
+        concept M05 estimates. The estimate is the session's own; what moves
+        the student's skill graph is M13 scoring an answer, and a skip is no
+        answer (the notes say it counted)."""
+        if question.question_source != "m05_bank" or not question.concept_id:
+            return
+        self._observe(row, question.turn_id, question.concept_id, _DECLINED)
+
     def idle(self, session_id: uuid.UUID, question_turn_id: uuid.UUID, n: int) -> SessionState:
         """EC-6.1: the student has gone quiet. One gentle prompt, a second,
         then the offer to move on — and never a fourth ("never loop forever").
@@ -2447,6 +2589,19 @@ __all__ = [
     "question_budget",
     "theta_cache",
 ]
+
+
+@dataclass(frozen=True)
+class _Declined:
+    """What a second skip tells M05: not answered — a `below`, held with
+    the confidence of a plain fail, not of an answer judged wrong."""
+
+    band: str = "below"
+    confidence: float = 0.6
+    latency_ms: int = 0
+
+
+_DECLINED = _Declined()
 
 
 def _priorities(plan: InterviewPlan) -> dict[int, float]:

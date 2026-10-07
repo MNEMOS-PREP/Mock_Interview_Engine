@@ -354,6 +354,13 @@ class TurnView(BaseModel):
     #: §15.4: a Practice retry of a question already asked. Recorded, never
     #: scored — the first attempt is the one that counts.
     retry: bool = False
+    #: Interviewer question turns the student skipped (2026-10-07): at the
+    #: opening and replaced by another at the same number (`replaced`), at
+    #: the opening a second time and left as not answered, or past the
+    #: opening, moving on from a follow-up (`follow_up_skip`).
+    skipped: bool = False
+    replaced: bool = False
+    follow_up_skip: bool = False
     #: Interviewer turns: the persona who asks — the last voice of the line,
     #: the one the student answers. Before 2026-10-06 events did not say;
     #: the fold reads it off the segment then, which is who asked.

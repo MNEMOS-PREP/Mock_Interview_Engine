@@ -104,6 +104,7 @@ import {
   useResumeState,
   useRetry,
   useSession,
+  useSkip,
   useStart,
 } from "../api";
 import { fillerCount, useDictation } from "../speech";
@@ -739,6 +740,61 @@ function HintButton({
   );
 }
 
+/**
+ * What a skip of the open line would do (2026-10-07), as the backend decides
+ * it: at a question's opening, the first skip at its number brings a
+ * different question (`first`); skipping that replacement too leaves it,
+ * counted as not answered (`again`); with a follow-up open, it moves on
+ * (`follow_up`). Null when there is nothing to skip.
+ */
+function skipKind(session: Session): "first" | "again" | "follow_up" | null {
+  const open = session.transcript.find((t) => t.turn_id === session.open_turn_id);
+  if (!open || open.role !== "interviewer" || open.question_source === "closing") return null;
+  const opened = session.transcript.filter(
+    (t) =>
+      t.role === "interviewer" &&
+      t.question_source &&
+      t.question_source !== "closing" &&
+      !t.probe_move &&
+      !t.retry,
+  );
+  if (opened.length === 0) return null;
+  if (open.probe_depth > 0) return "follow_up";
+  const before = opened[opened.length - 2];
+  return before?.replaced ? "again" : "first";
+}
+
+/** Skip, with what it will cost said before it is pressed — like the hint's
+ *  price: a rule discovered afterwards is a penalty, one shown first is a
+ *  choice. */
+function SkipButton({
+  kind,
+  busy,
+  onSkip,
+}: {
+  kind: "first" | "again" | "follow_up";
+  busy: boolean;
+  onSkip: () => void;
+}) {
+  const label = kind === "follow_up" ? "Next question" : kind === "again" ? "Skip again" : "Skip";
+  const note =
+    kind === "follow_up"
+      ? "move on from this follow-up"
+      : kind === "again"
+        ? "this one would count as not answered"
+        : "you'll get a different question";
+  return (
+    <span className="flex items-center gap-2">
+      <Button variant="ghost" size="sm" onClick={onSkip} disabled={busy}>
+        {label}
+      </Button>
+      <span className={`hidden text-2xs sm:inline ${kind === "again" ? "font-medium text-ink-soft" : "text-ink-faint"}`}>
+        {note}
+      </span>
+    </span>
+  );
+}
+
 /** The round the student is in, by M02's name for it — "Data structures",
  *  not "segment 2". None for the warm-up and the closing, which say so. */
 function roundTitle(session: Session): string | null {
@@ -814,6 +870,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const hint = useHint(sessionId);
   const retry = useRetry(sessionId);
   const moveOn = useMoveOn(sessionId);
+  const skip = useSkip(sessionId);
   const idle = useIdle(sessionId);
   const repeat = useRepeat(sessionId);
   const heardLine = useHeard(sessionId);
@@ -901,7 +958,11 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const followVoice = voice.supported && voice.enabled && !voice.blocked;
   const reveal = useReveal(voice, followVoice);
   const waiting =
-    answer.isPending || start.isPending || retry.isPending || moveOn.isPending;
+    answer.isPending ||
+    start.isPending ||
+    retry.isPending ||
+    moveOn.isPending ||
+    skip.isPending;
   /** When the student last finished an answer: the interviewer's calibrated
    *  silence (FR-11.10) counts from there, not from when the line landed. */
   const answeredAt = useRef<number | null>(null);
@@ -2073,6 +2134,21 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                   >
                     Repeat the question
                   </Button>
+                )}
+                {!data.in_closing && canAnswer && skipKind(data) && (
+                  <SkipButton
+                    kind={skipKind(data)!}
+                    busy={skip.isPending}
+                    onSkip={() => {
+                      if (!data.open_turn_id) return;
+                      voice.stop("send");
+                      if (dictation.listening) dictation.stop();
+                      setDraft("");
+                      setSpoken("");
+                      setPreview("");
+                      skip.mutate(data.open_turn_id);
+                    }}
+                  />
                 )}
                 {!data.in_closing && canAnswer && !flagged && (
                   <Button

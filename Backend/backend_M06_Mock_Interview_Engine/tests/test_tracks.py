@@ -315,3 +315,55 @@ def test_a_track_is_named_by_m05_and_run_by_the_interviewer_it_calls_for():
     assert part.title == "HR and behavioural"
     assert part.kind == "behavioural", "the HR side of the panel runs it"
     assert "The track you picked" in part.rationale
+
+
+# ── what the setup page is offered ────────────────────────────────────────
+
+
+def test_the_setup_page_is_offered_every_track_and_whether_it_is_scored(client):
+    body = client.get("/v1/interviews/tracks").json()
+    offered = {t["round_type"]: t for t in body["tracks"]}
+    # The fixture bank holds DSA, which M13's fixture can score.
+    assert offered["dsa_verbal"]["scored"] is True
+    assert offered["dsa_verbal"]["title"], "a name, not an id"
+
+
+def test_a_drafts_only_track_is_offered_and_says_it_is_not_scored(client):
+    from backend_M06_Mock_Interview_Engine import adapters
+
+    class Tracks(BankQuestions):
+        def tracks(self):
+            return {
+                "groups": ["AI and ML"],
+                "tracks": [
+                    {
+                        "round_type": "ml_verbal",
+                        "title": "Machine learning",
+                        "group": "AI and ML",
+                        "kind": "technical",
+                        "approved": 0,
+                        "drafts": 50,
+                    }
+                ],
+            }
+
+    adapters.set_upstreams(
+        adapters.fixture_upstreams(
+            m05=Tracks(), m13=FixtureEvaluator(round_types=("dsa_verbal", "ml_verbal"))
+        )
+    )
+    (ml,) = client.get("/v1/interviews/tracks").json()["tracks"]
+    assert (ml["title"], ml["scored"], ml["drafts"]) == ("Machine learning", False, 50)
+
+
+def test_the_resume_picker_lists_the_students_resumes(client, as_student):
+    body = client.get("/v1/interviews/resumes", headers=as_student).json()
+    listed = {r["filename"]: r for r in body["resumes"]}
+    assert listed["resume_final.pdf"]["is_active"] is True
+    assert listed["resume_final.pdf"]["defendable"] == 1
+    assert listed["resume_second_year.pdf"]["defendable"] == 0, "nothing to push on"
+    assert "redacted_text" not in str(body), "only what the picker shows"
+
+
+def test_the_resume_picker_needs_a_signed_in_student(client):
+    assert client.get("/v1/interviews/resumes").status_code in (401, 403)

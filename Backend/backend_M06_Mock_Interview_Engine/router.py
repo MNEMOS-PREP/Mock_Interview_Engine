@@ -293,6 +293,12 @@ class ReliabilityOut(BaseModel):
     ended_by_failure: int
 
 
+class SkipIn(BaseModel):
+    #: The question the student means to skip. A double-click names a line
+    #: that has already moved on, and is refused — never a second skip.
+    question_turn_id: uuid.UUID
+
+
 class FlagIn(BaseModel):
     question_turn_id: uuid.UUID
     #: M05 takes any reason; the stage offers a short fixed list.
@@ -610,6 +616,26 @@ def persona_cards() -> list[dict]:
     ]
 
 
+@router.get("/interviews/tracks", tags=["meta"])
+def tracks(engine: Engine = Depends(get_engine)) -> dict:
+    """What the setup page offers to interview on (2026-10-07): every track
+    the question bank holds questions for, grouped, and whether answers in it
+    are scored yet. Picking one makes it the whole interview."""
+    return engine.offered_tracks()
+
+
+@router.get("/interviews/resumes", tags=["meta"])
+def resumes(
+    principal: Principal | None = Depends(enforce_access),
+    engine: Engine = Depends(get_engine),
+) -> dict:
+    """The signed-in student's resumes, for "include questions from my
+    resume" — which one, when they have several."""
+    if principal is None or principal.candidate_id is None:
+        raise HTTPException(status_code=403, detail="Not signed in.")
+    return engine.resumes(uuid.UUID(principal.candidate_id))
+
+
 # ─────────────────────────────────────────────────────────────────────────
 #  Creating sessions
 # ─────────────────────────────────────────────────────────────────────────
@@ -784,6 +810,21 @@ def take_retry(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> S
     first attempt is the one that counts, and the notes say which is which."""
     try:
         return session_out(engine.retry(session_id))
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="No such session.") from exc
+    except (InvalidTransition, store.ConcurrentWrite) as exc:
+        raise _conflict(exc) from exc
+
+
+@router.post("/interviews/{session_id}/skip", response_model=SessionOut)
+def skip_question(
+    session_id: uuid.UUID, body: SkipIn, engine: Engine = Depends(get_engine)
+) -> SessionOut:
+    """Skip the open question (2026-10-07). The first skip at a question's
+    number brings a different question in its place; skipping that one too
+    leaves it, counted as not answered."""
+    try:
+        return session_out(engine.skip(session_id, body.question_turn_id))
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="No such session.") from exc
     except (InvalidTransition, store.ConcurrentWrite) as exc:

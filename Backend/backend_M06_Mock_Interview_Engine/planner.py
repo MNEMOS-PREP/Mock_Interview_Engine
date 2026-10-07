@@ -469,7 +469,7 @@ def _without_a_job_description(
         PlannedSegment(
             index=0,
             kind=_track_kind(inputs, round_type),
-            title=_round_type_title(round_type, inputs.tracks),
+            title=round_type_title(round_type, inputs.tracks),
             persona_id=mode.persona_for("technical"),
             minutes=round(each, 1),
             question_budget=max(1, int(each // MINUTES_PER_VERBAL_QUESTION)),
@@ -492,7 +492,7 @@ def _track_kind(inputs: PlanInputs, round_type: str) -> SegmentKind:
     return "behavioural" if kind == "behavioural" else "technical"
 
 
-def _round_type_title(round_type: str, tracks: dict[str, dict[str, Any]] | None = None) -> str:
+def round_type_title(round_type: str, tracks: dict[str, dict[str, Any]] | None = None) -> str:
     """`dsa_verbal` is an id, not a title. M05 names its tracks
     (`/v1/bank/tracks`); without that, the honest guess: the id split on its
     separators, short parts left upper-case because they are acronyms."""
@@ -537,5 +537,6 @@ __all__ = [
     "live_segments",
     "minutes_for_m02",
     "reserved_minutes",
+    "round_type_title",
     "skipped_requirements",
 ]

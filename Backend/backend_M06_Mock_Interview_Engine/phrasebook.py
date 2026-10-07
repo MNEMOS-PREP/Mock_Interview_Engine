@@ -138,6 +138,14 @@ class Lines:
     go_ahead: str
     #: Before the question put another way, when the student asked for it.
     rephrase_lead: str
+    #: The student skipped a question for the first time at this number: a
+    #: different one in its place (2026-10-07). Neutral — a skip is allowed,
+    #: and the line must not make it sound like a failure.
+    skip_lead: str
+    #: They skipped the replacement too: it is left, and counted as not
+    #: answered. Said before the next question's own lead; it names nothing
+    #: about the student, only what happens to the question.
+    skip_leave: str
 
 
 LINES: dict[Register, Lines] = {
@@ -201,6 +209,8 @@ LINES: dict[Register, Lines] = {
         clarify_term_one="Sorry — did you say {term}?",
         go_ahead="Sorry — go ahead.",
         rephrase_lead="Sure — let me put it another way.",
+        skip_lead="No problem — let's try a different one.",
+        skip_leave="That's okay, we'll leave that one.",
     ),
     "neutral": Lines(
         greeting="Hello. Let's begin.",
@@ -257,6 +267,8 @@ LINES: dict[Register, Lines] = {
         clarify_term_one="Sorry, did you say {term}?",
         go_ahead="Go ahead.",
         rephrase_lead="Let me put it differently.",
+        skip_lead="Alright, a different one.",
+        skip_leave="Okay, we'll leave that one.",
     ),
     "bar_raiser": Lines(
         greeting="Let's get started.",
@@ -312,6 +324,8 @@ LINES: dict[Register, Lines] = {
         clarify_term_one="Did you say {term}?",
         go_ahead="Go on.",
         rephrase_lead="Differently, then.",
+        skip_lead="Fine. Another one.",
+        skip_leave="We'll leave it.",
     ),
 }
 

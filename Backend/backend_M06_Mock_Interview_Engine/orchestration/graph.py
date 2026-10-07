@@ -859,7 +859,7 @@ def build(deps: Deps):
         arriving = s.get("persona") or leaving
         said_leaving, said_arriving = leaving.said(), arriving.said()
         seated = deps.panel_for(inp.state)
-        if inp.state.questions_asked == 0:
+        if not inp.state.opened:
             if inp.state.kind == "drill":
                 opening = f"{said_arriving.drill_open} {said_arriving.first_question_lead}"
                 return [], opening.strip(), False
@@ -877,7 +877,11 @@ def build(deps: Deps):
         next_item = s.get("item")
         closing_next = next_item is not None and next_item.source == "closing"
         pace = "" if closing_next else (s.get("pace_line") or inp.state.pending_pace_line or "")
-        if outcome is None or (nudger is not None and nudger.id != leaving.id):
+        skipped = inp.state.pending_skip
+        if outcome is None and skipped == "left":
+            # A second skip at one number (2026-10-07): the question is left.
+            exit_line = said_leaving.skip_leave
+        elif outcome is None or (nudger is not None and nudger.id != leaving.id):
             exit_line = ""
         elif nudge:
             exit_line = said_leaving.keep_moving
@@ -919,6 +923,10 @@ def build(deps: Deps):
         if item is not None and item.source == "closing":
             # The closing without a bridge (a crash replayed): it still asks.
             return before, f"{back}{exit_line} {said_arriving.bridge_to_closing}".strip(), nudge
+        if skipped == "replaced":
+            # The same question number, a different question: "next" would
+            # say the skipped one was used up, and it was not.
+            return before, f"{back}{said_arriving.skip_lead}".strip(), nudge
         return before, f"{back}{exit_line} {said_arriving.next_question_lead}".strip(), nudge
 
     def phrase(s: StepState) -> dict[str, Any]:
