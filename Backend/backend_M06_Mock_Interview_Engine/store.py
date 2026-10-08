@@ -193,6 +193,50 @@ def seen_item_ids(
     return {row for row in rows if row is not None}
 
 
+#: How long a question the student skipped stays out of their interviews.
+SKIPPED_KEPT_OUT_DAYS = 180
+
+
+def skipped_item_ids(
+    db: Session,
+    candidate_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+    days: int = SKIPPED_KEPT_OUT_DAYS,
+) -> set[uuid.UUID]:
+    """Questions this student skipped, in any interview of the last `days`
+    (2026-10-08). Not freshness, which M05 may relax when the bank runs thin:
+    the student said no to these, and being handed one again in the next
+    interview is the repetition they called irritating. Sent as a hard
+    exclusion, like a question already asked in this interview."""
+    since = (now or utcnow()) - timedelta(days=days)
+    sessions = db.exec(
+        select(InterviewSession.id).where(InterviewSession.candidate_id == candidate_id)
+    ).all()
+    if not sessions:
+        return set()
+    events = db.exec(
+        select(SessionEvent)
+        .where(SessionEvent.session_id.in_(sessions))  # type: ignore[attr-defined]
+        .where(SessionEvent.kind == "question.skipped")
+        .where(SessionEvent.at >= since)
+    ).all()
+    turn_ids = set()
+    for event in events:
+        try:
+            turn_ids.add(uuid.UUID(str(event.payload.get("question_turn"))))
+        except (TypeError, ValueError):
+            continue
+    if not turn_ids:
+        return set()
+    rows = db.exec(
+        select(TurnRecord.question_id)
+        .where(TurnRecord.id.in_(turn_ids))  # type: ignore[attr-defined]
+        .where(TurnRecord.question_id.is_not(None))  # type: ignore[union-attr]
+    ).all()
+    return {row for row in rows if row is not None}
+
+
 # ─────────────────────────────────────────────────────────────────────────
 #  Writing
 # ─────────────────────────────────────────────────────────────────────────

@@ -218,7 +218,7 @@ function depthSentence(question: QuestionReport): string {
     return "You skipped this one, and a different question came in its place.";
   }
   if (question.skipped === "left" && unanswered) {
-    return "You skipped this one too, so it counts as not answered.";
+    return "You skipped this one too, so it counts as not answered here. Your skill graph is unchanged.";
   }
   if (
     question.moved_on &&

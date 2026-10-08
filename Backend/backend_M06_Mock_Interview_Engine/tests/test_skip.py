@@ -157,3 +157,23 @@ def test_the_notes_say_what_each_skip_did(client, as_student):
     assert (first["skipped"], first["not_scored_reason"]) == ("replaced", SKIPPED_REPLACED)
     assert (second["skipped"], second["not_scored_reason"]) == ("left", SKIPPED_LEFT)
     assert any("You skipped 2 questions" in note for note in report["notes"])
+
+
+def test_a_question_skipped_once_is_not_offered_in_the_next_interview(db):
+    """2026-10-08: "if the same question is asked in every interview the
+    candidate gets irritated". A skipped question is a hard exclusion for
+    months, not freshness M05 may relax when the bank runs thin."""
+    engine, row, bank = live(db)
+    skipped = questions(engine.state(row.id))[-1].question_id
+    skip(engine, row)
+    engine.end(row.id, "ended_by_student")
+
+    later, _ = store.create_session(
+        engine.db, candidate_id=row.candidate_id, kind="mock", mode="mock", minutes=30
+    )
+    bank.requests.clear()
+    engine.start(later.id)
+    selections = [r for r in bank.requests if "seen_item_ids" in r]  # not the plan's probe
+    assert selections, "the next interview asked M05 for a question"
+    assert all(str(skipped) in r["seen_item_ids"] for r in selections)
+    assert skipped not in {t.question_id for t in questions(engine.state(later.id))}

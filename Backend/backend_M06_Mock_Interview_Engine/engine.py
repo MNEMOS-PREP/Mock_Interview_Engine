@@ -2517,6 +2517,10 @@ class Engine:
         # question at the warm-up and at the next two rounds.
         asked_here = {str(t.question_id) for t in state.transcript if t.question_id is not None}
         recent = {str(i) for i in store.seen_item_ids(self.db, row.candidate_id, now=now)}
+        # A question the student skipped in an earlier interview is never
+        # offered again for months — as hard as one asked in this interview,
+        # because freshness bends when the bank runs thin (2026-10-08).
+        declined = {str(i) for i in store.skipped_item_ids(self.db, row.candidate_id, now=now)}
         request = {
             "candidate_id": str(row.candidate_id),
             "session_id": str(row.id),
@@ -2529,8 +2533,8 @@ class Engine:
             "required_requirement_ids": list(segment.requirement_ids) if segment else [],
             # In memory only — see ThetaCache.
             "theta_provisional": self.thetas.get(row.id),
-            "seen_item_ids": sorted(asked_here),
-            "recent_item_ids": sorted(recent | asked_here),
+            "seen_item_ids": sorted(asked_here | declined),
+            "recent_item_ids": sorted(recent | asked_here | declined),
             "time_remaining_s": int(state.time_remaining_s(now)),
             "is_first_of_round": state.questions_asked == 0,
             "round_progress": min(state.questions_asked / question_budget(state), 1.0),
@@ -2567,7 +2571,7 @@ class Engine:
             degraded["M05"] = up.on_missing("M05")
 
         # §10: M06's own playlist. Never repeats within this session.
-        local_request = {**request, "seen_item_ids": sorted(asked_here)}
+        local_request = {**request, "seen_item_ids": sorted(asked_here | declined)}
         chosen = up.local_questions.select(local_request)
         if chosen is None:
             return Selected(None, degraded=degraded, empty_reason="fallback_exhausted")

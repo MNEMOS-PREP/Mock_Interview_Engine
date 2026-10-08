@@ -30,7 +30,10 @@ MOVED_ON = "We moved on from this one after a pause, so there was nothing to sco
 #: 2026-10-07: skips. The first at a question's number is replaced and costs
 #: nothing; the second at the same number is left, and counts.
 SKIPPED_REPLACED = "You skipped this one, so a different question was asked in its place."
-SKIPPED_LEFT = "You skipped this one too, so it counts as not answered."
+SKIPPED_LEFT = (
+    "You skipped this one too, so it counts as not answered in this interview. "
+    "Your skill graph is unchanged: a skip isn't evidence either way."
+)
 
 NOT_SCORED = {
     "m01_probe": "Practice drill — drills are not scored yet.",
