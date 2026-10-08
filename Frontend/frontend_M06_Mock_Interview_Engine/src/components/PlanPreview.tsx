@@ -155,6 +155,12 @@ function SegmentRow({
   );
 }
 
+/** The picked track's name, as the plan's own part calls it. */
+function trackTitle(track: string, segments: { title: string; rubric_round_types?: string[] }[]): string {
+  const part = segments.find((s) => s.rubric_round_types?.length === 1 && s.rubric_round_types[0] === track);
+  return part?.title ?? track.replace(/_verbal$/, "").replace(/_/g, " ");
+}
+
 export function PlanPreview({ sessionId }: { sessionId: string }) {
   const session = useSession(sessionId);
   const plan = usePlan(sessionId);
@@ -214,7 +220,11 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
             ? "Built from the job description you chose, so the questions follow what it asks for."
             : segments.some((s) => s.title.startsWith("Focus: "))
               ? "Built around the topic you chose."
-              : "General practice — choose a job description or a drive and the plan follows it."
+              : built?.track
+                ? `Every question is on ${trackTitle(built.track, segments)}, the track you picked${
+                    built.resume_included ? ", with a part on your resume" : ""
+                  }.`
+                : "A mix of topics — pick a track, a job description or a drive and the plan follows it."
         }
       />
 

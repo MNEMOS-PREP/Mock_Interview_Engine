@@ -79,7 +79,9 @@ import {
   looksLikeBluetooth,
   serverAsrAvailable,
   setKeepingAnswers,
+  TalkingHead,
   transcribeOnServer,
+  useInterviewerFaces,
   useInterviewerVoice,
   useTurnTaking,
   type AsrResult,
@@ -493,6 +495,75 @@ function Avatar({
   return <Face name={name} size={size} speaking={speaking} mouth={mouth} kind={kind} />;
 }
 
+/**
+ * The panel, as a call shows it (2026-10-08): a tile per interviewer, each a
+ * face that talks — a 3D head where M11 has built one (`TalkingHead`), its
+ * mouth moving with the voice's own audio, and the drawn face where it has
+ * not. The one speaking is ringed; while the student talks, the heads listen.
+ */
+function PanelView({
+  panel,
+  speakingId,
+  askingId,
+  faces,
+  voice,
+  studentTalking,
+}: {
+  panel: { id: string; name: string; title: string; voice_id?: string | null }[];
+  speakingId: string | null;
+  askingId: string | null;
+  faces: ReadonlySet<string> | null;
+  voice: InterviewerVoice;
+  studentTalking: boolean;
+}) {
+  if (panel.length === 0) return null;
+  const columns =
+    panel.length === 1 ? "grid-cols-1 max-w-sm" : panel.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3";
+  return (
+    <div className={`mt-4 grid gap-2.5 ${columns}`} aria-label="Your panel">
+      {panel.map((p) => {
+        const speaking = p.id === speakingId;
+        const turn = p.id === (speakingId ?? askingId);
+        const drawn = (
+          <Avatar
+            name={p.name}
+            size={88}
+            kind={voiceKind(p.voice_id)}
+            speaking={speaking}
+            mouth={speaking ? voice.mouth : undefined}
+          />
+        );
+        return (
+          <figure
+            key={p.id}
+            className={`min-w-0 overflow-hidden rounded-xl border transition-colors ${
+              speaking ? "border-brand ring-2 ring-brand/40" : turn ? "border-brand-line" : "border-line"
+            }`}
+          >
+            {faces?.has(p.id) ? (
+              <TalkingHead
+                persona={p.id}
+                name={p.name}
+                speaking={speaking}
+                expression={voice.expression}
+                listening={studentTalking && turn}
+                fallback={drawn}
+                className="aspect-[4/3] w-full"
+              />
+            ) : (
+              <div className="grid aspect-[4/3] w-full place-items-center bg-surface-sunken">{drawn}</div>
+            )}
+            <figcaption className="flex min-w-0 items-baseline justify-between gap-2 px-2.5 py-1.5 text-2xs">
+              <span className="truncate font-medium text-ink">{p.name}</span>
+              <span className="truncate text-ink-faint">{p.title}</span>
+            </figcaption>
+          </figure>
+        );
+      })}
+    </div>
+  );
+}
+
 /** The plan's question budget, summed — "about", because follow-ups and a
  *  replan move it. Null for a drill or before there is a plan. */
 function plannedQuestions(session: Session): number | null {
@@ -871,6 +942,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const retry = useRetry(sessionId);
   const moveOn = useMoveOn(sessionId);
   const skip = useSkip(sessionId);
+  // Who has a 3D head (M11 builds them offline); everyone else is drawn.
+  const faces = useInterviewerFaces();
   const idle = useIdle(sessionId);
   const repeat = useRepeat(sessionId);
   const heardLine = useHeard(sessionId);
@@ -1708,6 +1781,16 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             speakingId={speakingId}
           />
           <Stepper session={data} />
+          {data.kind !== "drill" && (
+            <PanelView
+              panel={panel.length ? panel : data.interviewer ? [data.interviewer] : []}
+              speakingId={speakingId}
+              askingId={data.interviewer?.id ?? null}
+              faces={faces}
+              voice={voice}
+              studentTalking={listening.speaking || ptt.held}
+            />
+          )}
 
           {callState !== "here" && (
             <p

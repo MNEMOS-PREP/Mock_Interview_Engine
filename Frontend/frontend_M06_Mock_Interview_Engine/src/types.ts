@@ -153,6 +153,8 @@ export interface PlannedSegment {
   is_reserved: boolean;
   /** Who runs this part (FR-6.3) — `/v1/interviews/personas` names them. */
   persona_id: string;
+  /** The round types (tracks) this part asks from, M05's and M13's ids. */
+  rubric_round_types?: string[];
 }
 
 export type ReplanTrigger =
