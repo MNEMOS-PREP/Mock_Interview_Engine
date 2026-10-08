@@ -388,7 +388,9 @@ def _panel_opening(
     return parts, said.first_question_lead
 
 
-def opening_parts(state: SessionState, lead: Persona, panel: list[Persona]) -> list[tuple[str, str]]:
+def opening_parts(
+    state: SessionState, lead: Persona, panel: list[Persona]
+) -> list[tuple[str, str]]:
     """The panel's opening, before its first question, as `(speaker, text)`
     parts — what the first step will say ahead of the question's stem. Known
     from the plan alone, so the voice can be made while the student reads the
