@@ -148,11 +148,37 @@ def test_the_lead_says_goodbye_whoever_was_asking(db):
 # ── interjections ─────────────────────────────────────────────────────────
 
 
+#: The cast before 2026-10-07. The tests below are about how a panel TALKS
+#: (who cuts in, who cuts a long answer short, who writes a note down), and
+#: each is written as a scene among these seven; with the full cast the
+#: scene's premise — "nobody knows DSA better than the engineer asking" —
+#: is simply false. Who gets cast is test_panel.py's.
+FIRST_SEVEN = frozenset(
+    {
+        "bar_raiser",
+        "friendly_recruiter",
+        "hr_generalist",
+        "impatient_senior",
+        "methodical_engineer",
+        "professor",
+        "startup_founder",
+    }
+)
+
+
 @pytest.fixture
-def stack_expert(monkeypatch):
+def first_seven(monkeypatch):
+    table = {k: v for k, v in personas_module.load_personas().items() if k in FIRST_SEVEN}
+    monkeypatch.setattr(personas_module, "personas", lambda: table)
+    monkeypatch.setattr(seating, "personas", lambda: table)
+    return table
+
+
+@pytest.fixture
+def stack_expert(monkeypatch, first_seven):
     """The professor, authored to know stacks and queues better than anyone:
     the bank's questions are about those."""
-    table = dict(personas_module.personas())
+    table = dict(first_seven)
     professor = table["professor"]
     table["professor"] = professor.model_copy(
         update={
@@ -198,7 +224,7 @@ def test_an_expert_comes_in_once_a_round_and_the_asker_takes_it_back(db, stack_e
     assert len(same_round) == 1
 
 
-def test_nobody_comes_in_who_does_not_know_it_better(db):
+def test_nobody_comes_in_who_does_not_know_it_better(db, first_seven):
     """The shipped personas: nobody on a mock's panel knows the bank's DSA
     questions clearly better than the engineer asking them."""
     engine, row = session(db, llm=StubLLM([verdict(band="at")] * 60))
@@ -211,7 +237,7 @@ def test_nobody_comes_in_who_does_not_know_it_better(db):
 # ── cut-ins ───────────────────────────────────────────────────────────────
 
 
-def test_a_long_answer_is_cut_short_by_the_least_patient_on_the_panel(db):
+def test_a_long_answer_is_cut_short_by_the_least_patient_on_the_panel(db, first_seven):
     """Final Boss: the bar-raiser asks; the staff engineer beside them has
     less patience for a long answer, and says so."""
     engine, row = session(db, mode="final_boss", llm=StubLLM([verdict(band="at")] * 60))
@@ -289,11 +315,16 @@ def test_nobody_closes_a_question_the_same_way_twice_running(db):
     state = run(engine, row, "I don't know", limit=8)
     by_speaker: dict[str, list[str]] = {}
     for turn in asked(state):
-        said = persona(turn.speaker_id).said()
-        exits = (said.graceful_exit, said.moving_on, said.ceiling_exit)
-        used = next((e for e in exits if e and turn.text.startswith(e)), None)
-        if used:
-            by_speaker.setdefault(turn.speaker_id, []).append(used)
+        # Who said what, part by part: a hand-over opens with the LEAVING
+        # interviewer's exit, inside a turn that belongs to the one arriving.
+        for speaker, text in [(p.speaker_id, p.text) for p in turn.parts] or [
+            (turn.speaker_id, turn.text)
+        ]:
+            said = persona(speaker).said()
+            exits = (said.graceful_exit, said.moving_on, said.ceiling_exit)
+            used = next((e for e in exits if e and text.startswith(e)), None)
+            if used:
+                by_speaker.setdefault(speaker, []).append(used)
     assert any(len(used) >= 3 for used in by_speaker.values()), "the run closed enough questions"
     for speaker, used in by_speaker.items():
         assert all(a != b for a, b in zip(used, used[1:], strict=False)), (speaker, used)
@@ -318,12 +349,12 @@ def test_someone_joining_midway_says_so_instead_of_their_opening():
     assert bridge_line(joining, frozenset()) == meera.said().greeting
 
 
-def test_a_note_taking_line_is_said_on_its_own_then_a_pause(db, monkeypatch):
+def test_a_note_taking_line_is_said_on_its_own_then_a_pause(db, monkeypatch, first_seven):
     """M11's FR-11.12: "let me note that down", then quiet while they write —
     a part of its own with a pause after it, not run into the next words."""
     from backend_M06_Mock_Interview_Engine.orchestration.graph import NOTE_TAKING_PAUSE_MS
 
-    table = dict(personas_module.personas())
+    table = dict(first_seven)
     table["methodical_engineer"] = table["methodical_engineer"].model_copy(
         update={"note_taking_cadence": 1}
     )

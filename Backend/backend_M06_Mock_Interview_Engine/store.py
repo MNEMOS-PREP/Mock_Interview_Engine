@@ -236,6 +236,7 @@ def skipped_item_ids(
     ).all()
     return {row for row in rows if row is not None}
 
+
 def recent_panelists(
     db: Session,
     candidate_id: uuid.UUID,

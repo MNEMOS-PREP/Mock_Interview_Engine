@@ -24,6 +24,7 @@ from backend_M06_Mock_Interview_Engine.models import (
     LedgerOutbox,
     LLMCall,
 )
+from backend_M06_Mock_Interview_Engine.personas import persona
 
 from .stubs import (
     BankQuestions,
@@ -410,12 +411,13 @@ def test_repeating_a_question_does_not_repeat_the_hand_off(db):
     state = engine.start(row.id)
     asked = interviewer_lines(state)[-1]
     stem = state.current_item["stem"]
-    assert asked.startswith("Hello, I'm Priya.")  # the lead, with the panel
+    lead = persona(state.plan.panel[0])
+    assert asked.startswith(f"Hello, I'm {lead.name}.")  # the lead, with the panel
 
     state = say(engine, row, "Something about a different question entirely.")
     repeat = interviewer_lines(state)[-1]
     assert state.transcript[-1].probe_move == "redirect_once"
-    assert repeat == f"That's a different question. Here's mine again. {stem}"
+    assert repeat == f"{lead.said().redirect} {stem}"
     assert "First question." not in repeat
     assert "Hello" not in repeat
     # And the turn keeps the two apart, so a second repeat is the same repeat.

@@ -9,7 +9,7 @@ warmth: 0.85
 patience: 0.85
 formality: 0.4
 interruption_threshold: 0.8
-follow_up_aggression: 0.5
+follow_up_aggression: 0.4
 verbosity_target: 26
 domain_bias: [deep learning, dl, transformers, attention, language models, sequence models]
 voice_id: en-IN-female-warm

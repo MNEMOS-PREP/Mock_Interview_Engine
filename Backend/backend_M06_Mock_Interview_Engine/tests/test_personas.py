@@ -62,7 +62,53 @@ def _dir_with(tmp_path: Path, **overrides) -> Path:
 
 
 def test_the_seven_personas_of_the_spec_all_load():
-    assert set(personas()) == SHIP_SET
+    assert set(personas()) >= SHIP_SET
+
+
+#: A word each track's title or round type carries, and so its parts do.
+TRACK_WORDS = {
+    "dsa_verbal": "algorithms",
+    "os_verbal": "operating",
+    "dbms_verbal": "sql",
+    "cn_verbal": "networks",
+    "oop_verbal": "oop",
+    "systems_verbal": "systems",
+    "ml_verbal": "machine",
+    "dl_verbal": "deep",
+    "behavioural": "behavioural",
+}
+
+
+def test_every_track_has_three_interviewers_who_know_it():
+    """2026-10-07: "only Priya and Raghavan, every time". Three or more who
+    declare each track, so rotation has people to choose among."""
+    from backend_M06_Mock_Interview_Engine import panel
+
+    for track, word in TRACK_WORDS.items():
+        knowers = [p for p in personas().values() if panel.stem(word) in panel.words(p.domain_bias)]
+        assert len(knowers) >= 3, (track, [p.id for p in knowers])
+
+
+def test_every_mode_admits_someone_for_every_track():
+    """Practice needs a gentle expert and Final Boss a relentless one, in
+    every track — or one mode's ML interview is run by a stranger to ML."""
+    from backend_M06_Mock_Interview_Engine import panel
+    from backend_M06_Mock_Interview_Engine.modes import MODES
+
+    for mode, config in MODES.items():
+        for track, word in TRACK_WORDS.items():
+            admitted = [
+                p
+                for p in personas().values()
+                if panel.fits(p, config.temperament)
+                and panel.stem(word) in panel.words(p.domain_bias)
+            ]
+            assert admitted, (mode, track)
+
+
+def test_no_two_interviewers_share_a_name():
+    names = [p.name for p in personas().values()]
+    assert len(names) == len(set(names))
 
 
 @pytest.mark.gate

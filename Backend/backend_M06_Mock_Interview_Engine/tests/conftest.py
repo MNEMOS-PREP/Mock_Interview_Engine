@@ -30,6 +30,18 @@ def _service_secret(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _fixed_seating(request, monkeypatch):
+    """The panel rotates by session id (2026-10-07), and tests mint session
+    ids at random — so every run would seat a different panel. The suite pins
+    the draw to zero, which is the fixed seating; a test about rotation
+    itself is marked `rotation` and gets the real draw."""
+    if "rotation" not in request.keywords:
+        from backend_M06_Mock_Interview_Engine import panel
+
+        monkeypatch.setattr(panel, "draw", lambda seed, persona_id: 0.0)
+
+
+@pytest.fixture(autouse=True)
 def no_network_model():
     """`get_llm()` would read the real keys.txt beside the repos and go live.
     Every test starts with the model off; a test that wants one installs a stub."""

@@ -446,6 +446,20 @@ def _taken_back(state: SessionState, owner: Persona, panel: list[Persona]) -> st
     return f"{owner.said().take_over.format(name=other.name)} " if other is not None else ""
 
 
+def spoken_by(state: SessionState, persona_id: str) -> list[str]:
+    """Everything this interviewer has said, in order, one entry per part —
+    the parts of a two-voice line split between the two who said them."""
+    out: list[str] = []
+    for turn in state.transcript:
+        if turn.role != "interviewer":
+            continue
+        if turn.parts:
+            out.extend(p.text for p in turn.parts if p.speaker_id == persona_id)
+        elif turn.speaker_id == persona_id:
+            out.append(turn.text)
+    return out
+
+
 def _fresh_exit(state: SessionState, persona: Persona, line: str) -> str:
     """Nobody closes a question the same way every time: a live panel run
     heard the professor say "That's where it gets subtle. Let's leave it
@@ -453,15 +467,11 @@ def _fresh_exit(state: SessionState, persona: Persona, line: str) -> str:
     used `line` on their last line, another of their own authored exits is
     said instead — each of them neutral, none a verdict."""
     # Their last few lines, not just the last: a redirect between two exits
-    # still let the professor's own exit come twice in a live run.
-    recent = " ".join(
-        t.text
-        for t in [
-            t
-            for t in state.transcript
-            if t.role == "interviewer" and t.speaker_id == persona.id
-        ][-3:]
-    )
+    # still let the professor's own exit come twice in a live run. Their OWN
+    # words, part by part: a hand-over turn belongs to the one arriving, and
+    # read whole it hid the leaving one's exit and lent them the other's
+    # (2026-10-08: "Okay, let's leave that there." twice running).
+    recent = " ".join(spoken_by(state, persona.id)[-3:])
     if not line or line not in recent:
         return line
     said = persona.said()

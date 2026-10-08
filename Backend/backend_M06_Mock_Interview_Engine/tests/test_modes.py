@@ -113,7 +113,7 @@ def test_a_mock_is_a_panel():
     """More than one person, the lead opening and closing, and the parts with
     a declared expert on the panel going to that expert."""
     plan = panel_plan("mock")
-    lead = mode_config("mock").persona_for()
+    lead = plan.panel[0]
     assert plan.segments[0].persona_id == lead == plan.segments[-1].persona_id
     assert len({s.persona_id for s in plan.segments}) >= 3
 
@@ -122,7 +122,7 @@ def test_final_boss_is_bar_raisers_and_never_a_friendly_voice():
     seated = set(who(panel_plan("final_boss")).values())
     assert all(persona(p).speech != "friendly" for p in seated)
     assert all(persona(p).warmth <= 0.5 for p in seated)
-    assert who(panel_plan("final_boss"))["warmup"] == "bar_raiser"
+    assert persona(who(panel_plan("final_boss"))["warmup"]).speech == "bar_raiser"
 
 
 def test_practice_is_gentle_throughout():

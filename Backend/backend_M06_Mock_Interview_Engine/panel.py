@@ -135,6 +135,12 @@ def closeness(p: Persona, temperament: Temperament) -> float:
 ROTATION = 0.15
 #: What having met someone in the last few interviews costs them.
 MET_RECENTLY = 0.25
+#: What each part a person already runs costs them for the next one, while
+#: the panel has seats: a real panel shares the parts out rather than one
+#: person running the projects, the people questions, the opening and the
+#: close (seen 2026-10-07, once the cast held engineering managers who
+#: declare projects AND behavioural).
+SPREAD = 0.15
 
 
 def draw(seed: str | None, persona_id: str) -> float:
@@ -234,6 +240,9 @@ def assign(
         value = score(p, topic) + freshness(p, seed, recent)
         if p.id in runs_kind.get(kind, set()):
             value += 0.15  # the person already running this kind continues it
+        elif len(seated) < size:
+            # A part of a new kind, and room on the panel: someone else's turn.
+            value -= SPREAD * sum(p.id in ids for ids in runs_kind.values())
         if p.id not in seated:
             if len(seated) >= size:
                 return float("-inf")  # the panel is full
@@ -353,6 +362,7 @@ def interjector(
 __all__ = [
     "MET_RECENTLY",
     "ROTATION",
+    "SPREAD",
     "TRAITS",
     "Temperament",
     "assign",

@@ -19,6 +19,18 @@ from backend_M06_Mock_Interview_Engine.personas import personas
 from .test_modes import panel_plan
 
 ALL_MODES = tuple(MODES)
+#: The cast before 2026-10-07 — a small world some properties are held in.
+FIRST_SEVEN = frozenset(
+    {
+        "bar_raiser",
+        "friendly_recruiter",
+        "hr_generalist",
+        "impatient_senior",
+        "methodical_engineer",
+        "professor",
+        "startup_founder",
+    }
+)
 
 
 def seated(plan) -> list[str]:
@@ -43,9 +55,10 @@ def part(kind: str, title: str = "") -> SimpleNamespace:
 
 @pytest.mark.parametrize("mode", ALL_MODES)
 def test_the_lead_opens_and_closes(mode):
-    """The person who welcomed the student is the one who says goodbye."""
+    """The person who welcomed the student is the one who says goodbye — and
+    is the first the opening introduces."""
     plan = panel_plan(mode)
-    lead = MODES[mode].persona_for()
+    lead = plan.panel[0]
     assert plan.segments[0].persona_id == lead == plan.segments[-1].persona_id
 
 
@@ -62,14 +75,16 @@ def test_nobody_outside_the_modes_temperament_sits(mode):
 
 @pytest.mark.parametrize("mode", ALL_MODES)
 def test_a_part_with_a_declared_expert_goes_to_one(mode):
-    """When someone the mode admits names a part's kind among their domains,
-    that part is theirs — the HR partner takes the people questions because
-    of what the persona file says, not because a table does."""
+    """When someone the mode admits declares what a part is about among their
+    domains, that part is theirs — the SQL part goes to someone who declares
+    SQL, the people questions to someone who declares them, because of what
+    the persona files say, not because a table does."""
     plan = panel_plan(mode)
     for segment in plan.segments[1:-1]:
-        experts = {p.id for p in eligible(mode) if declares(p, segment.kind)}
+        topic = panel.segment_words(segment)
+        experts = {p.id for p in eligible(mode) if panel.words(p.domain_bias) & topic}
         if experts:
-            assert segment.persona_id in experts, (mode, segment.kind, segment.persona_id)
+            assert segment.persona_id in experts, (mode, segment.title, segment.persona_id)
 
 
 def test_the_panel_grows_with_the_interview():
@@ -105,8 +120,9 @@ def test_bounds_that_exclude_everyone_still_seat_someone():
 
 def test_a_new_persona_joins_the_panel_without_code():
     """The claim the module makes: author a persona who knows a part better
-    than anyone seated, and the panel brings them in for it."""
-    people = personas()
+    than anyone seated, and the panel brings them in for it. Held in the
+    first seven's world, where nobody else knows SQL."""
+    people = {pid: p for pid, p in personas().items() if pid in FIRST_SEVEN}
     dba = people["methodical_engineer"].model_copy(
         update={
             "id": "database_engineer",
@@ -122,7 +138,7 @@ def test_a_new_persona_joins_the_panel_without_code():
     with_her = panel.assign(plan.segments, MODES["mock"].temperament, 45, {**people, dba.id: dba})
     by_kind = {s.kind: pid for s, pid in zip(plan.segments, with_her, strict=True)}
     assert by_kind["technical"] == "database_engineer"  # the SQL part
-    assert by_kind["warmup"] == MODES["mock"].persona_for(), "the lead is unchanged"
+    assert by_kind["warmup"] == by_kind["closing"], "the lead still opens and closes"
 
 
 def test_expertise_counts_declared_domains_over_a_title():
@@ -181,7 +197,7 @@ def test_a_panel_of_one_gets_someone_sitting_in():
 
 def test_the_plan_records_everyone_the_opening_introduces():
     plan = panel_plan("mock")
-    assert plan.panel[0] == MODES["mock"].persona_for()
+    assert plan.panel[0] == plan.segments[0].persona_id, "the lead first"
     assert set(plan.panel) >= {s.persona_id for s in plan.segments}
 
 
@@ -194,10 +210,13 @@ def test_a_struggling_student_is_handed_to_someone_gentler_they_have_met():
     from backend_M06_Mock_Interview_Engine import replan
 
     plan = panel_plan("mock")
+    lead = plan.panel[0]
+    plan = plan.model_copy(update={"panel": [lead, "friendly_recruiter", *plan.panel[1:]]})
     gentler = replan.recovery_persona(plan)
     assert gentler in plan.panel
     people = personas()
-    assert people[gentler].warmth > people[plan.panel[0]].warmth
+    assert people[gentler].speech == "friendly"
+    assert people[gentler].warmth > people[lead].warmth
 
 
 def test_a_panel_with_nobody_gentle_borrows_the_gentlest_the_mode_admits():

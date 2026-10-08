@@ -65,4 +65,5 @@ pythonpath = ["."]
 testpaths = ["backend_M06_Mock_Interview_Engine"]
 markers = [
     "gate: release-blocking acceptance gate (spec §13)",
+    "rotation: the panel is seated with the session's own draw (`panel.draw`), not pinned",
 ]

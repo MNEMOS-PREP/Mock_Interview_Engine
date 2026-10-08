@@ -13,7 +13,6 @@ import pytest
 
 from backend_M06_Mock_Interview_Engine import planner
 from backend_M06_Mock_Interview_Engine.contracts import InterviewPlan
-from backend_M06_Mock_Interview_Engine.modes import mode_config
 
 SESSION = uuid.UUID("11111111-1111-4111-8111-111111111111")
 JD = uuid.UUID("22222222-2222-4222-8222-222222222222")
@@ -265,13 +264,18 @@ def test_every_part_has_an_interviewer_and_the_lead_opens_and_closes():
     """FR-6.3. Who sits on the panel is `panel.assign`'s (test_panel.py); the
     planner's part is that every segment names someone, and that the person
     the student meets first is the one who says goodbye."""
+    from backend_M06_Mock_Interview_Engine.personas import persona
+
+    leads = {}
     for mode in ("practice", "final_boss"):
-        segments = planner.assemble(inputs(mode=mode)).segments
-        lead = mode_config(mode).persona_for()
+        plan = planner.assemble(inputs(mode=mode))
+        segments = plan.segments
         assert all(s.persona_id for s in segments)
-        assert segments[0].persona_id == lead == segments[-1].persona_id
-    assert mode_config("practice").persona_for() == "friendly_recruiter"
-    assert mode_config("final_boss").persona_for() == "bar_raiser"
+        assert segments[0].persona_id == plan.panel[0] == segments[-1].persona_id
+        leads[mode] = persona(segments[0].persona_id)
+    # The lead is the mode's kind of person, whoever it is this time.
+    assert leads["practice"].speech == "friendly"
+    assert leads["final_boss"].warmth <= 0.5
 
 
 # ── no job description (§10) ─────────────────────────────────────────────
