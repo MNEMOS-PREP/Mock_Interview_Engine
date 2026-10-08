@@ -161,8 +161,10 @@ export function useReport(id: string | undefined) {
 }
 
 /** This student's sessions, newest first. `limit` up to the backend's 200 —
- *  a practice streak needs more history than the recent-sessions list does. */
-export function useHistory(limit = 20) {
+ *  a practice streak needs more history than the recent-sessions list does.
+ *  `enabled` false for a page that is not a student's: the shell's Today
+ *  asked for a student's history as a placement officer and got a 403. */
+export function useHistory(limit = 20, enabled = true) {
   const candidateId = getCandidateId();
   return useQuery({
     queryKey: [...m06Keys.history(candidateId), limit],
@@ -170,6 +172,7 @@ export function useHistory(limit = 20) {
       api.get<SessionSummary[]>(
         `/v1/interviews/by-candidate/${candidateId}?limit=${limit}`,
       ),
+    enabled,
   });
 }
 

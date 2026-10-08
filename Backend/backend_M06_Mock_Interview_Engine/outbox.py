@@ -164,6 +164,10 @@ def scoreable(state: SessionState, turn, item: Item | None) -> str | None:
         return "A deliberately false probe needs M13's push_back rubric."
     if turn.question_source == "m05_draft":
         return DRAFT_NOT_SCORED
+    if turn.question_source == "m01_probe":
+        # A resume question in a mock (a drill returned above): there is no
+        # bank item, so no rubric — and it is not "the backup set".
+        return "A question about your own resume — not scored."
     if turn.question_id is None or turn.rubric_round_type is None:
         return "Asked from the backup set, so it was not scored."
     return None

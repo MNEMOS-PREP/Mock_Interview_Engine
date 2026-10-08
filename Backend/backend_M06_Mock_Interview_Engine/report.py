@@ -35,8 +35,18 @@ SKIPPED_LEFT = (
     "Your skill graph is unchanged: a skip isn't evidence either way."
 )
 
+#: A resume question in a mock: not a drill, so it is not called one.
+RESUME_NOT_SCORED = (
+    "A question about your own resume — not scored: only questions from the bank have a "
+    "rubric to mark against."
+)
+
 NOT_SCORED = {
     "m01_probe": "Practice drill — drills are not scored yet.",
+    "m05_fallback": (
+        "Asked from the question bank's short backup list when nothing else fitted, so it was "
+        "not scored."
+    ),
     "local_fallback": (
         "Asked from the backup set while the question bank was offline, so it was not scored."
     ),
@@ -224,7 +234,11 @@ def build(state: SessionState, events: list[SessionEvent], now: datetime) -> Ses
                     scored=scored,
                     not_scored_reason=None
                     if scored
-                    else NOT_SCORED.get(source, NOT_SCORED["template"]),
+                    else (
+                        RESUME_NOT_SCORED
+                        if source == "m01_probe" and state.kind != "drill"
+                        else NOT_SCORED.get(source, NOT_SCORED["template"])
+                    ),
                     strong_answer_covers=(
                         [kp["statement"] for kp in item.get("key_points", [])]
                         or expected_statements(item.get("expects"))

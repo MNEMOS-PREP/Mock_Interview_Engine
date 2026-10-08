@@ -384,3 +384,28 @@ def test_m05_is_told_what_this_interview_asked_in_order(db):
     last = [r for r in bank.requests if "asked_this_session" in r][-1]
     assert last["asked_this_session"] == asked_ids[: len(last["asked_this_session"])]
     assert last["asked_this_session"], "the warm-up was asked before the next selection"
+
+
+def test_a_resume_question_in_a_mock_is_not_called_a_drill(client, as_student):
+    """Found by the 2026-10-08 sweep: the notes said "Practice drill — drills
+    are not scored yet" beside a project question in a 30-minute mock."""
+    from backend_M06_Mock_Interview_Engine.report import RESUME_NOT_SCORED
+
+    sid = client.post(
+        "/v1/interviews", json={"minutes": 30, "include_resume": True}, headers=as_student
+    ).json()["id"]
+    state = client.post(f"/v1/interviews/{sid}/start", headers=as_student).json()
+    for _ in range(6):
+        if state["status"] != "live" or not state["open_turn_id"]:
+            break
+        state = client.post(
+            f"/v1/interviews/{sid}/answer",
+            json={"question_turn_id": state["open_turn_id"], "text": "I'm not sure."},
+            headers=as_student,
+        ).json()
+    ended = {"reason": "ended_by_student"}
+    client.post(f"/v1/interviews/{sid}/end", json=ended, headers=as_student)
+    report = client.get(f"/v1/interviews/{sid}/report", headers=as_student).json()
+    resume = [q for q in report["questions"] if q["source"] == "m01_probe"]
+    assert resume, "the project round asked from the resume"
+    assert all(q["not_scored_reason"] == RESUME_NOT_SCORED for q in resume)
