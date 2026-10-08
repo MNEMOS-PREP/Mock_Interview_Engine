@@ -367,3 +367,20 @@ def test_the_resume_picker_lists_the_students_resumes(client, as_student):
 
 def test_the_resume_picker_needs_a_signed_in_student(client):
     assert client.get("/v1/interviews/resumes").status_code in (401, 403)
+
+
+def test_m05_is_told_what_this_interview_asked_in_order(db):
+    """So the next question is not the same topic again, or the same question
+    in other words (2026-10-08)."""
+    bank = BankQuestions()
+    # A failed opening: the interviewer moves on, so a next question is chosen.
+    failed = verdict(justification="failed", band="below")
+    engine = make(db, llm=StubLLM([failed] * 20), m05=bank, m01=NoClaims())
+    row = create(engine)
+    engine.start(row.id)
+    say(engine, row, "I don't know.")
+    state = engine.state(row.id)
+    asked_ids = list(dict.fromkeys(str(t.question_id) for t in asked(state)))
+    last = [r for r in bank.requests if "asked_this_session" in r][-1]
+    assert last["asked_this_session"] == asked_ids[: len(last["asked_this_session"])]
+    assert last["asked_this_session"], "the warm-up was asked before the next selection"

@@ -131,6 +131,7 @@
     "enums": {},
     "properties": [
       "allow_drafts",
+      "asked_this_session",
       "bypass_freshness",
       "candidate_id",
       "coverage_debt",

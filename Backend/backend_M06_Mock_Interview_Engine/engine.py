@@ -2538,6 +2538,16 @@ class Engine:
             "theta_provisional": self.thetas.get(row.id),
             "seen_item_ids": sorted(asked_here | declined),
             "recent_item_ids": sorted(recent | asked_here | declined),
+            # What this interview asked, in order, so the next question is not
+            # the same topic again — or the same question in other words
+            # (2026-10-08, M05 `asked_this_session`).
+            "asked_this_session": list(
+                dict.fromkeys(
+                    str(t.question_id)
+                    for t in state.transcript
+                    if t.role == "interviewer" and t.question_id is not None
+                )
+            ),
             "time_remaining_s": int(state.time_remaining_s(now)),
             "is_first_of_round": state.questions_asked == 0,
             "round_progress": min(state.questions_asked / question_budget(state), 1.0),
