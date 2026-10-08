@@ -18,6 +18,21 @@ def _drill(client, candidate, headers):
     return client.post("/v1/drills", json=drill_body(candidate), headers=headers)
 
 
+# ── the track (2026-10-08) ───────────────────────────────────────────────
+
+
+def test_only_a_track_the_setup_page_offers_can_be_asked_for(client, as_student):
+    """"dbms" is not a track ("dbms_verbal" is): it planned a warm-up and a
+    goodbye. Now it is refused, and an offered one is not."""
+    offered = client.get("/v1/interviews/tracks", headers=as_student).json()["tracks"]
+    assert offered, "the fixture bank offers tracks"
+    refused = _create(client, as_student, track="dbms")
+    assert refused.status_code == 422
+    assert "no track called 'dbms'" in refused.json()["detail"]
+    made = _create(client, as_student, track=offered[0]["round_type"])
+    assert made.status_code == 201, made.text
+
+
 # ── drills (FR-6.23) ─────────────────────────────────────────────────────
 
 

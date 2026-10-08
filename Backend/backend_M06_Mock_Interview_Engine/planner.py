@@ -206,6 +206,14 @@ def _concepts(inputs: PlanInputs, requirement_ids: list[str]) -> list[str]:
     return found
 
 
+#: A picked track the bank had nothing in for this student. The sentence the
+#: plan screen shows on the part, and what to do about it.
+TRACK_UNSERVED = (
+    "The question bank had nothing in this track it could ask you right now, so this "
+    "part is left out. Pick another track, or add a job description."
+)
+
+
 def _blocked(inputs: PlanInputs, modality: str) -> str | None:
     """Why this round cannot run, or None. The sentence a student reads."""
     if modality not in SERVABLE_MODALITIES:
@@ -434,9 +442,27 @@ def _without_a_job_description(
     """§10: no JD, so the session is what M05 can fill — split evenly, and
     labelled, because a student must not think this was tailored to a job."""
     available = inputs.available_round_types
-    if not available:
-        return []
     usable = max(0.0, inputs.requested_minutes - warmup - closing)
+    if not available:
+        if inputs.track is None:
+            return []
+        # The track the student picked, and the bank could not serve them in
+        # it (M05's 409 on the probe): the part stays on the plan, left out,
+        # with the reason — not a fifteen-minute interview that is quietly a
+        # warm-up and a goodbye (2026-10-08).
+        return [
+            PlannedSegment(
+                index=0,
+                kind=_track_kind(inputs, inputs.track),
+                title=round_type_title(inputs.track, inputs.tracks),
+                persona_id=mode.persona_for("technical"),
+                minutes=round(usable, 1),
+                question_budget=0,
+                rubric_round_types=[inputs.track],
+                rationale="The track you picked.",
+                dropped_reason=TRACK_UNSERVED,
+            )
+        ]
     if inputs.focus_concepts:
         # "Practise Recursion" means recursion: the segment's concepts become
         # M05's coverage debt, which is what steers selection toward items

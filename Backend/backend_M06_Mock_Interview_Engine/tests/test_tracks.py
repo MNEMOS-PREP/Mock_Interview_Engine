@@ -96,6 +96,29 @@ def test_a_chosen_track_is_the_only_round_type_the_session_asks_about(db):
     assert asked(state) and all(t.rubric_round_type == "ml_verbal" for t in asked(state))
 
 
+def test_a_track_the_bank_cannot_serve_stays_on_the_plan_with_the_reason(db):
+    """Picked, and M05 had nothing in it for this student (its 409 on the
+    probe): the plan was a warm-up and a goodbye, with nothing to say why
+    fifteen minutes had become three and a half (2026-10-08)."""
+    engine = make(
+        db,
+        m05=BankQuestions(items=items_for("dsa_verbal")),
+        m13=FixtureEvaluator(round_types=("dsa_verbal", "ml_verbal")),
+        m01=NoClaims(),
+    )
+    row = create(engine, track="ml_verbal")
+    plan = engine.plan(row.id).plan
+
+    middle = [s for s in plan.segments if s.kind not in ("warmup", "closing")]
+    assert len(middle) == 1
+    part = middle[0]
+    assert part.rubric_round_types == ["ml_verbal"]
+    assert part.dropped_reason == planner.TRACK_UNSERVED
+    assert part.question_budget == 0
+    warmup, closing = planner.reserved_minutes(30)
+    assert part.minutes == round(30 - warmup - closing, 1), "the time it would have had"
+
+
 def test_with_no_track_the_interview_is_mixed_from_what_can_be_scored(db):
     bank = two_track_bank()
     engine = make(

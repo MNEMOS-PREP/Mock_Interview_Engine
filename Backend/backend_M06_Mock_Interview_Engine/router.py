@@ -668,7 +668,17 @@ def create_session(
     principal: Principal | None = Depends(enforce_access),
     db: Session = Depends(get_session),
     upstreams: Upstreams = Depends(get_upstreams),
+    engine: Engine = Depends(get_engine),
 ) -> SessionOut:
+    if body.track is not None:
+        # Only a track the setup page offers (`/interviews/tracks`). Any
+        # other id planned a warm-up and a goodbye, quietly (2026-10-08).
+        offered = {str(t["round_type"]) for t in engine.offered_tracks()["tracks"]}
+        if body.track not in offered:
+            raise HTTPException(
+                status_code=422,
+                detail=f"There is no track called {body.track!r}. Pick one from the list.",
+            )
     candidate_id = body.candidate_id
     if candidate_id is None:
         if principal is None or principal.candidate_id is None:
