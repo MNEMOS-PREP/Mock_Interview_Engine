@@ -19,7 +19,7 @@ Task list for taking **M6 — Mock Interview Engine** to 100% of [M06_Mock_Inter
 
 - **Phase:** 1–2 · **Owner:** E2 · **Ports:** API `8106`, web `5206`
 - **Repo:** `Mock_Interview_Engine` — on disk at `projects\Mock_Interview_Engine` (the folder must equal the repo name, or `launch.ps1` skips it)
-- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.13.0 on the frontend (since 2026-10-04). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
+- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.28.0 on the frontend (since 2026-10-08). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
 
 Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked on another module
 
@@ -1032,6 +1032,58 @@ stream the script controls.
 - ✅ **The room on Core v0.25.0** (`364bef9`): prefill at pauses, captions
   from M11 where the browser has none, offline answers kept and sent when the
   network is back, a Bluetooth note.
+
+### 2026-10-07/08 — the user's feedback round: tracks, skips, 39 interviewers, faces
+
+The user sat interviews and listed what felt wrong. Each item, as fixed:
+
+- ✅ **"An ML interview asks DSA and my resume"** (`b4ba15c`, `cac1b10`). The
+  track the student picks on the setup page is the only round type the
+  session asks about; questions from the resume come only when they opt in,
+  from the resume they pick. Every track is offered to every student — the
+  profile no longer decides what can be practised. A track the bank holds
+  only drafted items for (M05 FR-5.6) is practised and never scored or moved
+  θ for, and the notes say so (`m05_draft`).
+- ✅ **"Fifteen minutes should be five to seven questions"** (`b4ba15c`): two
+  minutes a verbal question; the closing is 10% of the session, two to five
+  minutes; a mixed interview is a few real rounds, not one-question samplers.
+- ✅ **Skips** (`cac1b10`, `141d15c`): a skipped question is replaced; skipped
+  twice at one number it is left, and costs that question's points in this
+  interview only. **The user's call (2026-10-08), from the student's side:**
+  a skip never lowers the saved skill graph (not answering is not evidence),
+  and a skipped question stays out of that student's interviews for 180 days.
+- ✅ **"Interviews feel repetitive"** (`908798e`, M05 `e62ddee`): M06 tells
+  M05 what this interview has asked (`asked_this_session`); M05 avoids the
+  same concept twice running, halves a concept's weight per repeat, and
+  pushes away a stem much like one already asked.
+- ✅ **"Only Priya and Raghavan, every time"** (`9b836a5`, `4f72e17`,
+  `f2c0a33`): 39 interviewers, three or four per domain, seated from their
+  data, rotated by the session and away from whoever the student met
+  recently, never two of one voice at a table; exits read per speaker.
+- ✅ **Voices: 37 of 39 Indian** (`5008437`, M11 `62c4a0b`) — a foreign accent
+  only for Priya and Kabir, as the team cast them. All nine new voices passed
+  a read-back probe (WER ≤ 0.18).
+- ✅ **Rephrase when asked; the closing explains** instead of "ask the real
+  panel" (`a19218e`).
+- ✅ **"The voice starts 5–6 s after the text"** (`30e4418`): the opening is
+  made while the plan is read (`GET /interviews/{id}/opening`, Core
+  v0.27.1 `prepareLine`).
+- ✅ **Faces** (`f5d487b`, `e38e6ef`; Core v0.27.0 → v0.28.0; M11 `a339fb6`,
+  `b2f8cc3`): each interviewer is a 3D head — an AI-generated portrait
+  (FLUX.1-schnell) lifted by LAM — labelled AI, lip-synced from the voice's own
+  audio (wav2arkit, 52 ARKit blendshapes at 30 fps); the drawn face stands in
+  until a head loads, or where WebGL is missing. Measured in the room: the
+  mouth each head is given is the frame for its audio's own time, exactly,
+  once playback starts; a listener's mouth stays shut; a mouth closes within
+  0.4 s of the speech ending; heads blink and nod. Offline, over eight voices,
+  the mouth opens a median 83 ms before the sound, as natural speech does.
+  Heads are built on the machine (M11 `scripts/make_faces.py`, ~8 min each),
+  not committed.
+- ✅ **A track the bank cannot serve says so** (`7605840`): it stays on the
+  plan, left out, with the reason — it had quietly become a warm-up and a
+  goodbye. An unknown track id is refused with a 422.
+- ✅ The notes call a resume question and a backup question what they are
+  (`e8b02aa`).
 
 ### What is left — and whose it is
 
