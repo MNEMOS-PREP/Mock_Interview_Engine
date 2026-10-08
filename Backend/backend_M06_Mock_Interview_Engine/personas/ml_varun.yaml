@@ -15,7 +15,7 @@ domain_bias: [machine learning, ml, models, evaluation, regression, classificati
 voice_id: en-IN-male-neutral
 # The M11 voice (Voice_Engine `voices/cast.json`), so a panel never seats two
 # people who sound the same.
-voice: indictts-022743
+voice: indictts-012635
 note_taking_cadence: 0
 hints_available: true
 lines:

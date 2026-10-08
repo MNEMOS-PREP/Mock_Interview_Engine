@@ -15,7 +15,7 @@ domain_bias: [operating systems, os, virtual memory, synchronisation, deadlocks,
 voice_id: en-IN-male-measured
 # The M11 voice (Voice_Engine `voices/cast.json`), so a panel never seats two
 # people who sound the same.
-voice: indictts-063175
+voice: indictts-128877
 note_taking_cadence: 3
 hints_available: true
 lines:
