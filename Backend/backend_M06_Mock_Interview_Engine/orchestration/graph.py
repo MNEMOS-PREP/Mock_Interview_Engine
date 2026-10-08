@@ -388,6 +388,15 @@ def _panel_opening(
     return parts, said.first_question_lead
 
 
+def opening_parts(state: SessionState, lead: Persona, panel: list[Persona]) -> list[tuple[str, str]]:
+    """The panel's opening, before its first question, as `(speaker, text)`
+    parts — what the first step will say ahead of the question's stem. Known
+    from the plan alone, so the voice can be made while the student reads the
+    plan (2026-10-08: the first words came 5-6 s after the text)."""
+    before, lead_line = _panel_opening(state, lead, panel)
+    return [*before, (lead.id, lead_line)] if lead_line else before
+
+
 def _runs_a_round(state: SessionState, persona_id: str) -> bool:
     return state.plan is not None and any(
         s.persona_id == persona_id and s.dropped_reason is None for s in state.plan.segments

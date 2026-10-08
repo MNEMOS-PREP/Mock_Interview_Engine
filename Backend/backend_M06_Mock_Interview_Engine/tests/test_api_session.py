@@ -372,3 +372,35 @@ def test_a_job_description_wins_over_a_drive(client, as_student, upstreams):
     ).json()
     assert body["jd_id"] == str(jd)
     assert upstreams.m02.drive_calls == []
+
+
+def test_the_opening_is_known_from_the_plan_and_is_what_is_said(client, as_student):
+    """2026-10-08: the first words came seconds after the text, because the
+    voice made them only once Start was pressed. The opening is decided by
+    the plan, so the browser can have it made while the plan is read — and
+    it must be exactly what the first line says, or nothing is reused."""
+    sid = client.post(
+        "/v1/interviews", json={"minutes": 30, "include_resume": True}, headers=as_student
+    ).json()["id"]
+    client.post(f"/v1/interviews/{sid}/plan", headers=as_student)
+    parts = client.get(f"/v1/interviews/{sid}/opening", headers=as_student).json()["parts"]
+    assert parts, "a panel's opening"
+    started = client.post(f"/v1/interviews/{sid}/start", headers=as_student).json()
+    first = started["transcript"][0]
+    said = first["parts"] or [{"speaker_id": first["speaker_id"], "text": first["text"]}]
+    assert [p["speaker_id"] for p in parts] == [p["speaker_id"] for p in said]
+    for planned, spoken in zip(parts[:-1], said[:-1], strict=True):
+        assert planned["text"] == spoken["text"]
+    assert said[-1]["text"].startswith(parts[-1]["text"]), "then the question"
+    # Once the interview has begun there is nothing to make ahead.
+    assert client.get(f"/v1/interviews/{sid}/opening", headers=as_student).json()["parts"] == []
+
+
+def test_a_strangers_opening_is_not_theirs_to_read(client, as_student):
+    import uuid as _uuid
+
+    from .conftest import student
+
+    sid = client.post("/v1/interviews", json={"minutes": 30}, headers=as_student).json()["id"]
+    other = client.get(f"/v1/interviews/{sid}/opening", headers=student(_uuid.uuid4()))
+    assert other.status_code == 403

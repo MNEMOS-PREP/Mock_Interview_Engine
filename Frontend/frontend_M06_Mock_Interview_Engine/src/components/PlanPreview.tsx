@@ -24,7 +24,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { Button, Card, ErrorNote, PageHeader } from "@ai/core";
+import { Button, Card, ErrorNote, PageHeader, api, prepareLine } from "@ai/core";
 
 import {
   useDropSegment,
@@ -161,6 +161,26 @@ function trackTitle(track: string, segments: { title: string; rubric_round_types
   return part?.title ?? track.replace(/_verbal$/, "").replace(/_/g, " ");
 }
 
+/** The panel's opening, made ahead by M11 while the plan is read. */
+async function prepareOpening(sessionId: string, cards: PersonaCard[]): Promise<void> {
+  try {
+    const { parts } = await api.get<{ parts: { speaker_id: string; text: string }[] }>(
+      `/v1/interviews/${sessionId}/opening`,
+    );
+    const byId = new Map(cards.map((card) => [card.id, card]));
+    await prepareLine(
+      `opening-${sessionId}`,
+      parts.map((part) => ({
+        text: part.text,
+        personaId: part.speaker_id,
+        voiceId: byId.get(part.speaker_id)?.voice_id ?? null,
+      })),
+    );
+  } catch {
+    // Ahead of time only: the opening is still made when it is said.
+  }
+}
+
 export function PlanPreview({ sessionId }: { sessionId: string }) {
   const session = useSession(sessionId);
   const plan = usePlan(sessionId);
@@ -179,6 +199,18 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     if (session.isSuccess && !built && planned && plan.isIdle) plan.mutate();
   }, [session.isSuccess, built, planned, plan]);
+
+  // While the student reads the plan, M11 makes the panel's opening, so the
+  // first words are ready when Start is pressed (2026-10-08: they came 5-6 s
+  // after the text). Once per plan; the question itself is chosen at start.
+  const planId = built?.id;
+  const cardsReady = personas.isSuccess;
+  useEffect(() => {
+    if (!planId || !planned || !cardsReady) return;
+    void prepareOpening(sessionId, personas.data ?? []);
+    // personas.data is stable once loaded (staleTime: Infinity).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planId, planned, cardsReady, sessionId]);
 
   useEffect(() => {
     // Somebody else started it, or this tab refreshed after starting — or

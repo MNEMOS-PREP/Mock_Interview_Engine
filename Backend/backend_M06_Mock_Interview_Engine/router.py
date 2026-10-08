@@ -746,6 +746,27 @@ def read_session(session_id: uuid.UUID, db: Session = Depends(get_session)) -> S
     return session_out(store.load_state(db, session_id))
 
 
+@router.get("/interviews/{session_id}/opening")
+def opening(session_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
+    """What the panel will say first, before its first question (2026-10-08).
+
+    The plan decides it — who sits, who leads, what each will ask about — so
+    the browser can have M11 make it while the student reads the plan, and
+    the first words are not made only once Start is pressed. The question
+    itself is chosen at the start, so it is not here."""
+    from .engine import seated
+    from .orchestration.graph import opening_parts
+    from .personas import persona
+
+    _row_or_404(db, session_id)
+    state = store.load_state(db, session_id)
+    if state.plan is None or state.kind == SessionKind.drill.value or state.transcript:
+        return {"parts": []}
+    lead = persona(state.plan.panel[0] if state.plan.panel else state.plan.segments[0].persona_id)
+    parts = opening_parts(state, lead, seated(state))
+    return {"parts": [{"speaker_id": who, "text": text} for who, text in parts]}
+
+
 @router.post("/interviews/{session_id}/plan", response_model=SessionOut)
 def build_plan(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> SessionOut:
     """FR-6.2 — what the interview will be, before it is (spec §6.1).
