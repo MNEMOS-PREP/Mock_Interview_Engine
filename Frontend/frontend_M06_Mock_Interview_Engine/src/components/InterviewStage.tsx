@@ -340,6 +340,7 @@ function StatusStrip({
   voice,
   panel,
   speakingId,
+  tiled = false,
 }: {
   session: Session;
   waiting: boolean;
@@ -353,6 +354,9 @@ function StatusStrip({
   panel: PersonaCard[];
   /** Who is speaking now, or null. */
   speakingId: string | null;
+  /** The panel's tiles stand beside the conversation on a wide screen
+   *  (2026-10-10): the strip's small faces are then only for a phone. */
+  tiled?: boolean;
 }) {
   const asking = session.interviewer;
   const shown = panel.find((p) => p.id === speakingId) ?? asking;
@@ -376,11 +380,13 @@ function StatusStrip({
           : "Finished";
 
   return (
-    <div className="sticky top-16 z-20 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-line bg-surface/85 px-4 py-3 shadow-raised backdrop-blur-xl">
+    // Opaque, and flush under the app's bar (2026-10-10): see-through, or
+    // with a gap above it, the lines scrolling under it read through its own.
+    <div className="sticky top-14 z-20 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-line bg-surface px-4 py-3 shadow-raised">
       <span className="flex items-center gap-3">
         {panel.length > 1 ? (
           <span
-            className="flex items-center -space-x-2"
+            className={`flex items-center -space-x-2 ${tiled ? "lg:hidden" : ""}`}
             role="img"
             aria-label={`Your panel: ${panel.map((p) => `${p.name}, ${p.title}`).join("; ")}`}
           >
@@ -397,11 +403,13 @@ function StatusStrip({
             ))}
           </span>
         ) : (
-          <Avatar
-            persona={asking?.id}
-            name={asking?.name ?? "Interviewer"}
-            speaking={voice.speakingKey !== null}
-          />
+          <span className={tiled ? "lg:hidden" : undefined}>
+            <Avatar
+              persona={asking?.id}
+              name={asking?.name ?? "Interviewer"}
+              speaking={voice.speakingKey !== null}
+            />
+          </span>
         )}
         <span className="leading-tight">
           <span className="block text-sm font-medium text-ink">
@@ -493,6 +501,14 @@ function Avatar({
  * mouth moving with the voice's own audio, and their photo until it is
  * ready (or where it cannot be) — never a drawn face (2026-10-09). The one
  * speaking is ringed; while the student talks, the heads listen.
+ *
+ * 2026-10-10, the user: "when we scroll down to see the question we lose the
+ * interviewer's face; there is a lot of space". On a wide screen the panel is
+ * a column of its own beside the conversation, and stays in view while the
+ * conversation scrolls: the one speaking — or whose turn it is — large, as a
+ * call shows the speaker, the others small beneath. Tiles change size, never
+ * place in the page, so no head is made again when the speaker changes (the
+ * renderer follows its tile's size). On a phone, a row of equal tiles.
  */
 function PanelView({
   panel,
@@ -514,20 +530,28 @@ function PanelView({
   replying?: boolean;
 }) {
   if (panel.length === 0) return null;
+  const focused = speakingId ?? askingId ?? panel[0]!.id;
+  const others = panel.length - 1;
   const columns =
-    panel.length === 1 ? "grid-cols-1 max-w-sm" : panel.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3";
+    panel.length === 1 ? "grid-cols-1 max-w-sm lg:max-w-none" : panel.length === 2 ? "grid-cols-2" : "grid-cols-3";
+  // Six columns on a wide screen: the focused tile all six, the rest shared.
+  const small = others >= 3 ? "lg:col-span-2" : others === 2 ? "lg:col-span-3" : "lg:col-span-6";
   return (
-    <div className={`mt-4 grid gap-2.5 ${columns}`} aria-label="Your panel">
+    <div className={`grid gap-2.5 ${columns} lg:grid-cols-6 lg:gap-3`} aria-label="Your panel">
       {panel.map((p) => {
         const speaking = p.id === speakingId;
-        const turn = p.id === (speakingId ?? askingId);
+        const turn = p.id === focused;
+        const big = turn && panel.length > 1;
         const photo = <InterviewerPhoto persona={p.id} name={p.name} fill />;
+        // The large tile keeps its 4:3 until the window is short, then gives
+        // up height before the small ones leave the screen.
+        const frame = `aspect-[4/3] w-full ${big ? "lg:max-h-[calc(100dvh-24rem)]" : ""}`;
         return (
           <figure
             key={p.id}
-            className={`min-w-0 overflow-hidden rounded-xl border transition-colors ${
+            className={`min-w-0 overflow-hidden rounded-xl border bg-surface transition-colors ${
               speaking ? "border-brand ring-2 ring-brand/40" : turn ? "border-brand-line" : "border-line"
-            }`}
+            } ${big || panel.length === 1 ? "lg:order-first lg:col-span-6" : small}`}
           >
             {faces?.has(p.id) ? (
               <TalkingHead
@@ -538,14 +562,21 @@ function PanelView({
                 listening={studentTalking && turn}
                 thinking={replying && turn && !speaking}
                 fallback={photo}
-                className="aspect-[4/3] w-full"
+                className={frame}
               />
             ) : (
-              <div className="aspect-[4/3] w-full">{photo}</div>
+              <div className={frame}>{photo}</div>
             )}
-            <figcaption className="flex min-w-0 items-baseline justify-between gap-2 px-2.5 py-1.5 text-2xs">
+            <figcaption
+              className={`flex min-w-0 items-baseline justify-between gap-2 px-2.5 py-1.5 text-2xs ${
+                big ? "lg:px-3.5 lg:py-2 lg:text-sm" : ""
+              }`}
+            >
               <span className="truncate font-medium text-ink">{p.name}</span>
-              <span className="truncate text-ink-faint">{p.title}</span>
+              {/* A phone's tiles are a third of its width: the name only. */}
+              <span className={`truncate text-ink-faint ${panel.length > 2 ? "max-sm:hidden" : ""}`}>
+                {speaking ? "Speaking" : turn && studentTalking ? "Listening" : p.title}
+              </span>
             </figcaption>
           </figure>
         );
@@ -1692,8 +1723,11 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   }
   sendUnsentRef.current = sendUnsent;
 
+  // The panel beside the conversation on a wide screen (2026-10-10); a drill
+  // has no panel, and the page before the start keeps the reading measure.
+  const tiled = data.kind !== "drill" && data.status !== "planned";
   return (
-    <div className="mx-auto max-w-(--container-conversation)">
+    <div className={`mx-auto ${tiled ? "max-w-6xl" : "max-w-(--container-conversation)"}`}>
       {data.status === "planned" ? (
         <section className="mx-auto max-w-xl py-10 text-center">
           {panel.length > 1 ? (
@@ -1773,19 +1807,26 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             voice={voice}
             panel={panel}
             speakingId={speakingId}
+            tiled={tiled}
           />
           <Stepper session={data} />
-          {data.kind !== "drill" && (
-            <PanelView
-              panel={panel.length ? panel : data.interviewer ? [data.interviewer] : []}
-              speakingId={speakingId}
-              askingId={data.interviewer?.id ?? null}
-              faces={faces}
-              voice={voice}
-              studentTalking={listening.speaking || ptt.held}
-              replying={busy}
-            />
+          <div className={tiled ? "lg:mt-4 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start lg:gap-8 xl:gap-10" : ""}>
+          {tiled && (
+            // Stays in view while the conversation scrolls: under the app's
+            // bar (3.5rem) and the strip (~4rem tall).
+            <aside className="mt-4 lg:sticky lg:top-[8.25rem] lg:mt-0">
+              <PanelView
+                panel={panel.length ? panel : data.interviewer ? [data.interviewer] : []}
+                speakingId={speakingId}
+                askingId={data.interviewer?.id ?? null}
+                faces={faces}
+                voice={voice}
+                studentTalking={listening.speaking || ptt.held}
+                replying={busy}
+              />
+            </aside>
           )}
+          <div className="min-w-0">
 
           {callState !== "here" && (
             <p
@@ -2358,6 +2399,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               </div>
             </section>
           )}
+          </div>
+          </div>
         </>
       )}
     </div>
