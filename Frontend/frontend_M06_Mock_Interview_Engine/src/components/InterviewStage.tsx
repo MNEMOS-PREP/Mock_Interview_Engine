@@ -79,6 +79,7 @@ import {
   looksLikeBluetooth,
   serverAsrAvailable,
   setKeepingAnswers,
+  InterviewerPhoto,
   TalkingHead,
   transcribeOnServer,
   useInterviewerFaces,
@@ -123,7 +124,8 @@ import {
 } from "../spokenRoom";
 import { useInterviewStream } from "../stream";
 import type { HintOffer, PersonaCard, Session, TurnPart, TurnView } from "../types";
-import { Face, voiceKind } from "../ui/Face";
+import { Face } from "../ui/Face";
+import { warmThought, warmUpcoming } from "../warm";
 
 type Voice = InterviewerVoice;
 
@@ -390,22 +392,15 @@ function StatusStrip({
                   p.id === (speakingId ?? asking?.id) ? "relative z-10 ring-brand" : "ring-surface opacity-80"
                 }`}
               >
-                <Avatar
-                  name={p.name}
-                  size={32}
-                  kind={voiceKind(p.voice_id)}
-                  speaking={p.id === speakingId}
-                  mouth={p.id === speakingId ? voice.mouth : undefined}
-                />
+                <Avatar persona={p.id} name={p.name} size={32} speaking={p.id === speakingId} />
               </span>
             ))}
           </span>
         ) : (
           <Avatar
+            persona={asking?.id}
             name={asking?.name ?? "Interviewer"}
-            kind={voiceKind(asking?.voice_id)}
             speaking={voice.speakingKey !== null}
-            mouth={voice.mouth}
           />
         )}
         <span className="leading-tight">
@@ -477,29 +472,27 @@ function StatusStrip({
   );
 }
 
-/** The interviewer's face. Personas have names ("Priya · Senior Engineer"),
- *  so the room has someone in it — drawn, not initials (ui/Face.tsx). */
+/** The interviewer's picture: their own photo, never a drawn face (ui/Face.tsx). */
 function Avatar({
+  persona,
   name,
   size = 36,
   speaking = false,
-  mouth,
-  kind,
 }: {
+  persona?: string | null;
   name: string;
   size?: number;
   speaking?: boolean;
-  mouth?: (now: number) => number;
-  kind?: string;
 }) {
-  return <Face name={name} size={size} speaking={speaking} mouth={mouth} kind={kind} />;
+  return <Face persona={persona} name={name} size={size} speaking={speaking} />;
 }
 
 /**
  * The panel, as a call shows it (2026-10-08): a tile per interviewer, each a
  * face that talks — a 3D head where M11 has built one (`TalkingHead`), its
- * mouth moving with the voice's own audio, and the drawn face where it has
- * not. The one speaking is ringed; while the student talks, the heads listen.
+ * mouth moving with the voice's own audio, and their photo until it is
+ * ready (or where it cannot be) — never a drawn face (2026-10-09). The one
+ * speaking is ringed; while the student talks, the heads listen.
  */
 function PanelView({
   panel,
@@ -508,6 +501,7 @@ function PanelView({
   faces,
   voice,
   studentTalking,
+  replying = false,
 }: {
   panel: { id: string; name: string; title: string; voice_id?: string | null }[];
   speakingId: string | null;
@@ -515,6 +509,9 @@ function PanelView({
   faces: ReadonlySet<string> | null;
   voice: InterviewerVoice;
   studentTalking: boolean;
+  /** The answer is in and the reply is being worked out (2026-10-09): the
+   *  one whose turn it is glances down and aside, as a person thinking. */
+  replying?: boolean;
 }) {
   if (panel.length === 0) return null;
   const columns =
@@ -524,15 +521,7 @@ function PanelView({
       {panel.map((p) => {
         const speaking = p.id === speakingId;
         const turn = p.id === (speakingId ?? askingId);
-        const drawn = (
-          <Avatar
-            name={p.name}
-            size={88}
-            kind={voiceKind(p.voice_id)}
-            speaking={speaking}
-            mouth={speaking ? voice.mouth : undefined}
-          />
-        );
+        const photo = <InterviewerPhoto persona={p.id} name={p.name} fill />;
         return (
           <figure
             key={p.id}
@@ -547,11 +536,12 @@ function PanelView({
                 speaking={speaking}
                 expression={voice.expression}
                 listening={studentTalking && turn}
-                fallback={drawn}
+                thinking={replying && turn && !speaking}
+                fallback={photo}
                 className="aspect-[4/3] w-full"
               />
             ) : (
-              <div className="grid aspect-[4/3] w-full place-items-center bg-surface-sunken">{drawn}</div>
+              <div className="aspect-[4/3] w-full">{photo}</div>
             )}
             <figcaption className="flex min-w-0 items-baseline justify-between gap-2 px-2.5 py-1.5 text-2xs">
               <span className="truncate font-medium text-ink">{p.name}</span>
@@ -615,22 +605,21 @@ function Stepper({ session }: { session: Session }) {
 /** One line from the interviewer, beside their avatar. */
 function Said({
   name,
+  persona,
   children,
   soft = false,
   speaking = false,
-  mouth,
-  kind,
 }: {
   name: string;
+  /** Who said it: their photo beside the line. */
+  persona?: string | null;
   children: ReactNode;
   soft?: boolean;
   speaking?: boolean;
-  mouth?: (now: number) => number;
-  kind?: string;
 }) {
   return (
     <div className="flex gap-3">
-      <Avatar name={name} speaking={speaking} mouth={mouth} kind={kind} />
+      <Avatar persona={persona} name={name} speaking={speaking} />
       <div className="min-w-0 flex-1 pt-0.5">
         <p className="text-2xs font-medium text-ink-faint">{name}</p>
         <div className={`turn-interviewer mt-1 whitespace-pre-wrap ${soft ? "text-ink-soft" : ""}`}>
@@ -687,20 +676,16 @@ function byVoice(parts: TurnPart[]): { speaker_id: string; at: number[] }[] {
 function Turn({
   turn,
   nameOf,
-  kindOf,
   fallback,
   speakingPart,
-  mouth,
   shown = () => true,
 }: {
   turn: TurnView;
   nameOf: (id: string) => string;
-  kindOf: (id: string) => string | undefined;
   /** Who said a line that does not say (an event from before speakers). */
   fallback: string | null;
   /** The part being heard now, or null. */
   speakingPart: string | null;
-  mouth?: (now: number) => number;
   /** Whether a part may be shown yet: a fresh line appears as it is said. */
   shown?: (partId: string) => boolean;
 }) {
@@ -727,9 +712,8 @@ function Turn({
         <Said
           key={partKey(turn, group.at[0]!)}
           name={nameOf(group.speaker_id)}
-          kind={kindOf(group.speaker_id)}
+          persona={group.speaker_id || fallback}
           speaking={group.at.some((index) => speakingPart === partKey(turn, index))}
-          mouth={mouth}
         >
           {group.at.map((index, n) => (
             <Fragment key={index}>
@@ -1002,7 +986,6 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     return ids.map((id) => cards.get(id)).filter((card): card is PersonaCard => card !== undefined);
   }, [data?.plan, cards]);
   const nameOf = (id: string) => cards.get(id)?.name ?? data?.interviewer?.name ?? "Interviewer";
-  const kindOf = (id: string) => voiceKind(cards.get(id)?.voice_id ?? data?.interviewer?.voice_id);
   /** A line as the voice says it: each part in its own speaker's voice, with
    *  any quiet inside it — the note-taking pause (M11's FR-11.12). */
   const voiced = (turn: TurnView): SpokenPart[] =>
@@ -1231,11 +1214,16 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
       if (!data || data.status !== "live" || !data.open_turn_id || waiting || codeMode) return;
       if (isEcho(ahead.text, lastAsked()?.text ?? "")) return;
       const full = draftNow.current.trim() ? `${draftNow.current.trimEnd()} ${ahead.text}` : ahead.text;
-      prefillAnswer.mutate({
-        question_turn_id: data.open_turn_id,
-        text: full,
-        asr: noteFor(ahead.asr, full, ahead.text),
-      });
+      prefillAnswer.mutate(
+        {
+          question_turn_id: data.open_turn_id,
+          text: full,
+          asr: noteFor(ahead.asr, full, ahead.text),
+        },
+        // What would be said if the answer stopped here: made ahead, said
+        // only if it is (2026-10-09, `warm.ts`).
+        { onSuccess: (thought) => warmThought(sessionId, thought?.parts ?? [], personaCards.data ?? []) },
+      );
     },
     // FR-11.3: where the browser cannot caption the student, M11 does.
     caption: !dictation.supported,
@@ -1520,6 +1508,16 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const interviewerTalking = voice.speakingKey !== null || reveal.overdue;
   const [keptThinking, setKeptThinking] = useState(false);
   useEffect(() => setKeptThinking(false), [data?.open_turn_id]);
+  // A question is open and the student is answering: M11 makes what is likely
+  // to be said next — the next question, the panel's phrases — while nothing
+  // is being said (2026-10-09, `warm.ts`).
+  const cardsLoaded = personaCards.isSuccess;
+  useEffect(() => {
+    if (!data?.open_turn_id || data.status !== "live" || !cardsLoaded) return;
+    void warmUpcoming(sessionId, personaCards.data ?? []);
+    // The cards are stable once loaded (staleTime: Infinity).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.open_turn_id, data?.status, cardsLoaded, sessionId]);
   useEffect(() => {
     setMicNote(null);
     setAskedAgain(null);
@@ -1705,7 +1703,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               <div className="flex items-end justify-center gap-4">
                 {panel.map((p) => (
                   <div key={p.id} className="flex w-24 flex-col items-center gap-2">
-                    <Avatar name={p.name} size={48} kind={voiceKind(p.voice_id)} />
+                    <Avatar persona={p.id} name={p.name} size={48} />
                     <p className="text-center text-2xs leading-tight text-ink-soft">
                       <span className="block font-medium text-ink">{p.name}</span>
                       {p.title}
@@ -1718,11 +1716,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
           ) : (
             data.interviewer && (
               <div className="mb-6 flex flex-col items-center gap-3">
-                <Avatar
-                  name={data.interviewer.name}
-                  size={56}
-                  kind={voiceKind(data.interviewer.voice_id)}
-                />
+                <Avatar persona={data.interviewer.id} name={data.interviewer.name} size={56} />
                 <p className="text-sm text-ink-soft">
                   <span className="font-medium text-ink">{data.interviewer.name}</span> ·{" "}
                   {data.interviewer.title}
@@ -1789,6 +1783,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               faces={faces}
               voice={voice}
               studentTalking={listening.speaking || ptt.held}
+              replying={busy}
             />
           )}
 
@@ -1848,10 +1843,8 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                   <Turn
                     turn={turn}
                     nameOf={nameOf}
-                    kindOf={kindOf}
                     fallback={data.interviewer?.id ?? null}
                     speakingPart={voice.speakingPart}
-                    mouth={voice.mouth}
                     shown={reveal.shown}
                   />
                 </Fragment>
@@ -1861,14 +1854,14 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             {/* The line writing itself — unless the voice is to be heard,
                 when it appears as it is said instead. */}
             {preview && !followVoice && (
-              <Said name={who} soft kind={voiceKind(data.interviewer?.voice_id)}>
+              <Said name={who} persona={data.interviewer?.id} soft>
                 {preview}
               </Said>
             )}
 
             {thinking && (!preview || followVoice) && (
               <div className="flex gap-3" aria-hidden>
-                <Avatar name={who} kind={voiceKind(data.interviewer?.voice_id)} />
+                <Avatar persona={data.interviewer?.id} name={who} />
                 <span className="mt-1 flex h-9 items-center gap-1.5 rounded-2xl rounded-tl-md bg-surface-sunken px-4">
                   <span className="thinking-dot" />
                   <span className="thinking-dot" />
@@ -1881,10 +1874,9 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               <div role="status">
                 <Said
                   name={nameOf(askedAgain.who)}
+                  persona={askedAgain.who}
                   soft
-                  kind={kindOf(askedAgain.who)}
                   speaking={voice.speakingKey === "didnt_catch"}
-                  mouth={voice.mouth}
                 >
                   {askedAgain.text}
                 </Said>
@@ -1897,10 +1889,9 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
               <div role="status">
                 <Said
                   name={who}
+                  persona={data.interviewer?.id}
                   soft
-                  kind={voiceKind(data.interviewer?.voice_id)}
                   speaking={voice.speakingKey === "idle"}
-                  mouth={voice.mouth}
                 >
                   {data.idle_line}
                 </Said>

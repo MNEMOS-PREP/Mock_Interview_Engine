@@ -275,8 +275,10 @@ export function useInterruption(id: string) {
 }
 
 /** M11's FR-11.6: what the student has said so far, sent while they pause.
- *  Nothing comes back and nothing is written: M06 thinks ahead, and uses it
- *  only if the answer is these exact words. */
+ *  Nothing is written: M06 thinks ahead, and uses it only if the answer is
+ *  these exact words. What comes back (2026-10-09) is the line the
+ *  interviewer would say if the answer stopped here — for M11 to make while
+ *  the student talks (`warm.ts`), never to show or say. */
 export function usePrefill(id: string) {
   return useMutation({
     mutationFn: (body: {
@@ -288,7 +290,7 @@ export function usePrefill(id: string) {
         model?: string | null;
         language?: string | null;
       };
-    }) => api.post<void>(`/v1/interviews/${id}/prefill`, body),
+    }) => api.post<{ parts: { speaker_id: string; text: string }[] }>(`/v1/interviews/${id}/prefill`, body),
   });
 }
 

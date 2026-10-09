@@ -34,7 +34,8 @@ import {
   useStart,
 } from "../api";
 import type { PersonaCard, PlannedSegment } from "../types";
-import { Face, voiceKind } from "../ui/Face";
+import { Face } from "../ui/Face";
+import { warmUpcoming } from "../warm";
 
 /**
  * A cold first plan can take several seconds (M02 builds the requirement set,
@@ -115,7 +116,7 @@ function SegmentRow({
     >
       {who && !dropped && (
         <span className="mt-0.5">
-          <Face name={who.name} size={32} kind={voiceKind(who.voice_id)} />
+          <Face persona={who.id} name={who.name} size={32} />
         </span>
       )}
       <div className="min-w-0 flex-1">
@@ -175,6 +176,9 @@ async function prepareOpening(sessionId: string, cards: PersonaCard[]): Promise<
         personaId: part.speaker_id,
         voiceId: byId.get(part.speaker_id)?.voice_id ?? null,
       })),
+      // Made ahead, with time to spare: the main voice model, first in line
+      // (2026-10-09; "live" would take the faster, rougher one).
+      "next",
     );
   } catch {
     // Ahead of time only: the opening is still made when it is said.
@@ -207,7 +211,10 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
   const cardsReady = personas.isSuccess;
   useEffect(() => {
     if (!planId || !planned || !cardsReady) return;
-    void prepareOpening(sessionId, personas.data ?? []);
+    void prepareOpening(sessionId, personas.data ?? []).then(() =>
+      // Then the first questions and the panel's phrases, as warm lines.
+      warmUpcoming(sessionId, personas.data ?? []),
+    );
     // personas.data is stable once loaded (staleTime: Infinity).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planId, planned, cardsReady, sessionId]);

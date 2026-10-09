@@ -636,6 +636,18 @@ def resumes(
     return engine.resumes(uuid.UUID(principal.candidate_id))
 
 
+@router.get("/interviews/phrases", tags=["meta"])
+def phrases() -> dict:
+    """Every interviewer's stock phrases — what they say between questions —
+    for M11 to make once, ahead (2026-10-09, M11 `scripts/warm_phrases.ts`):
+    the same words in the same voice are then instant in every interview.
+    Names and topics are filled in per interview, so those wait for it."""
+    from .engine import stock_phrases
+    from .personas import personas
+
+    return {"personas": {pid: stock_phrases(p, [], []) for pid, p in sorted(personas().items())}}
+
+
 # ─────────────────────────────────────────────────────────────────────────
 #  Creating sessions
 # ─────────────────────────────────────────────────────────────────────────
@@ -775,6 +787,16 @@ def opening(session_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
     lead = persona(state.plan.panel[0] if state.plan.panel else state.plan.segments[0].persona_id)
     parts = opening_parts(state, lead, seated(state))
     return {"parts": [{"speaker_id": who, "text": text} for who, text in parts]}
+
+
+@router.get("/interviews/{session_id}/upcoming")
+def upcoming(session_id: uuid.UUID, engine: Engine = Depends(get_engine)) -> dict:
+    """The lines the room may say next, for M11 to make while the student
+    answers (2026-10-09): the questions M05 would choose now, after the
+    lead-in they will follow, and the panel's stock phrases. Only made ahead
+    — never shown or said from here."""
+    _row_or_404(engine.db, session_id)
+    return {"lines": engine.upcoming(session_id)}
 
 
 @router.post("/interviews/{session_id}/plan", response_model=SessionOut)
@@ -1038,15 +1060,19 @@ def interruption(
         raise HTTPException(status_code=404, detail="No such session.") from exc
 
 
-@router.post("/interviews/{session_id}/prefill", status_code=204)
+@router.post("/interviews/{session_id}/prefill")
 def prefill_answer(
     session_id: uuid.UUID, body: PrefillIn, engine: Engine = Depends(get_engine)
-) -> Response:
+) -> dict:
     """M11's FR-11.6: think while the student pauses. Nothing is written and
     nothing is said; the model's answers are kept for the answer that follows,
-    and used only if it is these exact words (`prefill.py`)."""
+    and used only if it is these exact words (`prefill.py`).
+
+    2026-10-09: the reply is the line the interviewer would say if the answer
+    stopped here (`parts`, empty when there is none to phrase yet), for the
+    room to have M11 make while the student talks — never to show or say."""
     try:
-        engine.prefill(
+        thought = engine.prefill(
             session_id,
             body.question_turn_id,
             body.text,
@@ -1054,7 +1080,7 @@ def prefill_answer(
         )
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="No such session.") from exc
-    return Response(status_code=204)
+    return {"parts": list(thought.parts) if thought else []}
 
 
 def _deliver(session_id: uuid.UUID) -> None:

@@ -105,7 +105,9 @@ def test_a_prefill_for_a_question_no_longer_open_is_nothing(db):
     assert said.prefill is None
 
 
-def test_the_route_takes_a_prefill_and_returns_nothing(client, as_student):
+def test_the_route_takes_a_prefill_and_says_what_would_be_said(client, as_student):
+    """2026-10-09: the line the interviewer would say if the answer stopped
+    here, for M11 to make ahead — each part with its speaker."""
     sid = client.post("/v1/interviews", json={"minutes": 30}, headers=as_student).json()["id"]
     started = client.post(f"/v1/interviews/{sid}/start", headers=as_student).json()
     response = client.post(
@@ -113,4 +115,7 @@ def test_the_route_takes_a_prefill_and_returns_nothing(client, as_student):
         json={"question_turn_id": started["open_turn_id"], "text": SAID},
         headers=as_student,
     )
-    assert response.status_code == 204 and not response.content
+    assert response.status_code == 200
+    parts = response.json()["parts"]
+    assert isinstance(parts, list)
+    assert all(set(part) == {"speaker_id", "text"} and part["text"] for part in parts)

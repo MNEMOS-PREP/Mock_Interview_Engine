@@ -36,7 +36,7 @@ import {
 } from "../api";
 import { MockTargetsContext } from "../targets";
 import type { Mode, ResumeOption, SessionSummary, TrackOption } from "../types";
-import { Face, voiceKind } from "../ui/Face";
+import { Face } from "../ui/Face";
 
 const LENGTHS = [
   { minutes: 15, label: "15 min", hint: "5–7 questions" },
@@ -505,7 +505,7 @@ export function MockHome() {
             <ul className="mt-4 space-y-3.5">
               {(personas.data ?? []).map((persona) => (
                 <li key={persona.id} className="flex items-start gap-3">
-                  <Face name={persona.name} size={40} kind={voiceKind(persona.voice_id)} />
+                  <Face persona={persona.id} name={persona.name} size={40} />
                   <span className="min-w-0">
                     <span className="block text-sm font-medium text-ink">{persona.name}</span>
                     <span className="block text-2xs text-ink-faint">{persona.title}</span>

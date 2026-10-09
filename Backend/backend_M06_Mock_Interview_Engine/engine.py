@@ -194,6 +194,58 @@ def seated(state: SessionState) -> list[Persona]:
     return [persona(i) for i in ids] or [speaker(state)]
 
 
+#: Stock phrases a panelist may say between questions: each made ahead,
+#: once, in their voice (`Engine.upcoming`). Lines with a placeholder other
+#: than a name or a topic (minutes, a term) are made when they are said.
+_BETWEEN = (
+    "next_question_lead",
+    "moving_on",
+    "graceful_exit",
+    "ceiling_exit",
+    "keep_moving",
+    "note_taking",
+    "skip_lead",
+    "skip_leave",
+    "clarify",
+    "didnt_catch",
+    "redirect",
+    "rephrase_lead",
+    "retry_lead",
+    "idle_first",
+    "idle_second",
+    "bridge_to_closing",
+    "bridge_to_closing_early",
+    "panel_to_closing",
+    "panel_to_closing_early",
+    "closing_ack",
+    "closing_more",
+    "closing_none",
+    "session_close",
+    "time_up",
+)
+
+
+def stock_phrases(who: Persona, panel: list[Persona], titles: list[str]) -> list[str]:
+    """What `who` may say between questions, names and topics in place."""
+    said = who.said()
+    out = [getattr(said, field, "") for field in _BETWEEN]
+    others = [p for p in panel if p.id != who.id]
+    out += [said.hand_over.format(name=p.name) for p in others]
+    out += [said.take_over.format(name=p.name) for p in others]
+    out += [said.bridge_to.format(topic=title) for title in titles]
+    return [text for text in out if text and "{" not in text]
+
+
+@dataclass(frozen=True)
+class Thought:
+    """What a prefill thought the interviewer would say next if the answer
+    stopped where the student paused: the line's parts, each with its
+    speaker. Empty when the next line is not the model's to phrase here — a
+    new question, chosen only once the answer is in."""
+
+    parts: tuple[dict[str, str], ...] = ()
+
+
 def ladder_config(state: SessionState) -> LadderConfig:
     """The ladder's rules for this state — the persona's depth, the mode's
     hints and steelman flag.
@@ -1057,11 +1109,17 @@ class Engine:
         text: str,
         *,
         asr: dict | None = None,
-    ) -> bool:
+    ) -> Thought | None:
         """M11's FR-11.6: think about what the student has said so far, while
         they pause — in memory, writing nothing. The model's answers are kept
         by their exact requests for the answer that follows (`prefill.py`).
-        False when there was nothing to think about."""
+        None when there was nothing to think about.
+
+        2026-10-09: and what the interviewer would say if the answer stopped
+        here (`Thought`), so the room can have M11 make its audio while the
+        student is still talking. Nothing of it is shown or said: the room
+        says only the line the real answer gets, and when that answer is these
+        words, the line is this one and its audio is already made."""
         row = self.row(session_id)
         state = self.state(session_id)
         asked = state.turn(question_turn_id)
@@ -1071,12 +1129,13 @@ class Engine:
             or asked is None
             or state.retry_offer is not None
         ):
-            return False
+            return None
         now = self.clock()
         if degrade.circuit_open(state.flags.model_failures, state.flags.model_tried_at, now):
-            return False  # the model is resting; nothing to get ready
+            return None  # the model is resting; nothing to get ready
         text = text[:MAX_ANSWER_CHARS]
         entry = prefill.begin(session_id, question_turn_id, text)
+        thought = Thought()
         try:
             answer_index = asked.turn_index + 1
             payload = self._answer_payload(row, answer_index, question_turn_id, text, asr)
@@ -1091,12 +1150,17 @@ class Engine:
                 # log, and nothing here may. Its phrasing is asked for fresh.
                 select=None,
             )
-            run_step(compiled_step(prefill.Recording(self.llm, entry.kept)), inp)
+            out = run_step(compiled_step(prefill.Recording(self.llm, entry.kept)), inp)
+            if out.utterance is not None and out.utterance.text:
+                parts = out.utterance.parts or ((speaker(ahead).id, out.utterance.text),)
+                thought = Thought(
+                    tuple({"speaker_id": str(part[0]), "text": str(part[1])} for part in parts)
+                )
         except Exception as exc:  # noqa: BLE001 - a failed prefill costs nothing
             log.info("M06: prefill for %s did not finish: %r", session_id, exc)
         finally:
             entry.done.set()
-        return True
+        return thought
 
     def end(self, session_id: uuid.UUID, reason: str) -> SessionState:
         """A student pressing End gets the same closing line as running out of
@@ -2509,8 +2573,60 @@ class Engine:
         if segment is not None and segment.kind == "project":
             return self._select_a_claim(state)
         up = self.upstreams
-        round_type = self._round_type(state)
-        segment = self.segment(state)
+        request = self._bank_request(row, state, now)
+        asked_here = {str(t.question_id) for t in state.transcript if t.question_id is not None}
+        declined = {str(i) for i in store.skipped_item_ids(self.db, row.candidate_id, now=now)}
+        degraded: dict[str, str] = {}
+        if up.available("M05"):
+            try:
+                chosen = up.m05.select(request)
+                if chosen is None:
+                    return Selected(None, empty_reason="bank_exhausted")
+                if str(chosen["question_id"]) not in asked_here:
+                    question = up.m05.question(uuid.UUID(str(chosen["question_id"])))
+                    if chosen.get("scored_use") is False:
+                        source = "m05_draft"
+                    elif chosen.get("reason") == "fallback":
+                        source = "m05_fallback"
+                    else:
+                        source = "m05_bank"
+                    item = from_m05(question, round_type=chosen["round_type"], source=source)
+                    return Selected(item, chosen)
+                # A question this interview has already asked: never again,
+                # whoever offers it. M06's own playlist below, or the round ends.
+                log.info("M06: M05 offered %s again in %s", chosen["question_id"], row.id)
+            except UpstreamUnavailable as exc:
+                log.info("M06: M05 selection failed for %s: %s", row.id, exc)
+                degraded["M05"] = up.on_missing("M05")
+        else:
+            degraded["M05"] = up.on_missing("M05")
+
+        # §10: M06's own playlist. Never repeats within this session.
+        local_request = {**request, "seen_item_ids": sorted(asked_here | declined)}
+        chosen = up.local_questions.select(local_request)
+        if chosen is None:
+            return Selected(None, degraded=degraded, empty_reason="fallback_exhausted")
+        question = up.local_questions.question(uuid.UUID(chosen["question_id"]))
+        item = from_m05(question, round_type=chosen["round_type"], source="local_fallback")
+        return Selected(item, chosen, degraded=degraded)
+
+    def _bank_request(
+        self,
+        row: InterviewSession,
+        state: SessionState,
+        now: datetime,
+        segment: PlannedSegment | None = None,
+    ) -> dict[str, Any]:
+        """What M05 is asked for this session's next question — by the real
+        selection, and ahead of it by `upcoming`, which must ask the same.
+        `segment` is the round the question is for; the one being run when
+        not given."""
+        later = segment is not None and segment is not self.segment(state)
+        segment = segment or self.segment(state)
+        if segment is not None and segment.rubric_round_types:
+            round_type = segment.rubric_round_types[0]
+        else:
+            round_type = self._round_type(state)
         # M05 §6.6 has two filters, and they are not the same thing. Asked in
         # THIS interview is never asked again — the hard one. Asked in the
         # student's recent history is freshness, which M05 may relax when the
@@ -2549,8 +2665,10 @@ class Engine:
                 )
             ),
             "time_remaining_s": int(state.time_remaining_s(now)),
-            "is_first_of_round": state.questions_asked == 0,
-            "round_progress": min(state.questions_asked / question_budget(state), 1.0),
+            "is_first_of_round": later or state.questions_asked == 0,
+            "round_progress": (
+                0.0 if later else min(state.questions_asked / question_budget(state), 1.0)
+            ),
             "modality_allowed": ["verbal"],
             # 2026-10-07: twelve approved items, eleven of them DSA, made
             # every interview the same handful. A drafted item is asked when
@@ -2558,39 +2676,98 @@ class Engine:
             # then practised, never scored and never moves θ (FR-5.6).
             "allow_drafts": True,
         }
-        degraded: dict[str, str] = {}
-        if up.available("M05"):
-            try:
-                chosen = up.m05.select(request)
-                if chosen is None:
-                    return Selected(None, empty_reason="bank_exhausted")
-                if str(chosen["question_id"]) not in asked_here:
-                    question = up.m05.question(uuid.UUID(str(chosen["question_id"])))
-                    if chosen.get("scored_use") is False:
-                        source = "m05_draft"
-                    elif chosen.get("reason") == "fallback":
-                        source = "m05_fallback"
-                    else:
-                        source = "m05_bank"
-                    item = from_m05(question, round_type=chosen["round_type"], source=source)
-                    return Selected(item, chosen)
-                # A question this interview has already asked: never again,
-                # whoever offers it. M06's own playlist below, or the round ends.
-                log.info("M06: M05 offered %s again in %s", chosen["question_id"], row.id)
-            except UpstreamUnavailable as exc:
-                log.info("M06: M05 selection failed for %s: %s", row.id, exc)
-                degraded["M05"] = up.on_missing("M05")
-        else:
-            degraded["M05"] = up.on_missing("M05")
+        return request
 
-        # §10: M06's own playlist. Never repeats within this session.
-        local_request = {**request, "seen_item_ids": sorted(asked_here | declined)}
-        chosen = up.local_questions.select(local_request)
-        if chosen is None:
-            return Selected(None, degraded=degraded, empty_reason="fallback_exhausted")
-        question = up.local_questions.question(uuid.UUID(chosen["question_id"]))
-        item = from_m05(question, round_type=chosen["round_type"], source="local_fallback")
-        return Selected(item, chosen, degraded=degraded)
+    # ── lines made ahead (2026-10-09) ────────────────────────────────────
+
+    def upcoming(self, session_id: uuid.UUID, now: datetime | None = None) -> list[dict[str, Any]]:
+        """What the room may say next, for M11 to make while the student
+        answers (`/v1/voice/plan`, priority "warm").
+
+        The user, after a mock: gaps and awkward pauses, worst on long lines.
+        On this laptop's CPU speech is made barely faster than it is spoken,
+        so a line made when it is needed keeps the student waiting. Most of
+        what comes next is known before it is said: the next question is one
+        of the few M05 would choose now (its choice and its two alternatives,
+        after the lead-in it will follow), and every transition is one of the
+        panel's own stock phrases, names in place. Never shown and never said
+        from here — only made, so the line that is said is already there."""
+        now = now or utcnow()
+        state = self.state(session_id)
+        if state.plan is None or state.status not in (
+            SessionStatus.planned,
+            SessionStatus.live,
+            SessionStatus.paused,
+        ):
+            return []
+        row = self.row(session_id)
+        lines: list[dict[str, Any]] = []
+        panel = seated(state)
+        segment = self.segment(state)
+        ahead = [segment] if segment is not None else []
+        ending = segment is not None and (
+            state.questions_in_segment(segment.index) + 1 >= segment.question_budget
+        )
+        if ending:
+            # The round ends after this question: the next one is the next round's.
+            following = [s for s in planner.live_segments(state.plan) if s.index > segment.index]
+            ahead += following[:1]
+        for part in ahead:
+            if part is None or part.kind in ("closing", "project") or not part.persona_id:
+                continue
+            asker = persona(part.persona_id)
+            lead = asker.said().next_question_lead
+            for stem in self._likely_stems(row, state, now, part):
+                lines.append(
+                    {
+                        "kind": "question",
+                        "parts": [
+                            {"speaker_id": asker.id, "text": lead},
+                            {"speaker_id": asker.id, "text": stem},
+                        ],
+                    }
+                )
+        titles = [
+            s.title
+            for s in planner.live_segments(state.plan)
+            if segment is None or s.index > segment.index
+        ]
+        seen: set[tuple[str, str]] = set()
+        for who in panel:
+            for text in stock_phrases(who, panel, titles):
+                if (who.id, text) in seen:
+                    continue
+                seen.add((who.id, text))
+                lines.append({"kind": "phrase", "parts": [{"speaker_id": who.id, "text": text}]})
+        return lines
+
+    def _likely_stems(
+        self,
+        row: InterviewSession,
+        state: SessionState,
+        now: datetime,
+        segment: PlannedSegment,
+    ) -> list[str]:
+        """The questions M05 would ask next for `segment` — its choice and its
+        two alternatives, as the real selection would see them now. M05's
+        selection writes nothing (§6.10), so asking ahead changes nothing."""
+        up = self.upstreams
+        if not up.available("M05"):
+            return []
+        try:
+            chosen = up.m05.select(self._bank_request(row, state, now, segment))
+            if chosen is None:
+                return []
+            ids = [chosen["question_id"], *(chosen.get("alternatives") or [])][:3]
+            stems = []
+            for question_id in ids:
+                question = up.m05.question(uuid.UUID(str(question_id)))
+                item = from_m05(question, round_type=chosen["round_type"], source="m05_bank")
+                stems.append(item.stem)
+            return stems
+        except (UpstreamUnavailable, KeyError, ValueError) as exc:
+            log.info("M06: no questions to make ahead for %s: %s", row.id, exc)
+            return []
 
 
 __all__ = [
