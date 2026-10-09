@@ -19,7 +19,7 @@ Task list for taking **M6 — Mock Interview Engine** to 100% of [M06_Mock_Inter
 
 - **Phase:** 1–2 · **Owner:** E2 · **Ports:** API `8106`, web `5206`
 - **Repo:** `Mock_Interview_Engine` — on disk at `projects\Mock_Interview_Engine` (the folder must equal the repo name, or `launch.ps1` skips it)
-- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.28.0 on the frontend (since 2026-10-08). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
+- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.29.0 on the frontend (since 2026-10-09). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
 
 Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked on another module
 
@@ -1084,6 +1084,35 @@ The user sat interviews and listed what felt wrong. Each item, as fixed:
   goodbye. An unknown track id is refused with a 422.
 - ✅ The notes call a resume question and a backup question what they are
   (`e8b02aa`).
+
+### 2026-10-09 — lines made before they are said; real photos; the panel thinks
+
+The user, after a mock: gaps and awkward pauses, worst on long lines (M11's
+`research/listening/gaps.md` has why: this laptop makes speech barely faster
+than it is spoken); and *"we don't want dummy faces in the interview"*.
+
+- ✅ **`GET /interviews/{id}/upcoming`** (`49e7e7c`): the questions M05 would
+  choose now — its choice and two alternatives, after the lead-in they will
+  follow, asked with the same request the real selection makes
+  (`_bank_request`) — the next round's too when this question ends the
+  round, and the panel's stock phrases with names and topics in place. The
+  plan page has M11 make the opening and these while the student reads; the
+  room, again after each question, while they answer (`warm.ts`); a newer
+  batch drops the guesses it no longer makes. Tested: the question asked is
+  one of those named.
+- ✅ **The prefill says what would be said** (FR-11.6): the line the
+  interviewer would say if the answer stopped where the student paused, made
+  while they talk; said only if it is the line the real answer gets.
+- ✅ **`GET /interviews/phrases`**: every interviewer's stock phrases, for
+  M11's `warm_phrases.ts` to make once for every interview after.
+- ✅ **No drawn faces**: `Face` is each interviewer's own photo (Core
+  `InterviewerPhoto`) on the setup page, the plan, the transcript and in the
+  room's tile until the 3D head is ready; initials when there is no photo
+  yet. While the reply is worked out, the asker's head glances down and aside
+  (`replying`).
+- ✅ Earlier the same day (`7605840`): a picked track the bank cannot serve
+  stays on the plan with the reason; an unknown track is refused (422).
+- Pins `@ai/core` v0.29.0 (one gapless voice track).
 
 ### What is left — and whose it is
 
