@@ -19,7 +19,7 @@ Task list for taking **M6 — Mock Interview Engine** to 100% of [M06_Mock_Inter
 
 - **Phase:** 1–2 · **Owner:** E2 · **Ports:** API `8106`, web `5206`
 - **Repo:** `Mock_Interview_Engine` — on disk at `projects\Mock_Interview_Engine` (the folder must equal the repo name, or `launch.ps1` skips it)
-- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.29.0 on the frontend (since 2026-10-09). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
+- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.30.0 on the frontend (since 2026-10-10). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
 
 Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked on another module
 
@@ -1084,6 +1084,24 @@ The user sat interviews and listed what felt wrong. Each item, as fixed:
   goodbye. An unknown track id is refused with a 422.
 - ✅ The notes call a resume question and a backup question what they are
   (`e8b02aa`).
+
+### 2026-10-10 — the room on a wide screen: the panel beside the conversation
+
+The user: *"when we scroll down to see the question we lose the interviewer's
+face; there is a lot of space"* — and *"forget phone first, we need desktop"*.
+
+- ✅ **Two columns on a wide screen** (`c6055df`): the panel sticks beside the
+  conversation; the one speaking (or whose turn it is) large, as a call
+  shows the speaker, the others small beneath. Tiles change size, never
+  place, so no 3D head is made again at a hand-over. A short window gives
+  up the large tile's height first. Checked at 1440×900 and 1280×680.
+- ✅ **The status strip** is opaque and flush under the app's bar (lines read
+  through it before); its small faces only where the tiles are not beside it.
+- ✅ Pins `@ai/core` v0.30.0 (`1322cd6`).
+- ⬜ A head's first frame can be blank for a moment after "ready" (seen once
+  on a small tile): fade in on the first drawn frame.
+- ⬜ The opening still stalls in a live run (M11's TODO, 2026-10-10): check that
+  what the plan page makes ahead is exactly what the room asks for.
 
 ### 2026-10-09 — lines made before they are said; real photos; the panel thinks
 
