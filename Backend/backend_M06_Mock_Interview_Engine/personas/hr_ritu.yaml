@@ -15,7 +15,7 @@ domain_bias: [hr, behavioural, communication, teamwork, motivation, people]
 voice_id: en-IN-female-warm
 # The M11 voice (Voice_Engine `voices/cast.json`), so a panel never seats two
 # people who sound the same.
-voice: indictts-083391
+voice: indictts-017689
 note_taking_cadence: 0
 hints_available: true
 lines:

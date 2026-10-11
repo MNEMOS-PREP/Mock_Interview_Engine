@@ -15,7 +15,7 @@ domain_bias: [databases, dbms, sql, indexing, transactions, normalisation]
 voice_id: en-IN-female-neutral
 # The M11 voice (Voice_Engine `voices/cast.json`), so a panel never seats two
 # people who sound the same.
-voice: indictts-083391
+voice: indictts-002527
 note_taking_cadence: 0
 hints_available: true
 lines:

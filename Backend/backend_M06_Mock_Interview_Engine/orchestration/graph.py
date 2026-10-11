@@ -417,7 +417,7 @@ def _interjection(
     Someone sitting in (`panel.sit_in`), with no round of their own, is the
     second interviewer at the table and comes in on about every other
     question of the round."""
-    if state.kind == "drill" or depth != 2 or len(panel) < 2 or state.plan is None:
+    if state.kind == "drill" or depth not in (1, 2) or len(panel) < 2 or state.plan is None:
         return None
     here = [
         t
@@ -427,7 +427,7 @@ def _interjection(
     segment = next((s for s in state.plan.segments if s.index == state.current_segment), None)
     title = segment.title if segment is not None and segment.title else ""
     topic = seating.words(item.concept_id, item.label, title)
-    if not any(t.speaker_id not in (None, owner.id) for t in here):
+    if depth == 2 and not any(t.speaker_id not in (None, owner.id) for t in here):
         chosen = seating.interjector(
             [p.id for p in panel], owner.id, topic, {p.id: p for p in panel}
         )
@@ -439,13 +439,20 @@ def _interjection(
     )
     if sitting is None:
         return None
+    # Counted over the whole interview, not the round: per round the one
+    # sitting in came in on the first question of every part (3 of 4).
+    spoken = [t for t in state.transcript if t.role == "interviewer"]
     asked_here = sum(
         1
-        for t in here
+        for t in spoken
         if t.probe_move is None and t.question_source not in (None, "closing")
     )
-    came_in = sum(1 for t in here if t.speaker_id == sitting.id and t.probe_move is not None)
-    return sitting if came_in < (asked_here + 1) // 2 else None
+    came_in = sum(1 for t in spoken if t.speaker_id == sitting.id and t.probe_move is not None)
+    # The second interviewer at the table takes the FIRST follow-up of about
+    # every other question (2026-10-11). It was the second rung, and a good
+    # answer usually ends a question before that: in a short interview the
+    # person sitting in said hello and was never heard again.
+    return sitting if depth == 1 and came_in < (asked_here + 1) // 2 else None
 
 
 def _taken_back(state: SessionState, owner: Persona, panel: list[Persona]) -> str:
