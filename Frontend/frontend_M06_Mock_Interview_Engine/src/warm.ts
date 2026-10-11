@@ -16,7 +16,7 @@
  * drops what is left of the last batch's guesses that it no longer makes —
  * the question about to be asked, not the one just answered.
  */
-import { api, dropOnServer, prepareLine } from "@ai/core";
+import { api, dropOnServer, prepareLine, prepareLines } from "@ai/core";
 
 import type { PersonaCard } from "./types";
 
@@ -58,6 +58,7 @@ export async function warmUpcoming(sessionId: string, cards: readonly PersonaCar
   const questions = batch.filter((line) => line.kind === "question");
   const phrases = batch.filter((line) => line.kind !== "question");
   const now = new Map<string, string>();
+  const fresh: { id: string; parts: ReturnType<typeof spoken> }[] = [];
   for (const line of questions) {
     const key = keyOf(line.parts);
     const kept = guessed.get(key);
@@ -67,8 +68,10 @@ export async function warmUpcoming(sessionId: string, cards: readonly PersonaCar
     }
     const id = `next-${++lines}-${sessionId.slice(0, 8)}`;
     now.set(key, id);
-    await prepareLine(id, spoken(line.parts, cards), "next");
+    fresh.push({ id, parts: spoken(line.parts, cards) });
   }
+  // A piece of each in turn: whichever is asked has its first piece ready.
+  await prepareLines(fresh, "next");
   dropOnServer([...guessed].filter(([key]) => !now.has(key)).map(([, id]) => id));
   guessed = now;
   for (const line of phrases) {
