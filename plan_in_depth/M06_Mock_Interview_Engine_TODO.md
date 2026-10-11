@@ -19,7 +19,7 @@ Task list for taking **M6 — Mock Interview Engine** to 100% of [M06_Mock_Inter
 
 - **Phase:** 1–2 · **Owner:** E2 · **Ports:** API `8106`, web `5206`
 - **Repo:** `Mock_Interview_Engine` — on disk at `projects\Mock_Interview_Engine` (the folder must equal the repo name, or `launch.ps1` skips it)
-- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.30.0 on the frontend (since 2026-10-10). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
+- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.31.0 on the frontend (since 2026-10-11). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
 
 Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked on another module
 
@@ -1084,6 +1084,17 @@ The user sat interviews and listed what felt wrong. Each item, as fixed:
   goodbye. An unknown track id is refused with a 422.
 - ✅ The notes call a resume question and a backup question what they are
   (`e8b02aa`).
+
+### 2026-10-11 — replies no longer held by a slow model; candidate questions made in turns
+
+- ✅ **Wall-clock deadlines on the strategist and the guard** (`cdceaff`): a
+  live run's replies took 8+ s in M06 because those two calls took 6.7 s and
+  6.3 s against 4 s and 1.5 s timeouts (`urlopen` bounds each read, not the
+  call). Past the deadline the guard fails open and the move comes from the
+  rules. Every step of a turn logs its time. Now 0.76–0.95 s.
+- ✅ **The questions the room may ask next are made a piece of each in turn**
+  (`eaa4779`, Core v0.31.0 `prepareLines`).
+- ✅ Pins `@ai/core` v0.31.0 (no voice lost while M11 is still loading).
 
 ### 2026-10-10 — the room on a wide screen: the panel beside the conversation
 
