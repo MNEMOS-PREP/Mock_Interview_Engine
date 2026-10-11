@@ -33,6 +33,8 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -49,6 +51,9 @@ JOB_SUMMARY = "segment_summary"
 #: EC-6.6. The guard tier is a classifier, not a conversation: it takes the
 #: text as the user message and answers with a probability (`classify`).
 JOB_GUARD = "input_guard"
+
+#: Model calls run here, so a call can be given up on (`_fetch_within`).
+_CALLS = ThreadPoolExecutor(max_workers=8, thread_name_prefix="m06-llm")
 
 
 @dataclass(frozen=True)
@@ -217,6 +222,35 @@ class OpenAICompatLLM:
             body.pop(name, None)
         return body
 
+    def _fetch(
+        self, route: Route, body: dict[str, Any], timeout: float
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        """POST and read the JSON answer. Returns (payload, error)."""
+        response, error = self._open(route, body, timeout)
+        if response is None:
+            return None, error or "no response"
+        with response:
+            try:
+                return json.loads(response.read()), None
+            except (json.JSONDecodeError, TimeoutError) as exc:
+                return None, f"unreadable response: {exc}"
+
+    def _fetch_within(
+        self, route: Route, body: dict[str, Any], timeout: float
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        """`_fetch`, given up on after `timeout` seconds of wall clock
+        (2026-10-11). The socket's timeout bounds each read, not the call: a
+        1.5 s guard took 6.3 s and a 4 s strategist 6.7 s on a slow night, and
+        the student waited 8.5 s for the reply. Past the deadline the caller
+        does what it does on any failure — the guard fails open, the
+        strategist's move comes from the rules — and the late answer is
+        dropped when it comes."""
+        future = _CALLS.submit(self._fetch, route, body, timeout)
+        try:
+            return future.result(timeout=timeout)
+        except FutureTimeout:
+            return None, f"no answer within {timeout:g}s"
+
     def _open(
         self, route: Route, body: dict[str, Any], timeout: float
     ) -> tuple[Any | None, str | None]:
@@ -275,17 +309,11 @@ class OpenAICompatLLM:
                 "json_schema": {"name": job, "strict": True, "schema": schema},
             }
         started = time.perf_counter()
-        response, error = self._open(route, body, spec.timeout_s)
-        if response is None:
+        payload, error = self._fetch_within(route, body, spec.timeout_s)
+        if payload is None:
             result.reason = error or "no response"
             result.latency_ms = int((time.perf_counter() - started) * 1000)
             return result
-        with response:
-            try:
-                payload = json.loads(response.read())
-            except (json.JSONDecodeError, TimeoutError) as exc:
-                result.reason = f"unreadable response: {exc}"
-                return result
         result.latency_ms = int((time.perf_counter() - started) * 1000)
         _usage(result, payload.get("usage"))
         try:
@@ -329,17 +357,11 @@ class OpenAICompatLLM:
             "max_tokens": spec.max_tokens,
         }
         started = time.perf_counter()
-        response, error = self._open(route, body, spec.timeout_s)
-        if response is None:
+        payload, error = self._fetch_within(route, body, spec.timeout_s)
+        if payload is None:
             result.reason = error or "no response"
             result.latency_ms = int((time.perf_counter() - started) * 1000)
             return result
-        with response:
-            try:
-                payload = json.loads(response.read())
-            except (json.JSONDecodeError, TimeoutError) as exc:
-                result.reason = f"unreadable response: {exc}"
-                return result
         result.latency_ms = int((time.perf_counter() - started) * 1000)
         _usage(result, payload.get("usage"))
         try:

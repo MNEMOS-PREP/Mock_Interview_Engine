@@ -38,8 +38,10 @@ the engine can forward them to SSE while the step is still running.
 
 from __future__ import annotations
 
+import logging
 import operator
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -397,6 +399,24 @@ def opening_parts(
     plan (2026-10-08: the first words came 5-6 s after the text)."""
     before, lead_line = _panel_opening(state, lead, panel)
     return [*before, (lead.id, lead_line)] if lead_line else before
+
+
+log = logging.getLogger("uvicorn.error")  # as llm.py: printed under uvicorn
+
+
+def _timed(name: str, node: Callable[[Any], Any]) -> Callable[[Any], Any]:
+    """A step, its time logged (2026-10-11): a reply took 8 s in M06 while its
+    two model calls, run side by side, took 2.4 s at most — the rest was
+    somewhere in the step, and nothing said where."""
+
+    def run(s: Any) -> Any:
+        started = time.perf_counter()
+        try:
+            return node(s)
+        finally:
+            log.info("M06 step %s: %.2fs", name, time.perf_counter() - started)
+
+    return run
 
 
 def _runs_a_round(state: SessionState, persona_id: str) -> bool:
@@ -1068,19 +1088,19 @@ def build(deps: Deps):
         return {"utterance": utterance}
 
     graph = StateGraph(StepState)
-    graph.add_node("strategist", strategist)
-    graph.add_node("guard", guard)
-    graph.add_node("decide", decide_node)
-    graph.add_node("replay_decision", replay_decision)
-    graph.add_node("not_caught", not_caught)
-    graph.add_node("reoffer", reoffer)
-    graph.add_node("clarify_term", clarify_term)
-    graph.add_node("probe", probe)
-    graph.add_node("offer_retry", offer_retry)
-    graph.add_node("select", select)
-    graph.add_node("phrase", phrase)
-    graph.add_node("finish", finish)
-    graph.add_node("closing_reply", closing_reply)
+    graph.add_node("strategist", _timed("strategist", strategist))
+    graph.add_node("guard", _timed("guard", guard))
+    graph.add_node("decide", _timed("decide", decide_node))
+    graph.add_node("replay_decision", _timed("replay_decision", replay_decision))
+    graph.add_node("not_caught", _timed("not_caught", not_caught))
+    graph.add_node("reoffer", _timed("reoffer", reoffer))
+    graph.add_node("clarify_term", _timed("clarify_term", clarify_term))
+    graph.add_node("probe", _timed("probe", probe))
+    graph.add_node("offer_retry", _timed("offer_retry", offer_retry))
+    graph.add_node("select", _timed("select", select))
+    graph.add_node("phrase", _timed("phrase", phrase))
+    graph.add_node("finish", _timed("finish", finish))
+    graph.add_node("closing_reply", _timed("closing_reply", closing_reply))
     graph.add_conditional_edges(
         START,
         entry,
