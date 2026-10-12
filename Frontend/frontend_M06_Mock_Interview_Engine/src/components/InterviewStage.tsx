@@ -384,10 +384,31 @@ function StatusStrip({
           ? "Not started"
           : "Finished";
 
+  const head = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const element = head.current;
+    if (!element) return;
+    const root = document.documentElement;
+    const publish = () => root.style.setProperty("--room-head", `${element.offsetHeight}px`);
+    publish();
+    const watch = new ResizeObserver(publish);
+    watch.observe(element);
+    return () => {
+      watch.disconnect();
+      root.style.removeProperty("--room-head");
+    };
+  }, []);
+
   return (
     // Opaque, and flush under the app's bar (2026-10-10): see-through, or
     // with a gap above it, the lines scrolling under it read through its own.
-    <div className="sticky top-14 z-20 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-line bg-surface px-4 py-3 shadow-raised">
+    // One row on a wide screen (2026-10-12): wrapped, it took 106 px of a
+    // 680 px window. Its height is published (--room-head) so the tiles and
+    // the conversation stay in view just under it, whatever it wraps to.
+    <div
+      ref={head}
+      className="sticky top-14 z-20 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-line bg-surface px-4 py-3 shadow-raised lg:flex-nowrap"
+    >
       <Link
         to="/mock"
         aria-label="Back to practice"
@@ -438,8 +459,8 @@ function StatusStrip({
           <Avatar persona={asking?.id} name={asking?.name ?? "Interviewer"} size={28} speaking={voice.speakingKey !== null} />
         </span>
       )}
-      <span className="flex items-center gap-3 text-sm text-ink-soft">
-        <span className="font-medium text-ink">
+      <span className="flex min-w-0 shrink items-center gap-3 text-sm text-ink-soft">
+        <span className="shrink-0 whitespace-nowrap font-medium text-ink">
           {session.kind === "drill"
             ? "Not scored"
             : `Question ${Math.max(session.questions_asked, 1)}${
@@ -448,7 +469,7 @@ function StatusStrip({
         </span>
         {dots > 0 && (
           <span
-            className="hidden items-center gap-1 sm:flex"
+            className="hidden min-w-0 shrink items-center gap-1 sm:flex"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={dots}
@@ -456,12 +477,12 @@ function StatusStrip({
             aria-label="Progress through the planned questions"
           >
             {Array.from({ length: dots }).map((_, i) => (
-              <span key={i} className={`h-1.5 w-5 rounded-full ${i < filled ? "bg-brand" : "bg-line-strong"}`} />
+              <span key={i} className={`h-1.5 w-5 min-w-1 shrink rounded-full ${i < filled ? "bg-brand" : "bg-line-strong"}`} />
             ))}
           </span>
         )}
       </span>
-      <span className="flex items-center gap-1.5 text-2xs text-ink-soft">
+      <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-2xs text-ink-soft">
         <span
           className={`status-dot ${tone} ${session.status === "live" ? "status-dot-live" : ""}`}
           style={{ color: "var(--color-session-listening)" }}
@@ -478,7 +499,7 @@ function StatusStrip({
             Wrapping up a little early
           </span>
         )}
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         <VoiceToggle voice={voice} name={session.interviewer?.name ?? "the interviewer"} />
         <TimeRemaining session={session} running={connected} />
         {!connected && session.status === "live" && (
@@ -575,7 +596,8 @@ function PanelView({
     const speaking = p.id === speakingId;
     const turn = p.id === focused;
     const photo = <InterviewerPhoto persona={p.id} name={p.name} fill />;
-    const frame = `aspect-[4/3] w-full ${big ? "lg:max-h-[calc(100dvh-26rem)]" : ""}`;
+    // Wider than tall on a short window, so the answer box fits beneath.
+    const frame = `aspect-[4/3] w-full [@media(max-height:800px)]:aspect-video ${big ? "lg:max-h-[calc(100dvh-26rem)]" : ""}`;
     return (
       <figure
         key={p.id}
@@ -1051,12 +1073,12 @@ function YouTile({ level, listening }: { level: () => number; listening: boolean
   }
   return (
     <figure className="min-w-0 overflow-hidden rounded-xl border border-line bg-surface">
-      <div className="relative aspect-[4/3] w-full bg-surface-sunken">
+      <div className="relative aspect-[4/3] w-full bg-surface-sunken [@media(max-height:800px)]:aspect-video">
         {on ? (
           <video ref={video} autoPlay muted playsInline className="h-full w-full -scale-x-100 object-cover" />
         ) : (
           <div className="grid h-full w-full place-items-center">
-            <span className="grid h-20 w-20 place-items-center rounded-full bg-brand-soft text-xl font-semibold text-brand">
+            <span className="grid aspect-square h-[46%] place-items-center rounded-full bg-brand-soft text-lg font-semibold text-brand">
               You
             </span>
           </div>
@@ -1069,15 +1091,17 @@ function YouTile({ level, listening }: { level: () => number; listening: boolean
           type="button"
           onClick={toggle}
           aria-pressed={on}
+          aria-label={on ? "Turn the camera off" : "Turn the camera on, a preview for you alone"}
           title={on ? "Turn the camera off" : "Turn the camera on (a preview for you alone)"}
-          className="absolute bottom-3 left-1/2 inline-flex h-9 -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full bg-black/55 px-3 text-2xs font-medium text-white hover:bg-black/70"
+          // In the corner, as a call puts it: centred, it sat on the "You"
+          // circle of a narrow tile (2026-10-12).
+          className="absolute right-2 bottom-2 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white hover:bg-black/70"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M15 10.5 21 7v10l-6-3.5" />
             <rect x="3" y="6" width="12" height="12" rx="2.5" />
             {!on && <path d="m3 3 18 18" />}
           </svg>
-          <span className="max-lg:sr-only">{on ? "Camera off" : "Camera on"}</span>
         </button>
       </div>
       <figcaption className="flex min-w-0 items-center justify-between gap-2 px-2.5 py-1.5 text-2xs">
@@ -1153,7 +1177,12 @@ function SidePanel({
         </button>
       </div>
       {tab === "conversation" ? (
-        <div ref={convoRef} className="max-h-[calc(100dvh-24rem)] min-h-64 overflow-y-auto px-4 pb-4">
+        // The history at reading size (2026-10-12): at the question's size it
+        // repeated the "Current question" card, large, beside it.
+        <div
+          ref={convoRef}
+          className="max-h-[calc(100dvh-26rem)] min-h-56 overflow-y-auto px-4 pb-4 [&_.turn-interviewer]:text-[0.9375rem] [&_.turn-interviewer]:leading-relaxed"
+        >
           {children}
         </div>
       ) : (
@@ -2197,7 +2226,10 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
           <div className={tiled ? "lg:mt-4 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start lg:gap-6" : ""}>
           <div className="min-w-0">
           {tiled && (
-            <div className="mt-4 lg:mt-0">
+            // In view while the answer box is reached (2026-10-12: on a 1280x680
+            // window the faces had scrolled away): pinned under the header,
+            // its background hiding what scrolls beneath.
+            <div className="mt-4 lg:sticky lg:top-[calc(3.5rem+var(--room-head,3.75rem))] lg:z-10 lg:mt-0 lg:bg-canvas lg:pt-3">
               <PanelView
                 panel={panel.length ? panel : data.interviewer ? [data.interviewer] : []}
                 speakingId={speakingId}
@@ -2706,7 +2738,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
           {tiled && (
             // The conversation and the student's notes, and what is known of
             // the question, in a column that stays in view.
-            <aside className="mt-4 lg:sticky lg:top-[8.25rem] lg:mt-0">
+            <aside className="mt-4 lg:sticky lg:top-[calc(3.5rem+var(--room-head,3.75rem)+0.75rem)] lg:mt-0">
               <SidePanel sessionId={sessionId} convoRef={convoRef}>
                 {conversation}
               </SidePanel>
