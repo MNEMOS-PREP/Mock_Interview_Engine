@@ -1091,9 +1091,12 @@ The user sat interviews and listed what felt wrong. Each item, as fixed:
   (camera off unless turned on, never sent), the current question large,
   the conversation and private notes in tabs, the question's details,
   progress dots. At 1440×900 the faces, the question and the answer box are
-  all on one screen. Left: on 1280×680 the tiles scroll away to reach the
-  answer box; the conversation repeats the current question large; the
-  camera button overlaps the "You" circle.
+  all on one screen. Then fixed (`b1fb81c`), measured at 1280×680: the
+  header one row (106 → 62 px) with its height published (`--room-head`),
+  the tiles and the conversation pinned under it, 16:9 tiles under 800 px
+  high — the faces stay while the answer box is in view; the conversation
+  at reading size (the question large once, in its card); the camera an
+  icon in the tile's corner.
 - ✅ **The second interviewer takes the first follow-up of about every other
   question** (abhinav).
 - ✅ Persona voices from the listening-test cast; os_karan and professor
