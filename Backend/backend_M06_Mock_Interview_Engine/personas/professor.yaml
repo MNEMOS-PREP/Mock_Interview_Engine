@@ -15,7 +15,7 @@ domain_bias: [algorithms, derivation, first principles, projects, research]
 voice_id: en-IN-male-measured
 # The M11 voice the team cast in its listening test (Voice_Engine
 # `voices/cast.json`).
-voice: indictts-103607
+voice: indictts-012635
 note_taking_cadence: 3
 hints_available: true
 lines:

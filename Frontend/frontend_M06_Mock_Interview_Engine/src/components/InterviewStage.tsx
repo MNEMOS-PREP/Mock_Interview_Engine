@@ -360,6 +360,11 @@ function StatusStrip({
 }) {
   const asking = session.interviewer;
   const shown = panel.find((p) => p.id === speakingId) ?? asking;
+  const plannedN = plannedQuestions(session);
+  const dots = plannedN ? Math.min(plannedN, 12) : 0;
+  const filled = plannedN
+    ? Math.min(dots, Math.round((Math.min(Math.max(session.questions_asked, 1), plannedN) / plannedN) * dots))
+    : 0;
   const tone =
     session.status === "paused"
       ? "bg-session-idle"
@@ -383,60 +388,86 @@ function StatusStrip({
     // Opaque, and flush under the app's bar (2026-10-10): see-through, or
     // with a gap above it, the lines scrolling under it read through its own.
     <div className="sticky top-14 z-20 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-line bg-surface px-4 py-3 shadow-raised">
-      <span className="flex items-center gap-3">
-        {panel.length > 1 ? (
-          <span
-            className={`flex items-center -space-x-2 ${tiled ? "lg:hidden" : ""}`}
-            role="img"
-            aria-label={`Your panel: ${panel.map((p) => `${p.name}, ${p.title}`).join("; ")}`}
-          >
-            {panel.map((p) => (
-              <span
-                key={p.id}
-                title={`${p.name} · ${p.title}`}
-                className={`rounded-full ring-2 ${
-                  p.id === (speakingId ?? asking?.id) ? "relative z-10 ring-brand" : "ring-surface opacity-80"
-                }`}
-              >
-                <Avatar persona={p.id} name={p.name} size={32} speaking={p.id === speakingId} />
-              </span>
-            ))}
-          </span>
-        ) : (
-          <span className={tiled ? "lg:hidden" : undefined}>
-            <Avatar
-              persona={asking?.id}
-              name={asking?.name ?? "Interviewer"}
-              speaking={voice.speakingKey !== null}
-            />
+      <Link
+        to="/mock"
+        aria-label="Back to practice"
+        className="grid h-9 w-9 place-items-center rounded-lg text-ink-soft hover:bg-surface-sunken hover:text-ink"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M19 12H5m6-6-6 6 6 6" />
+        </svg>
+      </Link>
+      <span className="flex min-w-0 items-center gap-2.5">
+        <span className="truncate text-base font-semibold text-ink">
+          {session.kind === "drill"
+            ? "Defend drill"
+            : session.mode === "practice"
+              ? "General practice"
+              : session.mode === "final_boss"
+                ? "Final boss"
+                : session.mode === "real_drive"
+                  ? "Real drive"
+                  : "Mock interview"}
+        </span>
+        {session.kind !== "drill" && roundTitle(session) && (
+          <span className="hidden truncate rounded-lg bg-surface-sunken px-2.5 py-1 text-2xs text-ink-soft sm:inline">
+            {roundTitle(session)}
           </span>
         )}
-        <span className="leading-tight">
-          <span className="block text-sm font-medium text-ink">
-            {shown?.name ?? "Your interviewer"}
-            {shown?.title && (
-              <span className="font-normal text-ink-faint"> · {shown.title}</span>
-            )}
-          </span>
-          <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-ink-soft">
-            <span
-              className={`status-dot ${tone} ${session.status === "live" ? "status-dot-live" : ""}`}
-              style={{ color: "var(--color-session-listening)" }}
-              aria-hidden
-            />
-            {voice.speakingKey !== null ? "Speaking" : label}
-          </span>
-        </span>
       </span>
-      <span className="rounded-full border border-line px-2.5 py-1 text-2xs text-ink-soft">
-        {session.kind === "drill"
-          ? "Defend drill · not scored"
-          : `Question ${Math.max(session.questions_asked, 1)}${
-              plannedQuestions(session) ? ` of about ${plannedQuestions(session)}` : ""
-            }`}
-        {session.kind !== "drill" &&
-          roundTitle(session) &&
-          ` · ${roundTitle(session)}`}
+      {panel.length > 1 ? (
+        <span
+          className={`flex items-center -space-x-2 ${tiled ? "lg:hidden" : ""}`}
+          role="img"
+          aria-label={`Your panel: ${panel.map((p) => `${p.name}, ${p.title}`).join("; ")}`}
+        >
+          {panel.map((p) => (
+            <span
+              key={p.id}
+              title={`${p.name} · ${p.title}`}
+              className={`rounded-full ring-2 ${
+                p.id === (speakingId ?? asking?.id) ? "relative z-10 ring-brand" : "ring-surface opacity-80"
+              }`}
+            >
+              <Avatar persona={p.id} name={p.name} size={28} speaking={p.id === speakingId} />
+            </span>
+          ))}
+        </span>
+      ) : (
+        <span className={tiled ? "lg:hidden" : undefined}>
+          <Avatar persona={asking?.id} name={asking?.name ?? "Interviewer"} size={28} speaking={voice.speakingKey !== null} />
+        </span>
+      )}
+      <span className="flex items-center gap-3 text-sm text-ink-soft">
+        <span className="font-medium text-ink">
+          {session.kind === "drill"
+            ? "Not scored"
+            : `Question ${Math.max(session.questions_asked, 1)}${
+                plannedN ? ` of about ${plannedN}` : ""
+              }`}
+        </span>
+        {dots > 0 && (
+          <span
+            className="hidden items-center gap-1 sm:flex"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={dots}
+            aria-valuenow={filled}
+            aria-label="Progress through the planned questions"
+          >
+            {Array.from({ length: dots }).map((_, i) => (
+              <span key={i} className={`h-1.5 w-5 rounded-full ${i < filled ? "bg-brand" : "bg-line-strong"}`} />
+            ))}
+          </span>
+        )}
+      </span>
+      <span className="flex items-center gap-1.5 text-2xs text-ink-soft">
+        <span
+          className={`status-dot ${tone} ${session.status === "live" ? "status-dot-live" : ""}`}
+          style={{ color: "var(--color-session-listening)" }}
+          aria-hidden
+        />
+        {voice.speakingKey !== null ? `${shown?.name ?? "Interviewer"} speaking` : label}
       </span>
       {(session.flags.degradation_level === "L3" ||
         session.flags.degradation_level === "panic") &&
@@ -451,10 +482,7 @@ function StatusStrip({
         <VoiceToggle voice={voice} name={session.interviewer?.name ?? "the interviewer"} />
         <TimeRemaining session={session} running={connected} />
         {!connected && session.status === "live" && (
-          <span
-            className="text-2xs text-session-degraded"
-            title="Reconnecting to the live feed"
-          >
+          <span className="text-2xs text-session-degraded" title="Reconnecting to the live feed">
             offline
           </span>
         )}
@@ -471,9 +499,17 @@ function StatusStrip({
           </Button>
         )}
         {(session.status === "live" || session.status === "paused") && (
-          <Button size="sm" variant="ghost" onClick={onEnd} disabled={busy}>
-            End
-          </Button>
+          <button
+            type="button"
+            onClick={onEnd}
+            disabled={busy}
+            className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#dc2626] px-3.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M3 14c4-4 14-4 18 0l-2.5 2.5-3-1.5v-2.2c-2-.7-4-.7-6 0V15l-3 1.5Z" />
+            </svg>
+            End interview
+          </button>
         )}
       </div>
     </div>
@@ -518,6 +554,7 @@ function PanelView({
   voice,
   studentTalking,
   replying = false,
+  you,
 }: {
   panel: { id: string; name: string; title: string; voice_id?: string | null }[];
   speakingId: string | null;
@@ -528,9 +565,71 @@ function PanelView({
   /** The answer is in and the reply is being worked out (2026-10-09): the
    *  one whose turn it is glances down and aside, as a person thinking. */
   replying?: boolean;
+  /** The student's own tile (2026-10-11): beside the one whose turn it is,
+   *  as the call mockup has it. Absent, the tiles are the old column. */
+  you?: React.ReactNode;
 }) {
   if (panel.length === 0) return null;
   const focused = speakingId ?? askingId ?? panel[0]!.id;
+  const tile = (p: (typeof panel)[number], big: boolean) => {
+    const speaking = p.id === speakingId;
+    const turn = p.id === focused;
+    const photo = <InterviewerPhoto persona={p.id} name={p.name} fill />;
+    const frame = `aspect-[4/3] w-full ${big ? "lg:max-h-[calc(100dvh-26rem)]" : ""}`;
+    return (
+      <figure
+        key={p.id}
+        className={`min-w-0 overflow-hidden rounded-xl border bg-surface transition-colors ${
+          speaking ? "border-brand ring-2 ring-brand/40" : turn ? "border-brand-line" : "border-line"
+        }`}
+      >
+        {faces?.has(p.id) ? (
+          <TalkingHead
+            persona={p.id}
+            name={p.name}
+            speaking={speaking}
+            expression={voice.expression}
+            listening={studentTalking && turn}
+            thinking={replying && turn && !speaking}
+            fallback={photo}
+            className={frame}
+          />
+        ) : (
+          <div className={frame}>{photo}</div>
+        )}
+        <figcaption
+          className={`flex min-w-0 items-baseline justify-between gap-2 px-2.5 py-1.5 text-2xs ${
+            big ? "lg:px-3.5 lg:py-2 lg:text-sm" : ""
+          }`}
+        >
+          <span className="truncate font-medium text-ink">{p.name}</span>
+          <span className="truncate text-ink-faint">
+            {speaking ? "Speaking" : turn && studentTalking ? "Listening" : p.title}
+          </span>
+        </figcaption>
+      </figure>
+    );
+  };
+
+  if (you) {
+    // Every tile keeps its place for the whole interview. A tile that moved
+    // when the turn changed hands was a new element each time, and its 3D
+    // head loaded again (the photo, then the head) at every hand-over. The
+    // one whose turn it is shows by its ring and its caption.
+    const columns =
+      panel.length === 2
+        ? "grid-cols-2 lg:grid-cols-3"
+        : panel.length === 1
+          ? "grid-cols-1 sm:grid-cols-2"
+          : "grid-cols-2";
+    return (
+      <div aria-label="Your panel" className={`grid gap-3 ${columns}`}>
+        {you}
+        {panel.map((p) => tile(p, true))}
+      </div>
+    );
+  }
+
   const others = panel.length - 1;
   const columns =
     panel.length === 1 ? "grid-cols-1 max-w-sm lg:max-w-none" : panel.length === 2 ? "grid-cols-2" : "grid-cols-3";
@@ -539,46 +638,14 @@ function PanelView({
   return (
     <div className={`grid gap-2.5 ${columns} lg:grid-cols-6 lg:gap-3`} aria-label="Your panel">
       {panel.map((p) => {
-        const speaking = p.id === speakingId;
-        const turn = p.id === focused;
-        const big = turn && panel.length > 1;
-        const photo = <InterviewerPhoto persona={p.id} name={p.name} fill />;
-        // The large tile keeps its 4:3 until the window is short, then gives
-        // up height before the small ones leave the screen.
-        const frame = `aspect-[4/3] w-full ${big ? "lg:max-h-[calc(100dvh-24rem)]" : ""}`;
+        const big = p.id === focused && panel.length > 1;
         return (
-          <figure
+          <div
             key={p.id}
-            className={`min-w-0 overflow-hidden rounded-xl border bg-surface transition-colors ${
-              speaking ? "border-brand ring-2 ring-brand/40" : turn ? "border-brand-line" : "border-line"
-            } ${big || panel.length === 1 ? "lg:order-first lg:col-span-6" : small}`}
+            className={`min-w-0 ${big || panel.length === 1 ? "lg:order-first lg:col-span-6" : small}`}
           >
-            {faces?.has(p.id) ? (
-              <TalkingHead
-                persona={p.id}
-                name={p.name}
-                speaking={speaking}
-                expression={voice.expression}
-                listening={studentTalking && turn}
-                thinking={replying && turn && !speaking}
-                fallback={photo}
-                className={frame}
-              />
-            ) : (
-              <div className={frame}>{photo}</div>
-            )}
-            <figcaption
-              className={`flex min-w-0 items-baseline justify-between gap-2 px-2.5 py-1.5 text-2xs ${
-                big ? "lg:px-3.5 lg:py-2 lg:text-sm" : ""
-              }`}
-            >
-              <span className="truncate font-medium text-ink">{p.name}</span>
-              {/* A phone's tiles are a third of its width: the name only. */}
-              <span className={`truncate text-ink-faint ${panel.length > 2 ? "max-sm:hidden" : ""}`}>
-                {speaking ? "Speaking" : turn && studentTalking ? "Listening" : p.title}
-              </span>
-            </figcaption>
-          </figure>
+            {tile(p, big || panel.length === 1)}
+          </div>
         );
       })}
     </div>
@@ -946,6 +1013,211 @@ function PauseButton({
 /** §7's ⚑: a question that is broken goes back to the bank's owner (M05). */
 const FLAG_REASONS = ["Unclear", "Wrong or broken", "Not relevant to the role"];
 
+
+/** The student's own tile (2026-10-11): their place in the call. The camera is
+ *  OFF and stays off until they turn it on; when on, it is a preview for them
+ *  alone — nothing is recorded, uploaded or sent, and it stops when they turn
+ *  it off or leave. The mic meter shows they are heard. */
+function YouTile({ level, listening }: { level: () => number; listening: boolean }) {
+  const [on, setOn] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const video = useRef<HTMLVideoElement | null>(null);
+  const stream = useRef<MediaStream | null>(null);
+  const release = () => {
+    stream.current?.getTracks().forEach((track) => track.stop());
+    stream.current = null;
+  };
+  useEffect(() => release, []);
+  useEffect(() => {
+    if (on && video.current && stream.current) video.current.srcObject = stream.current;
+  }, [on]);
+  async function toggle() {
+    if (on) {
+      release();
+      setOn(false);
+      return;
+    }
+    try {
+      stream.current = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+        audio: false,
+      });
+      setNote(null);
+      setOn(true);
+    } catch {
+      setNote("The camera isn't available, or wasn't allowed.");
+      setOn(false);
+    }
+  }
+  return (
+    <figure className="min-w-0 overflow-hidden rounded-xl border border-line bg-surface">
+      <div className="relative aspect-[4/3] w-full bg-surface-sunken">
+        {on ? (
+          <video ref={video} autoPlay muted playsInline className="h-full w-full -scale-x-100 object-cover" />
+        ) : (
+          <div className="grid h-full w-full place-items-center">
+            <span className="grid h-20 w-20 place-items-center rounded-full bg-brand-soft text-xl font-semibold text-brand">
+              You
+            </span>
+          </div>
+        )}
+        <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-lg bg-black/55 px-2 py-1 text-2xs font-medium text-white">
+          <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${listening ? "bg-session-listening" : "bg-white/60"}`} />
+          You
+        </span>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-pressed={on}
+          title={on ? "Turn the camera off" : "Turn the camera on (a preview for you alone)"}
+          className="absolute bottom-3 left-1/2 inline-flex h-9 -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full bg-black/55 px-3 text-2xs font-medium text-white hover:bg-black/70"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M15 10.5 21 7v10l-6-3.5" />
+            <rect x="3" y="6" width="12" height="12" rx="2.5" />
+            {!on && <path d="m3 3 18 18" />}
+          </svg>
+          <span className="max-lg:sr-only">{on ? "Camera off" : "Camera on"}</span>
+        </button>
+      </div>
+      <figcaption className="flex min-w-0 items-center justify-between gap-2 px-2.5 py-1.5 text-2xs">
+        <span className="truncate font-medium text-ink">You</span>
+        <span className="flex items-center gap-2 truncate text-ink-faint">
+          {listening ? <LevelMeter level={level} /> : null}
+          {note ?? (on ? "Only you see this" : "Camera off")}
+        </span>
+      </figcaption>
+    </figure>
+  );
+}
+
+/** The question being answered, large (the mockup's "Current question"). */
+function CurrentQuestion({ text, asker, closing }: { text: string; asker: string | null; closing: boolean }) {
+  return (
+    <section aria-label="Current question" className="rounded-2xl border border-line bg-surface p-5 shadow-raised">
+      <p className="flex items-center gap-2 text-xs font-semibold text-brand">
+        <span aria-hidden className="grid h-6 w-6 place-items-center rounded-md bg-brand-soft">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 9a3 3 0 1 1 4.2 2.7c-.8.4-1.2 1-1.2 1.8M12 17h.01" />
+            <circle cx="12" cy="12" r="9" />
+          </svg>
+        </span>
+        {closing ? "Your turn to ask" : "Current question"}
+        {asker && <span className="font-normal text-ink-faint">· {asker}</span>}
+      </p>
+      <p className="mt-3 text-lg font-semibold leading-snug text-ink sm:text-xl">{text}</p>
+    </section>
+  );
+}
+
+/** The conversation, with the student's own notes beside it. Notes stay in
+ *  this browser (they are a scratchpad, not an answer, and are never sent). */
+function SidePanel({
+  sessionId,
+  convoRef,
+  children,
+}: {
+  sessionId: string;
+  convoRef: React.RefObject<HTMLDivElement | null>;
+  children: React.ReactNode;
+}) {
+  const key = `m06-notes-${sessionId}`;
+  const [tab, setTab] = useState<"conversation" | "notes">("conversation");
+  const [notes, setNotes] = useState(() => {
+    try {
+      return window.localStorage.getItem(key) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  function save(next: string) {
+    setNotes(next);
+    try {
+      window.localStorage.setItem(key, next);
+    } catch {
+      /* a private window: the notes stay on the page */
+    }
+  }
+  const tabClass = (on: boolean) =>
+    `inline-flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-medium ${
+      on ? "border-brand text-brand" : "border-transparent text-ink-soft hover:text-ink"
+    }`;
+  return (
+    <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-raised">
+      <div role="tablist" className="flex border-b border-line">
+        <button role="tab" type="button" aria-selected={tab === "conversation"} className={tabClass(tab === "conversation")} onClick={() => setTab("conversation")}>
+          Conversation
+        </button>
+        <button role="tab" type="button" aria-selected={tab === "notes"} className={tabClass(tab === "notes")} onClick={() => setTab("notes")}>
+          Notes
+        </button>
+      </div>
+      {tab === "conversation" ? (
+        <div ref={convoRef} className="max-h-[calc(100dvh-24rem)] min-h-64 overflow-y-auto px-4 pb-4">
+          {children}
+        </div>
+      ) : (
+        <div className="p-4">
+          <label htmlFor="scratch-notes" className="sr-only">
+            Your notes
+          </label>
+          <textarea
+            id="scratch-notes"
+            value={notes}
+            onChange={(event) => save(event.target.value)}
+            rows={10}
+            placeholder="Jot anything you want to remember. These stay on this device and are not part of your answer."
+            className="block w-full resize-none rounded-xl border border-line bg-surface-sunken p-3 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-brand"
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** What is known about the question in front of the student — only what the
+ *  session actually holds (no difficulty or key points: the bank gives none). */
+function QuestionInfo({
+  topic,
+  number,
+  planned,
+  usedSeconds,
+  hints,
+}: {
+  topic: string | null;
+  number: number;
+  planned: number | null;
+  usedSeconds: number;
+  hints: number;
+}) {
+  const row = "flex items-center justify-between gap-3 py-2.5 text-sm";
+  return (
+    <section aria-label="Question information" className="mt-4 rounded-2xl border border-line bg-surface p-4 shadow-raised">
+      <h2 className="text-sm font-semibold text-ink">Question information</h2>
+      <dl className="mt-1 divide-y divide-line">
+        {topic && (
+          <div className={row}>
+            <dt className="text-ink-soft">Round</dt>
+            <dd className="rounded-full bg-brand-soft px-2.5 py-0.5 text-2xs font-medium text-brand">{topic}</dd>
+          </div>
+        )}
+        <div className={row}>
+          <dt className="text-ink-soft">Question</dt>
+          <dd className="font-medium text-ink">{planned ? `${number} of about ${planned}` : number}</dd>
+        </div>
+        <div className={row}>
+          <dt className="text-ink-soft">Hints taken</dt>
+          <dd className="font-medium text-ink">{hints}</dd>
+        </div>
+        <div className={row}>
+          <dt className="text-ink-soft">Time spent</dt>
+          <dd className="font-mono tabular-nums text-ink">{clock(usedSeconds)}</dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
 export function InterviewStage({ sessionId }: { sessionId: string }) {
   const session = useSession(sessionId);
   const start = useStart(sessionId);
@@ -995,6 +1267,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const [preview, setPreview] = useState("");
   const [thinking, setThinking] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
+  const convoRef = useRef<HTMLDivElement | null>(null);
 
   const data = session.data;
   // FR-6.3: who is on the panel, by the persona files' own cards.
@@ -1467,7 +1740,11 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   }, [busy]);
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    // In the tiled room the conversation is a card that scrolls by itself:
+    // scrolling the page would carry the tiles and the question away.
+    const box = convoRef.current;
+    if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" });
+    else bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [data?.transcript.length, preview, thinking, reveal.version]);
 
   // §6.8: "Welcome back — we were on question 4". Said when this page joins a
@@ -1726,145 +2003,19 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   // The panel beside the conversation on a wide screen (2026-10-10); a drill
   // has no panel, and the page before the start keeps the reading measure.
   const tiled = data.kind !== "drill" && data.status !== "planned";
-  return (
-    <div className={`mx-auto ${tiled ? "max-w-6xl" : "max-w-(--container-conversation)"}`}>
-      {data.status === "planned" ? (
-        <section className="mx-auto max-w-xl py-10 text-center">
-          {panel.length > 1 ? (
-            // FR-6.3: a panel — who the student is about to meet, in the
-            // order they will meet them.
-            <div className="mb-6 flex flex-col items-center gap-3">
-              <div className="flex items-end justify-center gap-4">
-                {panel.map((p) => (
-                  <div key={p.id} className="flex w-24 flex-col items-center gap-2">
-                    <Avatar persona={p.id} name={p.name} size={48} />
-                    <p className="text-center text-2xs leading-tight text-ink-soft">
-                      <span className="block font-medium text-ink">{p.name}</span>
-                      {p.title}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <p className="text-2xs text-ink-faint">Your panel</p>
-            </div>
-          ) : (
-            data.interviewer && (
-              <div className="mb-6 flex flex-col items-center gap-3">
-                <Avatar persona={data.interviewer.id} name={data.interviewer.name} size={56} />
-                <p className="text-sm text-ink-soft">
-                  <span className="font-medium text-ink">{data.interviewer.name}</span> ·{" "}
-                  {data.interviewer.title}
-                </p>
-              </div>
-            )
-          )}
-          <h1 className="text-3xl font-semibold tracking-tight text-ink">
-            {data.kind === "drill"
-              ? "Defend one line from your resume"
-              : "Ready when you are"}
-          </h1>
-          {data.drill_claim && (
-            <blockquote className="mt-4 border-l-2 border-brand-line bg-brand-soft/40 p-3 text-sm text-ink">
-              {data.drill_claim}
-            </blockquote>
-          )}
-          <p className="mt-4 text-sm leading-relaxed text-ink-soft">
-            {data.kind === "drill"
-              ? "Two minutes, typed, and not scored. I'll ask you to defend it and stop as soon as we reach the edge."
-              : `About ${data.requested_minutes} minutes. ${
-                  voice.supported && data.interviewer
-                    ? panel.length > 1
-                      ? "Each of them speaks in their own voice — the speaker button turns that off. "
-                      : `${data.interviewer.name} reads each question aloud — the speaker button turns that off. `
-                    : ""
-                }Speak or type your answers. You can pause ${
-                  (data.flags.pauses_allowed ?? 1) === 1 ? "once" : `${data.flags.pauses_allowed} times`
-                }, and ending early still gives you notes.`}
-          </p>
-          <div className="mt-6">
-            <Button onClick={() => start.mutate()} disabled={start.isPending}>
-              {start.isPending ? "Starting…" : "Start"}
-            </Button>
-          </div>
-        </section>
-      ) : (
-        <>
-          <h1 className="sr-only">Interview with {who}</h1>
-          <p className="sr-only" aria-live="polite">
-            {lastLine ? `${lastAsker} asks: ${lastLine}` : ""}
-          </p>
-          <StatusStrip
-            session={data}
-            waiting={waiting}
-            connected={connected}
-            busy={pause.isPending || resume.isPending || end.isPending}
-            onPause={() => pause.mutate()}
-            onResume={() => resume.mutate()}
-            onEnd={() => {
-              voice.stop("end");
-              end.mutate("ended_by_student");
-            }}
-            voice={voice}
-            panel={panel}
-            speakingId={speakingId}
-            tiled={tiled}
-          />
-          <Stepper session={data} />
-          <div className={tiled ? "lg:mt-4 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start lg:gap-8 xl:gap-10" : ""}>
-          {tiled && (
-            // Stays in view while the conversation scrolls: under the app's
-            // bar (3.5rem) and the strip (~4rem tall).
-            <aside className="mt-4 lg:sticky lg:top-[8.25rem] lg:mt-0">
-              <PanelView
-                panel={panel.length ? panel : data.interviewer ? [data.interviewer] : []}
-                speakingId={speakingId}
-                askingId={data.interviewer?.id ?? null}
-                faces={faces}
-                voice={voice}
-                studentTalking={listening.speaking || ptt.held}
-                replying={busy}
-              />
-            </aside>
-          )}
-          <div className="min-w-0">
-
-          {callState !== "here" && (
-            <p
-              className="mt-3 rounded-lg border border-brand-line bg-brand-soft/40 px-3 py-2 text-sm text-ink"
-              role="status"
-            >
-              {callState === "away"
-                ? "Paused — your phone took the microphone. The clock is stopped and no pause is used; take your time."
-                : `Welcome back — picking up in ${reentry}…`}
-            </p>
-          )}
-          {lost && (
-            <p
-              className="mt-3 rounded-lg border border-line bg-surface-sunken px-3 py-2 text-2xs text-session-degraded"
-              role="status"
-            >
-              Lost connection — reconnecting… The clock is paused until you're
-              back.
-            </p>
-          )}
-          {!lost && welcome && (
-            <p
-              className="mt-3 rounded-lg border border-brand-line bg-brand-soft/40 px-3 py-2 text-sm text-ink"
-              role="status"
-            >
-              {welcome}
-            </p>
-          )}
-
-          {data.drill_claim && (
-            <p className="mt-3 text-2xs text-ink-faint">
-              Defending:{" "}
-              <span className="text-ink-soft">{data.drill_claim}</span>
-            </p>
-          )}
-
-          <div className="mt-6 space-y-6">
-            {data.transcript.map((turn, index) => {
+  // What the student is answering now, and who asked it (the mockup's
+  // "Current question" card).
+  const openTurn = data.open_turn_id
+    ? data.transcript.find((t) => t.turn_id === data.open_turn_id)
+    : undefined;
+  const currentQuestion =
+    data.status === "live" || data.status === "paused"
+      ? openTurn?.question_text || openTurn?.text || null
+      : null;
+  const askerName = openTurn?.speaker_id ? nameOf(openTurn.speaker_id) : null;
+  const conversation = (
+          <div className="mt-4 space-y-6">
+      {data.transcript.map((turn, index) => {
               const previous = data.transcript[index - 1];
               // A rule is drawn where the segment changes, never before the
               // first turn: the interview opening is not a round ending.
@@ -1958,6 +2109,158 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             )}
             <div ref={bottom} />
           </div>
+  );
+  return (
+    <div className={`mx-auto ${tiled ? "max-w-6xl" : "max-w-(--container-conversation)"}`}>
+      {data.status === "planned" ? (
+        <section className="mx-auto max-w-xl py-10 text-center">
+          {panel.length > 1 ? (
+            // FR-6.3: a panel — who the student is about to meet, in the
+            // order they will meet them.
+            <div className="mb-6 flex flex-col items-center gap-3">
+              <div className="flex items-end justify-center gap-4">
+                {panel.map((p) => (
+                  <div key={p.id} className="flex w-24 flex-col items-center gap-2">
+                    <Avatar persona={p.id} name={p.name} size={48} />
+                    <p className="text-center text-2xs leading-tight text-ink-soft">
+                      <span className="block font-medium text-ink">{p.name}</span>
+                      {p.title}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-2xs text-ink-faint">Your panel</p>
+            </div>
+          ) : (
+            data.interviewer && (
+              <div className="mb-6 flex flex-col items-center gap-3">
+                <Avatar persona={data.interviewer.id} name={data.interviewer.name} size={56} />
+                <p className="text-sm text-ink-soft">
+                  <span className="font-medium text-ink">{data.interviewer.name}</span> ·{" "}
+                  {data.interviewer.title}
+                </p>
+              </div>
+            )
+          )}
+          <h1 className="text-3xl font-semibold tracking-tight text-ink">
+            {data.kind === "drill"
+              ? "Defend one line from your resume"
+              : "Ready when you are"}
+          </h1>
+          {data.drill_claim && (
+            <blockquote className="mt-4 border-l-2 border-brand-line bg-brand-soft/40 p-3 text-sm text-ink">
+              {data.drill_claim}
+            </blockquote>
+          )}
+          <p className="mt-4 text-sm leading-relaxed text-ink-soft">
+            {data.kind === "drill"
+              ? "Two minutes, typed, and not scored. I'll ask you to defend it and stop as soon as we reach the edge."
+              : `About ${data.requested_minutes} minutes. ${
+                  voice.supported && data.interviewer
+                    ? panel.length > 1
+                      ? "Each of them speaks in their own voice — the speaker button turns that off. "
+                      : `${data.interviewer.name} reads each question aloud — the speaker button turns that off. `
+                    : ""
+                }Speak or type your answers. You can pause ${
+                  (data.flags.pauses_allowed ?? 1) === 1 ? "once" : `${data.flags.pauses_allowed} times`
+                }, and ending early still gives you notes.`}
+          </p>
+          <div className="mt-6">
+            <Button onClick={() => start.mutate()} disabled={start.isPending}>
+              {start.isPending ? "Starting…" : "Start"}
+            </Button>
+          </div>
+        </section>
+      ) : (
+        <>
+          <h1 className="sr-only">Interview with {who}</h1>
+          <p className="sr-only" aria-live="polite">
+            {lastLine ? `${lastAsker} asks: ${lastLine}` : ""}
+          </p>
+          <StatusStrip
+            session={data}
+            waiting={waiting}
+            connected={connected}
+            busy={pause.isPending || resume.isPending || end.isPending}
+            onPause={() => pause.mutate()}
+            onResume={() => resume.mutate()}
+            onEnd={() => {
+              voice.stop("end");
+              end.mutate("ended_by_student");
+            }}
+            voice={voice}
+            panel={panel}
+            speakingId={speakingId}
+            tiled={tiled}
+          />
+          <Stepper session={data} />
+          <div className={tiled ? "lg:mt-4 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start lg:gap-6" : ""}>
+          <div className="min-w-0">
+          {tiled && (
+            <div className="mt-4 lg:mt-0">
+              <PanelView
+                panel={panel.length ? panel : data.interviewer ? [data.interviewer] : []}
+                speakingId={speakingId}
+                askingId={data.interviewer?.id ?? null}
+                faces={faces}
+                voice={voice}
+                studentTalking={listening.speaking || ptt.held}
+                replying={busy}
+                you={
+                  <YouTile
+                    level={listening.level}
+                    listening={listening.speaking || ptt.held}
+                  />
+                }
+              />
+            </div>
+          )}
+          {tiled && (currentQuestion || data.in_closing) && (
+            <div className="mt-4">
+              <CurrentQuestion
+                text={currentQuestion ?? "Ask anything — the team, the work, what happens next."}
+                asker={askerName}
+                closing={data.in_closing}
+              />
+            </div>
+          )}
+
+          {callState !== "here" && (
+            <p
+              className="mt-3 rounded-lg border border-brand-line bg-brand-soft/40 px-3 py-2 text-sm text-ink"
+              role="status"
+            >
+              {callState === "away"
+                ? "Paused — your phone took the microphone. The clock is stopped and no pause is used; take your time."
+                : `Welcome back — picking up in ${reentry}…`}
+            </p>
+          )}
+          {lost && (
+            <p
+              className="mt-3 rounded-lg border border-line bg-surface-sunken px-3 py-2 text-2xs text-session-degraded"
+              role="status"
+            >
+              Lost connection — reconnecting… The clock is paused until you're
+              back.
+            </p>
+          )}
+          {!lost && welcome && (
+            <p
+              className="mt-3 rounded-lg border border-brand-line bg-brand-soft/40 px-3 py-2 text-sm text-ink"
+              role="status"
+            >
+              {welcome}
+            </p>
+          )}
+
+          {data.drill_claim && (
+            <p className="mt-3 text-2xs text-ink-faint">
+              Defending:{" "}
+              <span className="text-ink-soft">{data.drill_claim}</span>
+            </p>
+          )}
+
+          {!tiled && conversation}
 
           {notices.length > 0 && (
             <ul className="mt-6 space-y-1">
@@ -1997,7 +2300,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             </div>
           ) : data.status === "live" || data.status === "paused" ? (
             <form
-              className="sticky bottom-4 z-10 mt-8"
+              className={tiled ? "mt-4" : "sticky bottom-4 z-10 mt-8"}
               onSubmit={(event) => {
                 event.preventDefault();
                 submit();
@@ -2128,10 +2431,10 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     aria-pressed={dictation.listening}
                     aria-label={dictation.listening ? "Stop speaking" : "Speak your answer"}
                     title={dictation.listening ? "Stop" : "Speak your answer"}
-                    className={`grid h-8 w-8 place-items-center rounded-lg disabled:opacity-40 ${
+                    className={`grid h-9 w-9 place-items-center rounded-full disabled:opacity-40 ${
                       dictation.listening
                         ? "bg-session-listening text-white"
-                        : "text-ink-soft hover:bg-surface-sunken hover:text-ink"
+                        : "bg-brand text-white hover:brightness-110"
                     }`}
                   >
                     <Icon name="mic" size={16} />
@@ -2400,6 +2703,22 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             </section>
           )}
           </div>
+          {tiled && (
+            // The conversation and the student's notes, and what is known of
+            // the question, in a column that stays in view.
+            <aside className="mt-4 lg:sticky lg:top-[8.25rem] lg:mt-0">
+              <SidePanel sessionId={sessionId} convoRef={convoRef}>
+                {conversation}
+              </SidePanel>
+              <QuestionInfo
+                topic={roundTitle(data)}
+                number={Math.max(data.questions_asked, 1)}
+                planned={plannedQuestions(data)}
+                usedSeconds={data.time_used_s}
+                hints={openTurn?.hint_level_used ?? 0}
+              />
+            </aside>
+          )}
           </div>
         </>
       )}

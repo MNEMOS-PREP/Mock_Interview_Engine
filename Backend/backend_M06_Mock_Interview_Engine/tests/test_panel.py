@@ -80,11 +80,18 @@ def test_a_part_with_a_declared_expert_goes_to_one(mode):
     SQL, the people questions to someone who declares them, because of what
     the persona files say, not because a table does."""
     plan = panel_plan(mode)
+    people = personas()
+    seated = {s.persona_id for s in plan.segments}
     for segment in plan.segments[1:-1]:
         topic = panel.segment_words(segment)
         experts = {p.id for p in eligible(mode) if panel.words(p.domain_bias) & topic}
-        if experts:
-            assert segment.persona_id in experts, (mode, segment.title, segment.persona_id)
+        # 2026-10-11: no two on one panel sound alike (`Persona.sound`), and
+        # with eight voices for 39 interviewers an expert may sound like
+        # someone already seated. The part is theirs if they could sit.
+        others = {people[s].sound for s in seated if s in people}
+        could_sit = {e for e in experts if e in seated or people[e].sound not in others}
+        if could_sit:
+            assert segment.persona_id in could_sit, (mode, segment.title, segment.persona_id)
 
 
 def test_the_panel_grows_with_the_interview():

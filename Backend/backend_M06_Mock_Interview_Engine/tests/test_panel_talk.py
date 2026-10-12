@@ -303,7 +303,9 @@ def test_someone_sitting_in_says_hello_and_comes_in_every_other_question(db):
         if t.probe_move is None and t.question_source not in (None, "closing")
     ]
     assert came_in, "the second interviewer came in"
-    assert all(t.probe_depth == 2 and t.probe_move == "rung" for t in came_in)
+    # The first follow-up (2026-10-11): at the second rung a good answer had
+    # usually ended the question, and the one sitting in was never heard.
+    assert all(t.probe_depth == 1 and t.probe_move == "rung" for t in came_in)
     assert len(came_in) <= (len(asked_new) + 1) // 2
 
 

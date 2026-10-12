@@ -250,6 +250,11 @@ def assign(
                 return float("-inf")  # someone on the panel already sounds like this
             if expertise(p, topic) > known:
                 value += 0.12  # an expert the panel lacks joins it
+            elif expertise(p, topic) < known:
+                # Never brought in just for being new (2026-10-11: with eight
+                # voices for 39, the HR experts all sounded like someone seated,
+                # and an engineer who knew nothing of the part took it).
+                value -= 0.12
         return value
 
     out: list[str] = []

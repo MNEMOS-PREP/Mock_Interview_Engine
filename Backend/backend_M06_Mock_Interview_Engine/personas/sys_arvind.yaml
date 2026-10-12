@@ -15,7 +15,7 @@ domain_bias: [computer systems, computer architecture, caches, compilers, perfor
 voice_id: en-IN-male-measured
 # The M11 voice (Voice_Engine `voices/cast.json`), so a panel never seats two
 # people who sound the same.
-voice: indictts-022743
+voice: indictts-144039
 note_taking_cadence: 0
 hints_available: true
 lines:

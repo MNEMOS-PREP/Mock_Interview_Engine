@@ -15,7 +15,7 @@ domain_bias: [performance, scale, system design, technical]
 voice_id: en-IN-male-brisk
 # The M11 voice the team cast in its listening test (Voice_Engine
 # `voices/cast.json`).
-voice: indictts-063175
+voice: indictts-144039
 note_taking_cadence: 0
 hints_available: true
 lines:
