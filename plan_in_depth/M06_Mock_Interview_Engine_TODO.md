@@ -19,7 +19,7 @@ Task list for taking **M6 — Mock Interview Engine** to 100% of [M06_Mock_Inter
 
 - **Phase:** 1–2 · **Owner:** E2 · **Ports:** API `8106`, web `5206`
 - **Repo:** `Mock_Interview_Engine` — on disk at `projects\Mock_Interview_Engine` (the folder must equal the repo name, or `launch.ps1` skips it)
-- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.31.0 on the frontend (since 2026-10-11). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
+- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.34.0 on the frontend (since 2026-10-12). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
 
 Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked on another module
 
@@ -1084,6 +1084,24 @@ The user sat interviews and listed what felt wrong. Each item, as fixed:
   goodbye. An unknown track id is refused with a 422.
 - ✅ The notes call a resume question and a backup question what they are
   (`e8b02aa`).
+
+### 2026-10-12 — abhinav's room and second interviewer, merged
+
+- ✅ **The room as a call** (`2bbcba5`, abhinav): the student's own tile
+  (camera off unless turned on, never sent), the current question large,
+  the conversation and private notes in tabs, the question's details,
+  progress dots. At 1440×900 the faces, the question and the answer box are
+  all on one screen. Left: on 1280×680 the tiles scroll away to reach the
+  answer box; the conversation repeats the current question large; the
+  camera button overlaps the "You" circle.
+- ✅ **The second interviewer takes the first follow-up of about every other
+  question** (abhinav).
+- ✅ Persona voices from the listening-test cast; os_karan and professor
+  were still on the voice it removed. With eight voices for 39 an engineer
+  took a behavioural part over the seated expert: a newcomer who knows a
+  part less than the panel is now marked down (`panel.assign`).
+- ✅ Pins `@ai/core` v0.34.0 (identifiers and notation said as people say
+  them).
 
 ### 2026-10-11 — replies no longer held by a slow model; candidate questions made in turns
 
