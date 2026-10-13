@@ -595,7 +595,10 @@ function PanelView({
   const tile = (p: (typeof panel)[number], big: boolean) => {
     const speaking = p.id === speakingId;
     const turn = p.id === focused;
-    const photo = <InterviewerPhoto persona={p.id} name={p.name} fill />;
+    // In their office, as the 3D head is (Core v0.37.0): the stills are cut
+    // out, so without it the photo that stands in while the head loads, or
+    // for a persona with no head, sat on a flat slab the head then left.
+    const photo = <InterviewerPhoto persona={p.id} name={p.name} fill backdrop />;
     // Wider than tall on a short window, so the answer box fits beneath.
     const frame = `aspect-[4/3] w-full [@media(max-height:800px)]:aspect-video ${big ? "lg:max-h-[calc(100dvh-26rem)]" : ""}`;
     return (
@@ -624,8 +627,10 @@ function PanelView({
             big ? "lg:px-3.5 lg:py-2 lg:text-sm" : ""
           }`}
         >
-          <span className="truncate font-medium text-ink">{p.name}</span>
-          <span className="truncate text-ink-faint">
+          {/* The name stays whole; the title gives way. Both truncating cut
+              a three-tile row to "Nik… Deep Learning Engine…" (2026-10-14). */}
+          <span className="shrink-0 font-medium text-ink">{p.name}</span>
+          <span className="min-w-0 truncate text-ink-faint">
             {speaking ? "Speaking" : turn && studentTalking ? "Listening" : p.title}
           </span>
         </figcaption>
