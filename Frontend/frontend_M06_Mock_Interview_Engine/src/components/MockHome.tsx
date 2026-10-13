@@ -48,6 +48,9 @@ const LIVE = new Set(["planned", "live", "paused"]);
 
 const MODES: readonly Mode[] = ["practice", "mock", "real_drive", "final_boss"];
 
+/** Interviewers listed before "Show all": about one panel's worth. */
+const PERSONAS_SHOWN = 6;
+
 /** The same pause rule the backend enforces (state.pause_allowance). */
 function pausesFor(minutes: number): number {
   return Math.max(1, Math.floor(minutes / 15));
@@ -79,8 +82,12 @@ function Choice({
     >
       {icon && <Icon name={icon} size={16} className={`mt-0.5 shrink-0 ${active ? "text-brand" : "text-ink-faint"}`} />}
       <span className="min-w-0">
-        <span className="block truncate text-sm font-medium">{title}</span>
-        {sub && <span className="block truncate text-2xs text-ink-faint">{sub}</span>}
+        {/* Wraps too: "Course: Database Management Systems" is the name of
+            what is being practised, and was cut to "Course: Database Mana…". */}
+        <span className="line-clamp-2 block text-sm font-medium">{title}</span>
+        {/* Two lines, not one truncated: "Across the topics you haven't s…"
+            hid what General practice is (2026-10-13). */}
+        {sub && <span className="line-clamp-2 block text-2xs leading-relaxed text-ink-faint">{sub}</span>}
       </span>
     </button>
   );
@@ -102,7 +109,10 @@ function TrackChoice({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`min-w-0 rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
+      // A flex column, so a card in a tall row keeps its title at the top: a
+      // button centres its content, which floated the shorter cards' titles
+      // half a line below their neighbours' (2026-10-13).
+      className={`flex min-w-0 flex-col justify-start rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
         active
           ? "border-brand bg-brand-soft text-ink"
           : "border-line bg-surface text-ink-soft hover:border-line-strong"
@@ -111,11 +121,13 @@ function TrackChoice({
       <span className="flex items-start justify-between gap-2">
         <span className="min-w-0 text-sm font-medium leading-snug">{track.title}</span>
         {!track.scored && (
+          // "not scored", not "practice": the chip sat on the same page as
+          // the Practice mode and read as one of its settings.
           <span
-            className="shrink-0 rounded-full bg-surface-sunken px-1.5 py-px text-2xs text-ink-faint"
+            className="shrink-0 whitespace-nowrap rounded-full bg-surface-sunken px-1.5 py-px text-2xs text-ink-faint"
             title="Its questions are new and no person has reviewed them yet, so answers are practised, not scored."
           >
-            practice
+            not scored
           </span>
         )}
       </span>
@@ -183,8 +195,14 @@ export function MockHome() {
   const company = params.get("company");
   const drive = params.get("drive");
   const label = params.get("label");
-  // From the skill graph or Today: one topic, planned as one segment.
+  // From the skill graph or Today: one topic, planned as one segment. From a
+  // course on Today: its syllabus's topics, comma-separated (up to eight).
   const focus = params.get("focus");
+  const focusConcepts = (focus ?? "")
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .slice(0, 8);
   const create = useCreateSession();
   const history = useHistory();
   const navigate = useNavigate();
@@ -193,6 +211,7 @@ export function MockHome() {
   // `?track=ml_verbal` from a link; otherwise a mixed interview.
   const [track, setTrack] = useState<string | null>(() => params.get("track"));
   const [withResume, setWithResume] = useState(false);
+  const [allPersonas, setAllPersonas] = useState(false);
   const [resumeId, setResumeId] = useState<string | null>(null);
   const myResumes = resumes.data?.resumes ?? [];
   // The one the student is asked about unless they pick another: the
@@ -218,7 +237,9 @@ export function MockHome() {
   const choose = (next: Record<string, string>) => setParams(next, { replace: true });
 
   const target = focus
-    ? `Topic: ${label ?? focus.split(":").pop()?.replace(/_/g, " ")}`
+    ? focusConcepts.length > 1
+      ? `Course: ${label ?? `${focusConcepts.length} topics`}`
+      : `Topic: ${label ?? focus.split(":").pop()?.replace(/_/g, " ")}`
     : jd
       ? label ?? "The job description you came from"
       : company && drive
@@ -429,7 +450,9 @@ export function MockHome() {
                     chosen.current = true;
                     setMode(option.id);
                   }}
-                  className={`rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
+                  // Top-aligned like the track cards: a button centres its
+                  // content, so Practice sat half a line below Mock.
+                  className={`flex flex-col justify-start rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
                     mode === option.id
                       ? "border-brand bg-brand-soft text-ink"
                       : "border-line bg-surface text-ink-soft hover:border-line-strong"
@@ -456,7 +479,8 @@ export function MockHome() {
                   jd_id: jd ?? undefined,
                   company_id: company ?? undefined,
                   drive_id: drive ?? undefined,
-                  focus_concepts: focus ? [focus] : undefined,
+                  // One concept from Today, several from a course: comma-separated.
+                  focus_concepts: focusConcepts.length ? focusConcepts : undefined,
                   focus_label: focus ? (label ?? undefined) : undefined,
                   track: general && track ? track : undefined,
                   include_resume: withResume && Boolean(pickedResume),
@@ -503,7 +527,9 @@ export function MockHome() {
             <h2 className="text-sm font-semibold text-ink">Who you might meet</h2>
             <p className="mt-1 text-2xs text-ink-faint">A mock is a panel; the plan says who runs each part.</p>
             <ul className="mt-4 space-y-3.5">
-              {(personas.data ?? []).map((persona) => (
+              {/* Six, then the rest on request: all 39 made this page five
+                  screens tall for a list nobody chooses from (2026-10-13). */}
+              {(personas.data ?? []).slice(0, allPersonas ? undefined : PERSONAS_SHOWN).map((persona) => (
                 <li key={persona.id} className="flex items-start gap-3">
                   <Face persona={persona.id} name={persona.name} size={40} />
                   <span className="min-w-0">
@@ -516,6 +542,16 @@ export function MockHome() {
                 </li>
               ))}
             </ul>
+            {(personas.data ?? []).length > PERSONAS_SHOWN && (
+              <button
+                type="button"
+                aria-expanded={allPersonas}
+                onClick={() => setAllPersonas((open) => !open)}
+                className="mt-4 text-2xs font-medium text-brand hover:text-brand-hover"
+              >
+                {allPersonas ? "Show fewer" : `Show all ${(personas.data ?? []).length} interviewers`}
+              </button>
+            )}
           </section>
         )}
 
