@@ -75,6 +75,9 @@ class Memory(Protocol):
     def consent(self, candidate_id: UUID, purpose: str) -> UUID | None:
         """`GET /v1/candidates/{cid}/consent?purpose=` — the active consent id, or None."""
 
+    def coursework(self, candidate_id: UUID) -> dict[str, Any]:
+        """`GET /v1/candidates/{cid}/coursework` — `studied_concepts`, freshest first."""
+
     def concept(self, concept_id: str) -> dict[str, Any] | None:
         """`GET /v1/concepts/{id}` — name and one hop of `prerequisites`.
 

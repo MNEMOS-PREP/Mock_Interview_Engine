@@ -122,9 +122,14 @@ class PlanInputs:
     #: The track the student picked (2026-10-07). When set, it is the only
     #: round type offered as `available_round_types`; here it names the plan.
     track: str | None = None
-    #: M05's `/v1/bank/tracks`, by round type: what each is called (`title`)
-    #: and who runs it (`kind`). Empty when M05 could not say.
+    #: M05's `/v1/bank/tracks`, by round type: what each is called (`title`),
+    #: who runs it (`kind`) and which concepts it asks about (`concept_ids`).
+    #: Empty when M05 could not say.
     tracks: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: What the student's courses have taught so far, freshest first (M04's
+    #: `/coursework`, 2026-10-13). A mixed interview is drawn from it; empty
+    #: means the student has not said their semester, and nothing changes.
+    studied_concepts: tuple[str, ...] = ()
     #: Whether the student opted in to resume questions, and from which one.
     resume_included: bool = False
     resume_id: uuid.UUID | None = None
@@ -494,10 +499,26 @@ def _without_a_job_description(
     # is nine one-question samplers. WHICH parts is seeded by the session,
     # so two mixed interviews in a row are not the same two rounds.
     room = max(1, int(usable // (MIN_QUESTIONS_PER_PART * MINUTES_PER_VERBAL_QUESTION)))
+    # From what the student has studied (2026-10-13): only the tracks their
+    # courses have taught, each steered to those concepts. A third-semester
+    # student is not asked machine learning they have not reached; a track
+    # their courses never touched is the fallback, not the default.
+    # A track the student picked is asked as picked: they chose the topic.
+    taught = _taught_by_track(inputs, available) if inputs.track is None else {}
+    # A part is MIN_QUESTIONS_PER_PART questions, and M05 will not repeat a
+    # concept while another is left, so a track that shares only one or two
+    # concepts with the courses (first-year maths' linear algebra, in the ML
+    # track) would be asked mostly on what was NOT studied. Those come in
+    # only when no track can fill a part from the courses.
+    pool = (
+        [rt for rt in available if len(taught.get(rt, ())) >= MIN_QUESTIONS_PER_PART]
+        or [rt for rt in available if taught.get(rt)]
+        or list(available)
+    )
     chosen = (
-        list(available)
-        if len(available) <= room
-        else sorted(available, key=lambda rt: uuid.uuid5(inputs.session_id, rt).hex)[:room]
+        pool
+        if len(pool) <= room
+        else sorted(pool, key=lambda rt: uuid.uuid5(inputs.session_id, rt).hex)[:room]
     )
     each = usable / len(chosen)
     return [
@@ -508,16 +529,44 @@ def _without_a_job_description(
             persona_id=mode.persona_for("technical"),
             minutes=round(each, 1),
             question_budget=max(1, int(each // MINUTES_PER_VERBAL_QUESTION)),
+            # M05's coverage debt: a preference among this track's items,
+            # never a filter, so a thin overlap still fills the part.
+            concept_ids=taught.get(round_type, [])[:MAX_STUDIED_PER_PART],
             rubric_round_types=[round_type],
             rationale=(
                 "The track you picked. Not tailored to a job description — add one and the "
                 "plan follows it."
                 if inputs.track is not None
+                else "On what your courses have covered so far. Not tailored to a job "
+                "description — add one and the plan follows it."
+                if taught.get(round_type)
                 else "Not tailored to a job description — add one and the plan follows it."
             ),
         )
         for round_type in chosen
     ]
+
+
+#: The most studied concepts one part is steered to — the ontology's sizing
+#: rule, as for a course's focus (M04 §3.2.1: 4-8 per session).
+MAX_STUDIED_PER_PART = 8
+
+
+def _taught_by_track(inputs: PlanInputs, available: tuple[str, ...]) -> dict[str, list[str]]:
+    """round type -> the studied concepts it asks about, freshest first.
+
+    Empty when the student has not said their semester, or M05 did not say
+    which concepts a track holds; the mixed interview is then what it always
+    was."""
+    if not inputs.studied_concepts:
+        return {}
+    taught: dict[str, list[str]] = {}
+    for round_type in available:
+        holds = set((inputs.tracks.get(round_type) or {}).get("concept_ids") or ())
+        overlap = [c for c in inputs.studied_concepts if c in holds]
+        if overlap:
+            taught[round_type] = overlap
+    return taught
 
 
 def _track_kind(inputs: PlanInputs, round_type: str) -> SegmentKind:

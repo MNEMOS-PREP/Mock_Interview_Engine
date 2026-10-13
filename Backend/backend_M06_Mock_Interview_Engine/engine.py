@@ -699,14 +699,17 @@ class Engine:
         type that can serve them might answer 409.
         """
         coverage, requirements = self._coverage(row, state)
+        studied = self._studied(row, state)
         # §6.1 steps 3–4: M04's posterior for what this posting asks about,
         # handed to M05 BEFORE the availability probe selects against it.
         # Until 2026-09-30 nothing fetched it, so every session's CAT started
-        # at the prior — "adaptive" from a standing start, every time.
+        # at the prior — "adaptive" from a standing start, every time. A
+        # mixed interview drawn from the student's courses seeds those.
         self._seed_for(
             row,
             [c for r in requirements for c in (r.get("concept_ids") or [])]
-            + list(state.focus_concepts),
+            + list(state.focus_concepts)
+            + list(studied),
         )
         rubrics = self._rubrics()
         scoreable = tuple(str(r["round_type"]) for r in rubrics) or (DEFAULT_ROUND_TYPE,)
@@ -730,6 +733,7 @@ class Engine:
                 focus_label=state.focus_label,
                 track=state.track,
                 tracks=self._tracks(),
+                studied_concepts=studied,
                 resume_included=state.include_resume,
                 resume_id=state.resume_id,
                 recent_personas=store.recent_panelists(
@@ -950,6 +954,23 @@ class Engine:
             log.info("M06: M05 tracks unavailable: %s", exc)
             return {}
         return {str(t["round_type"]): t for t in body.get("tracks") or [] if t.get("round_type")}
+
+    def _studied(self, row: InterviewSession, state: SessionState) -> tuple[str, ...]:
+        """What the student's courses have taught so far (M04's `/coursework`),
+        for a mixed interview only: a posting, a picked track or a focus each
+        already decides what is asked, so the call is not made for them.
+        Empty when M04 cannot say — the mixed interview is then what it was."""
+        if state.jd_id is not None or state.track or state.focus_concepts:
+            return ()
+        up = self.upstreams
+        if not up.available("M04"):
+            return ()
+        try:
+            body = up.m04.coursework(row.candidate_id)
+        except (UpstreamUnavailable, AttributeError) as exc:
+            log.info("M06: M04 coursework unavailable for %s: %s", row.id, exc)
+            return ()
+        return tuple(str(c) for c in (body or {}).get("studied_concepts") or [] if c)
 
     def _rubrics(self) -> list[dict]:
         """M13's rubric table: which round types it can score, and what each

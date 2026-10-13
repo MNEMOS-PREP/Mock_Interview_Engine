@@ -75,13 +75,27 @@ class LocalQuestions:
         No names: the playlist does not have any, and the planner's own
         fallback is the honest one."""
         found: dict[str, int] = {}
+        concepts: dict[str, set[str]] = {}
         for item in self.items:
+            primary = {
+                c["concept_id"] for c in item.get("concepts", []) if c.get("role") == "primary"
+            }
             for round_type in item["round_types"]:
                 found[round_type] = found.get(round_type, 0) + 1
+                concepts.setdefault(round_type, set()).update(primary)
+        # As M05 counts them since 2026-10-13: each track's primary concepts,
+        # the count and the ids both.
         return {
             "groups": [],
             "tracks": [
-                {"round_type": rt, "kind": "technical", "approved": n, "drafts": 0}
+                {
+                    "round_type": rt,
+                    "kind": "technical",
+                    "approved": n,
+                    "drafts": 0,
+                    "concepts": len(concepts[rt]),
+                    "concept_ids": sorted(concepts[rt]),
+                }
                 for rt, n in found.items()
             ],
         }
@@ -281,9 +295,17 @@ class FixtureCoveragePlanner:
 class FixtureMemory:
     """M04. `consent_id=None` by default — the true state of the platform today."""
 
-    def __init__(self, consent_id: UUID | None = None, posterior: dict[str, float] | None = None):
+    def __init__(
+        self,
+        consent_id: UUID | None = None,
+        posterior: dict[str, float] | None = None,
+        studied: list[str] | None = None,
+    ):
         self._consent = consent_id
         self._posterior = posterior or {}
+        #: What M04's `/coursework` answers for every student: by default
+        #: nothing, the state of a student who has not said their semester.
+        self.studied = list(studied or [])
         self.summaries: dict[UUID, dict[str, Any]] = {}
         #: turn_id -> the answer text M13's evidence will resolve against.
         self.artifacts: dict[UUID, str] = {}
@@ -331,6 +353,19 @@ class FixtureMemory:
 
     def consent(self, candidate_id: UUID, purpose: str) -> UUID | None:
         return self._consent
+
+    def coursework(self, candidate_id: UUID) -> dict[str, Any]:
+        """M04's `/coursework` shape (`curricula.coursework`), one course
+        holding everything studied — enough for a planner, which reads only
+        `studied_concepts`."""
+        course = {"code": "X101", "title": "Fixture course", "semester": 3, "current": True}
+        courses = [{**course, "concepts": list(self.studied)}] if self.studied else []
+        return {
+            "curriculum_id": "fixture" if self.studied else "",
+            "semester": 3 if self.studied else None,
+            "courses": courses,
+            "studied_concepts": list(self.studied),
+        }
 
     #: One hop of M04's ontology, in its shape, for the concepts the fixture
     #: playlist asks about. Stacks and hashing share arrays — which is what

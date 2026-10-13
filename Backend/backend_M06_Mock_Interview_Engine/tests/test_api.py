@@ -228,9 +228,13 @@ def test_a_focus_is_planned_as_one_segment(client, as_student):
     assert "Focus: Recursion" in titles
 
 
-def test_more_than_three_focus_concepts_is_refused(client, as_student):
-    four = [f"concept:c{i}" for i in range(4)]
-    assert _create(client, as_student, focus_concepts=four).status_code == 422
+def test_a_course_focus_of_eight_is_planned_and_nine_refused(client, as_student):
+    """A course sends its syllabus's concepts; eight is the ontology's most
+    for one session (M04 §3.2.1), and more is a request to sample, not focus."""
+    eight = [f"concept:c{i}" for i in range(8)]
+    assert _create(client, as_student, focus_concepts=eight, focus_label="OS").status_code == 201
+    nine = [f"concept:c{i}" for i in range(9)]
+    assert _create(client, as_student, focus_concepts=nine).status_code == 422
 
 
 def test_the_cohort_figure_counts_this_weeks_interviews_and_names_no_one(client, as_student):
@@ -241,3 +245,14 @@ def test_the_cohort_figure_counts_this_weeks_interviews_and_names_no_one(client,
     assert after["interviews_this_week"] == before["interviews_this_week"] + 1
     assert after["students_this_week"] >= 1
     assert set(after) == {"interviews_this_week", "students_this_week", "since"}
+
+
+def test_a_mixed_interview_follows_the_students_courses(client, as_student, upstreams):
+    """2026-10-13: M04's coursework reaches the plan, and M05 is seeded with
+    the student's own estimate on those concepts before the first question."""
+    upstreams.m04.studied = ["concept:recursion", "concept:sql_queries"]
+    sid = _create(client, as_student).json()["id"]
+    plan = client.post(f"/v1/interviews/{sid}/start", headers=as_student).json()["plan"]
+    technical = [s for s in plan["segments"] if s["kind"] == "technical"]
+    assert technical and technical[0]["concept_ids"] == ["concept:recursion"]
+    assert "what your courses have covered" in technical[0]["rationale"]

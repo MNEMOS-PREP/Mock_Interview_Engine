@@ -125,8 +125,11 @@ class SessionCreate(BaseModel):
     #: drive, not a second planner in this module.
     company_id: uuid.UUID | None = None
     drive_id: str | None = None
-    #: Concept ids to practise ("Practise Recursion" on Today). Up to three.
-    focus_concepts: list[str] = Field(default_factory=list, max_length=3)
+    #: Concept ids to practise: one from Today's "Practise Recursion", several
+    #: from a course ("Practise Operating Systems", 2026-10-13). Up to eight,
+    #: the most the ontology's sizing rule says one session can test (M04
+    #: §3.2.1: "4-8 of them in a 60-minute session").
+    focus_concepts: list[str] = Field(default_factory=list, max_length=8)
     focus_label: str | None = Field(default=None, max_length=80)
     #: The track the student picked on the setup page — an M05 round type
     #: from `GET /v1/bank/tracks`. None is a mixed interview.

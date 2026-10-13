@@ -407,3 +407,93 @@ def test_a_focus_without_a_label_is_named_from_its_concept():
     assert [s.title for s in plan.segments if s.kind == "technical"] == [
         "Focus: dynamic programming"
     ]
+
+
+# ── a mixed interview from the student's courses (2026-10-13) ──────────────
+
+COURSE_TRACKS = {
+    "dsa_verbal": {
+        "round_type": "dsa_verbal",
+        "concept_ids": ["concept:arrays", "concept:recursion"],
+    },
+    "os_verbal": {
+        "round_type": "os_verbal",
+        "concept_ids": ["concept:deadlocks", "concept:virtual_memory"],
+    },
+    "ml_verbal": {"round_type": "ml_verbal", "concept_ids": ["concept:decision_trees"]},
+}
+
+
+def mixed(**overrides) -> planner.PlanInputs:
+    base = {
+        "coverage": None,
+        "jd_id": None,
+        "requested_minutes": 30,
+        "available_round_types": ("dsa_verbal", "os_verbal", "ml_verbal"),
+        "tracks": COURSE_TRACKS,
+    }
+    base.update(overrides)
+    return inputs(**base)
+
+
+def parts(plan: InterviewPlan) -> dict[str, list[str]]:
+    return {s.rubric_round_types[0]: s.concept_ids for s in plan.segments if s.kind == "technical"}
+
+
+def test_a_mixed_interview_is_drawn_from_what_the_courses_taught():
+    """A third-semester student who has sat OS and DSA is not asked machine
+    learning they have not reached; each part leans on what they studied."""
+    plan = planner.assemble(mixed(studied_concepts=("concept:deadlocks", "concept:arrays")))
+    assert parts(plan) == {"dsa_verbal": ["concept:arrays"], "os_verbal": ["concept:deadlocks"]}
+    middle = [s for s in plan.segments if s.kind == "technical"]
+    assert all("what your courses have covered" in s.rationale for s in middle)
+
+
+def test_a_track_the_courses_barely_touch_waits_for_one_they_can_fill():
+    """Two shared concepts cannot fill a three-question part: first-year
+    maths' linear algebra does not make a machine-learning round."""
+    tracks = {
+        rt: {"round_type": rt, "concept_ids": [f"concept:{c}" for c in letters]}
+        for rt, letters in (("os_verbal", "abc"), ("ml_verbal", "xyz"))
+    }
+    studied = ("concept:a", "concept:b", "concept:c", "concept:x", "concept:y")
+    plan = planner.assemble(
+        mixed(
+            available_round_types=("os_verbal", "ml_verbal"),
+            tracks=tracks,
+            studied_concepts=studied,
+        )
+    )
+    assert list(parts(plan)) == ["os_verbal"]
+
+
+def test_without_coursework_the_mix_is_what_it_was():
+    plan = planner.assemble(mixed())
+    assert parts(plan) == {"dsa_verbal": [], "os_verbal": [], "ml_verbal": []}
+    assert not any("courses" in s.rationale for s in plan.segments)
+
+
+def test_courses_no_track_asks_about_leave_the_mix_as_it_was():
+    plan = planner.assemble(mixed(studied_concepts=("concept:sql_queries",)))
+    assert parts(plan) == {"dsa_verbal": [], "os_verbal": [], "ml_verbal": []}
+
+
+def test_a_picked_track_is_asked_as_picked():
+    """The student chose machine learning; their courses do not narrow it."""
+    plan = planner.assemble(
+        mixed(
+            track="ml_verbal",
+            available_round_types=("ml_verbal",),
+            studied_concepts=("concept:arrays", "concept:decision_trees"),
+        )
+    )
+    assert parts(plan) == {"ml_verbal": []}
+
+
+def test_each_part_is_steered_to_at_most_eight_studied_concepts():
+    many = tuple(f"concept:c{i}" for i in range(12))
+    tracks = {"dsa_verbal": {"round_type": "dsa_verbal", "concept_ids": list(many)}}
+    plan = planner.assemble(
+        mixed(available_round_types=("dsa_verbal",), tracks=tracks, studied_concepts=many)
+    )
+    assert parts(plan)["dsa_verbal"] == list(many[:8])  # freshest first

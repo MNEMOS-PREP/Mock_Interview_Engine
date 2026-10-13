@@ -152,6 +152,20 @@ class LiveMemory:
             or {}
         )
 
+    def coursework(self, candidate_id: UUID) -> dict[str, Any]:
+        """What the student's courses have taught so far (M04, 2026-10-13):
+        this semester's ticked courses, then every earlier semester's, with
+        `studied_concepts` their union, freshest first. Empty for a student
+        who has not said their programme or semester."""
+        return (
+            self.http.get(
+                f"/v1/candidates/{candidate_id}/coursework",
+                service=True,
+                headers=identity_headers(candidate_id),
+            ).body
+            or {}
+        )
+
     def consent(self, candidate_id: UUID, purpose: str) -> UUID | None:
         """The consent id M13 cites on every observation it writes.
 
