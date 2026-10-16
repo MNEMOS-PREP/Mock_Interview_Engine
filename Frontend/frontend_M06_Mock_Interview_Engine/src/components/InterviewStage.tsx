@@ -1168,18 +1168,33 @@ function SidePanel({
     }
   }
   const tabClass = (on: boolean) =>
-    `inline-flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-medium ${
-      on ? "border-brand text-brand" : "border-transparent text-ink-soft hover:text-ink"
+    `inline-flex h-11 items-center gap-2 px-4 text-sm font-medium ${
+      on ? "text-brand" : "text-ink-soft hover:text-ink"
     }`;
+  // One underline that slides to the chosen tab (2026-10-16), where each tab
+  // used to switch its own border on and off.
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const [underline, setUnderline] = useState<{ left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const active = tabsRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (active) setUnderline({ left: active.offsetLeft, width: active.offsetWidth });
+  }, [tab]);
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-raised">
-      <div role="tablist" className="flex border-b border-line">
+      <div ref={tabsRef} role="tablist" className="relative flex border-b border-line">
         <button role="tab" type="button" aria-selected={tab === "conversation"} className={tabClass(tab === "conversation")} onClick={() => setTab("conversation")}>
           Conversation
         </button>
         <button role="tab" type="button" aria-selected={tab === "notes"} className={tabClass(tab === "notes")} onClick={() => setTab("notes")}>
           Notes
         </button>
+        {underline && (
+          <span
+            aria-hidden
+            className="absolute -bottom-px left-0 h-0.5 rounded-full bg-brand transition-[transform,width] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)]"
+            style={{ width: underline.width, transform: `translateX(${underline.left}px)` }}
+          />
+        )}
       </div>
       {tab === "conversation" ? (
         // The history at reading size (2026-10-12): at the question's size it
