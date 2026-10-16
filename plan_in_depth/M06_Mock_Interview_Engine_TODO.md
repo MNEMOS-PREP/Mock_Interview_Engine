@@ -8,7 +8,7 @@
 >
 > _Day 6 moved no requirement across a line, and the number is right not to move: it deepened FR-6.3 (rounds now end, begin and say so) without completing it, because per-segment personas wait on day 9. The measure counts requirements, not work — which is the point of having one._
 >
-> _Method: `(met + ½ × partial) ÷ total`, audited against shipped code, 2026-09-17; re-checked 2026-10-04: unchanged. One measure applied the same way to all nineteen modules so they compare; it counts requirements, not screens or gates._
+> _Method: `(met + ½ × partial) ÷ total`, audited against shipped code, 2026-09-17; re-checked 2026-10-04 and 2026-10-17: unchanged. One measure applied the same way to all nineteen modules so they compare; it counts requirements, not screens or gates._
 
 Task list for taking **M6 — Mock Interview Engine** to 100% of [M06_Mock_Interview_Engine.md](M06_Mock_Interview_Engine.md) (Revision 2).
 
@@ -19,7 +19,7 @@ Task list for taking **M6 — Mock Interview Engine** to 100% of [M06_Mock_Inter
 
 - **Phase:** 1–2 · **Owner:** E2 · **Ports:** API `8106`, web `5206`
 - **Repo:** `Mock_Interview_Engine` — on disk at `projects\Mock_Interview_Engine` (the folder must equal the repo name, or `launch.ps1` skips it)
-- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.34.0 on the frontend (since 2026-10-12). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
+- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.37.0 on the frontend (since 2026-10-14). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
 
 Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked on another module
 
@@ -44,9 +44,9 @@ _Nothing scouted for this module yet._
 | | |
 |---|---|
 | Status | **Days 1–15 of 15 done — the build order is complete.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **390**, no socket opened, no API key |
-| Release gates (`-m gate`) | **79** |
-| Route decorators | **31** on `/v1`, plus `/health` and `/status` |
+| Backend tests passing | **564**, no socket opened, no API key (counted 2026-10-17) |
+| Release gates (`-m gate`) | **81** |
+| Route decorators | **42** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
 | Live chain | **2026-10-02**: M02 → M06 → M05 → M13 → M04, M04's guard on — 4 artifacts, 4 evaluations, 3 ledger rows delivered; hashing, time complexity and hashing internals moved to `emerging`; anonymous and cross-student reads 403, theta without the service secret 401 |
@@ -1084,6 +1084,34 @@ The user sat interviews and listed what felt wrong. Each item, as fixed:
   goodbye. An unknown track id is refused with a 422.
 - ✅ The notes call a resume question and a backup question what they are
   (`e8b02aa`).
+
+### 2026-10-13/16 — interviews drawn from the student's courses; each interviewer in an office
+
+- ✅ **A mixed interview is drawn from the student's courses** (`135b584`):
+  with no posting, track or focus, the planner reads M04's `/coursework` and
+  keeps only the tracks those courses fill — a track counts when the courses
+  cover at least a part's worth (three) of its concepts, so first-year
+  maths' linear algebra does not make a machine-learning round. Each part's
+  concepts become M05's coverage debt (a preference, never a filter), and
+  M05 is seeded with M04's estimate on them before the first question. Live:
+  a CSE-AI third-semester student who has sat OS, DSA and networks gets
+  those, not machine learning. With a posting, a track or a focus the plan is
+  exactly what it was.
+- ✅ **A course's practice is up to eight concepts** (`focus_concepts`, was
+  three): Today's course card sends its syllabus's concepts, and eight is the
+  most the ontology's sizing rule says one session can test. `?focus=` takes
+  a comma-separated list, and the choice is named "Course: <title>".
+- ✅ **The setup page** (`47d1d87`): six interviewers and "Show all 39"
+  instead of five screens of them; titles and explanations wrap; a row of
+  cards is top-aligned; unreviewed tracks say "not scored" (the "practice"
+  chip read as the Practice mode).
+- ✅ **Each interviewer in their own office** (`ed1924b`): `@ai/core` v0.37.0,
+  abhinav's office backdrop. The photo tiles pass `backdrop`, so the room is
+  the same before and after a head loads, and captions keep the name whole.
+  Checked with WebGL in two fresh sessions.
+- ✅ **One underline slides between Conversation and Notes** (`840b863`).
+- No requirement moves. Counted 2026-10-17 by running the suite: **564
+  passed**, **81** gates.
 
 ### 2026-10-12 — abhinav's room and second interviewer, merged
 
