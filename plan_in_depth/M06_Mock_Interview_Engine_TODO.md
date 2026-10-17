@@ -1085,6 +1085,22 @@ The user sat interviews and listed what felt wrong. Each item, as fixed:
 - ✅ The notes call a resume question and a backup question what they are
   (`e8b02aa`).
 
+### 2026-10-17 — a decision: two keys, two organizations?
+
+- ⬜ **Key rotation and Groq's policy — the user's call.** M06's `KeyRing`
+  cycles the two `GROQ_API_KEYS` and retries a 429 on the next key. Measured
+  on 2026-10-17 from the rate-limit headers, the two keys have **separate
+  quotas** (8,000 tokens/min and 1,000 requests/day each, per model), and Groq
+  applies limits per organization — so they are almost certainly two
+  organizations. Groq's Acceptable Use Policy (effective 2025-10-15) forbids
+  use "beyond published parameters, rate limits, or use limitations, including
+  by registering multiple accounts or orchestrating usage between multiple
+  organizations." If they are two organizations: one key per running platform,
+  and headroom from spreading jobs across models (each has its own bucket) and
+  pacing. Switching keys because one is revoked or down is fine; retrying a
+  429 on another organization's key is the forbidden part. Same decision in
+  M13 and in Platform_Core's `ai_core.models`.
+
 ### 2026-10-13/16 — interviews drawn from the student's courses; each interviewer in an office
 
 - ✅ **A mixed interview is drawn from the student's courses** (`135b584`):
