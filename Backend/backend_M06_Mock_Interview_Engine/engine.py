@@ -56,6 +56,7 @@ from .modes import mode_config
 from .orchestration import Deps, Selected, StepInput, StepResult, build, enabled, run_step
 from .orchestration.graph import MIN_SECONDS_FOR_A_QUESTION, UNJUDGED
 from .personas import Persona, persona
+from .phrasebook import GENERIC_RUNGS
 from .state import InvalidTransition, SessionState
 from .state import apply as apply_event
 
@@ -226,9 +227,15 @@ _BETWEEN = (
 
 
 def stock_phrases(who: Persona, panel: list[Persona], titles: list[str]) -> list[str]:
-    """What `who` may say between questions, names and topics in place."""
+    """What `who` may say between questions, names and topics in place.
+
+    The generic follow-ups and the "can I come in" are said word for word, so
+    they are made ahead too (2026-10-21): "Can you say more about why that
+    works?" was made live in one mock and first heard 7 s after the answer —
+    a short question that seemed not to be read out at all."""
     said = who.said()
     out = [getattr(said, field, "") for field in _BETWEEN]
+    out += [said.interject, *GENERIC_RUNGS.values(), *who.acknowledgements, *who.credit]
     others = [p for p in panel if p.id != who.id]
     out += [said.hand_over.format(name=p.name) for p in others]
     out += [said.take_over.format(name=p.name) for p in others]

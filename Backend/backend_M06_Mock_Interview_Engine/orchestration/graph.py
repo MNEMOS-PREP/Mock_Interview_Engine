@@ -38,6 +38,7 @@ the engine can forward them to SSE while the step is still running.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import operator
 import re
@@ -475,13 +476,83 @@ def _interjection(
     return sitting if depth == 1 and came_in < (asked_here + 1) // 2 else None
 
 
-def _taken_back(state: SessionState, owner: Persona, panel: list[Persona]) -> str:
-    """The asker's "Thanks, Vikram." after someone else's follow-up."""
+def _came_in(state: SessionState, persona_id: str) -> bool:
+    """They asked a follow-up of their own somewhere in this interview."""
+    return any(
+        t.role == "interviewer" and t.speaker_id == persona_id and t.probe_move is not None
+        for t in state.transcript
+    )
+
+
+def _taken_back(
+    state: SessionState, owner: Persona, panel: list[Persona], *, closing: bool = False
+) -> str:
+    """The asker's "Thanks, Vikram." after someone else's follow-up — the
+    first time only. The user, 2026-10-21: the host thanking the second
+    interviewer after every follow-up "becomes annoying; once in the
+    beginning and once at the end should be enough". So the first hand-back
+    from each colleague thanks them, later ones take the question back
+    without a word, and at the `closing` the one asking thanks, once more,
+    everyone who came in."""
+    said = owner.said()
+    already = " ".join(spoken_by(state, owner.id))
+    thanked: list[Persona] = []
     last = next((t for t in reversed(state.transcript) if t.role == "interviewer"), None)
-    if last is None or last.speaker_id in (None, owner.id):
+    if last is not None and last.speaker_id not in (None, owner.id):
+        other = next((p for p in panel if p.id == last.speaker_id), None)
+        if other is not None and said.take_over.format(name=other.name) not in already:
+            thanked.append(other)
+    if closing:
+        thanked += [
+            p
+            for p in panel
+            if p.id != owner.id and p.id not in {t.id for t in thanked} and _came_in(state, p.id)
+        ]
+    return "".join(f"{said.take_over.format(name=p.name)} " for p in thanked)
+
+
+#: An answer that moves on gets no word before the next question this often…
+SAY_NOTHING = 0.3
+#: …and, when it counted, a credit word this often (the rest: a plain
+#: acknowledgement). One draw per question, so a replay says the same.
+SAY_CREDIT = 0.4
+
+
+def _first_word(text: str) -> str:
+    return (text.split() or [""])[0].strip(",.!?—").lower()
+
+
+def word_draw(seed: str, key: str) -> float:
+    """A number in [0, 1) for this question and word choice — the same on a
+    replay, different from one question to the next. Its own, not the
+    panel's `draw`: the suite pins the seating, and that must not silence
+    every acknowledgement with it."""
+    digest = hashlib.sha1(f"{seed}:{key}".encode()).digest()
+    return int.from_bytes(digest[:4], "big") / 2**32
+
+
+def _acknowledgement(
+    state: SessionState, persona: Persona, outcome: Outcome | None, then: str
+) -> str:
+    """What the interviewer says after an answer, before what comes `then`
+    (2026-10-21, the user: "a mix of all possible words, and sometimes just
+    the next question"). A credit word ("Very good.", "Nicely put.") only
+    after an answer the ladder counted a success; a plain one ("Hmm, okay.")
+    after any; and sometimes nothing. Never the word they used last, nor one
+    that opens what follows — "Okay. Okay, here's the next one.\""""
+    roll = word_draw(f"{state.session_id}:{state.questions_asked}", f"ack:{persona.id}")
+    if roll < SAY_NOTHING:
         return ""
-    other = next((p for p in panel if p.id == last.speaker_id), None)
-    return f"{owner.said().take_over.format(name=other.name)} " if other is not None else ""
+    counted = outcome is not None and outcome.success is True
+    credit = counted and persona.credit and roll < SAY_NOTHING + SAY_CREDIT
+    pool = persona.credit if credit else persona.acknowledgements
+    recent = " ".join(spoken_by(state, persona.id)[-4:])
+    opens = _first_word(then)
+    fresh = [w for w in pool if w not in recent and _first_word(w) != opens]
+    if not fresh:
+        return ""
+    pick = word_draw(f"{state.session_id}:{state.questions_asked}", f"pick:{persona.id}")
+    return fresh[int(pick * len(fresh))]
 
 
 def spoken_by(state: SessionState, persona_id: str) -> list[str]:
@@ -498,7 +569,9 @@ def spoken_by(state: SessionState, persona_id: str) -> list[str]:
     return out
 
 
-def _fresh_exit(state: SessionState, persona: Persona, line: str) -> str:
+def _fresh_exit(
+    state: SessionState, persona: Persona, line: str, others: tuple[str, ...] | None = None
+) -> str:
     """Nobody closes a question the same way every time: a live panel run
     heard the professor say "That's where it gets subtle. Let's leave it
     there for now." eight answers running (2026-10-07). When this interviewer
@@ -509,11 +582,18 @@ def _fresh_exit(state: SessionState, persona: Persona, line: str) -> str:
     # words, part by part: a hand-over turn belongs to the one arriving, and
     # read whole it hid the leaving one's exit and lent them the other's
     # (2026-10-08: "Okay, let's leave that there." twice running).
+    #
+    # `others` are the exits that may stand in. The default borrowed any of
+    # the three, so a struggled answer could close on "that covers it" and a
+    # good one on "that's where it gets subtle" (2026-10-21): a borrowed line
+    # carries the verdict of the answer it was written for.
     recent = " ".join(spoken_by(state, persona.id)[-3:])
     if not line or line not in recent:
         return line
     said = persona.said()
-    for other in (said.moving_on, said.ceiling_exit, said.graceful_exit):
+    if others is None:
+        others = (said.moving_on, said.ceiling_exit, said.graceful_exit)
+    for other in others:
         if other and other != line and other not in recent:
             return other
     return line
@@ -934,13 +1014,25 @@ def build(deps: Deps):
         elif nudge:
             exit_line = said_leaving.keep_moving
         else:
-            exit_line = _fresh_exit(
-                inp.state,
-                leaving,
-                Interviewer.exit_then(
-                    said_leaving, graceful=graceful, ceiling=outcome.ceiling is not None
-                ),
-            )
+            recent = " ".join(spoken_by(inp.state, leaving.id)[-3:])
+            if graceful:
+                exit_line = _fresh_exit(
+                    inp.state, leaving, said_leaving.graceful_exit, (said_leaving.moving_on,)
+                )
+            elif outcome.ceiling is not None and said_leaving.ceiling_exit not in recent:
+                exit_line = said_leaving.ceiling_exit
+            else:
+                # An answer that moves on: a word that it was heard, varied,
+                # and sometimes none (2026-10-21).
+                then = (
+                    said_leaving.hand_over.format(name=arriving.name)
+                    if (s.get("bridge") or inp.state.pending_bridge) and arriving.id != leaving.id
+                    else s.get("bridge")
+                    or inp.state.pending_bridge
+                    or (said_arriving.bridge_to_closing if closing_next else "")
+                    or said_arriving.next_question_lead
+                )
+                exit_line = _acknowledgement(inp.state, leaving, outcome, then)
             cadence = leaving.note_taking_cadence
             if (
                 not graceful
@@ -958,10 +1050,20 @@ def build(deps: Deps):
             # A hand-over (FR-6.3): the one leaving names the one arriving,
             # who thanks them and takes the round — two voices, not a cut.
             handing = f"{exit_line} {said_leaving.hand_over.format(name=arriving.name)}"
-            taking = f"{said_arriving.take_over.format(name=leaving.name)} {bridge}"
+            # Into the closing, the one arriving also thanks, once, anyone
+            # else who came in during the interview.
+            also = "".join(
+                f"{said_arriving.take_over.format(name=p.name)} "
+                for p in seated
+                if closing_next
+                and p.id not in (leaving.id, arriving.id)
+                and _came_in(inp.state, p.id)
+            )
+            taking = f"{said_arriving.take_over.format(name=leaving.name)} {also}{bridge}"
             return [*before, (leaving.id, handing)], taking, nudge
-        # After someone else's follow-up, the asker takes the question back.
-        back = _taken_back(inp.state, leaving, seated)
+        # After someone else's follow-up, the asker takes the question back:
+        # thanked the first time, and once more at the closing.
+        back = _taken_back(inp.state, leaving, seated, closing=closing_next)
         if bridge:
             # A new round starts. The bridge replaces "next question", because
             # saying both ("Okay, let's leave that there. Next question. Let's
@@ -1080,9 +1182,14 @@ def build(deps: Deps):
         closing = lead.said()
         parts: list[tuple[str, str]] = []
         if outcome is not None:
-            exit_line = Interviewer.exit_then(
-                lines, graceful=outcome.move.graceful, ceiling=outcome.ceiling is not None
-            )
+            if outcome.move.graceful or outcome.ceiling is not None:
+                exit_line = Interviewer.exit_then(
+                    lines, graceful=outcome.move.graceful, ceiling=outcome.ceiling is not None
+                )
+            else:
+                # "Let's move on" with nothing to move on to read oddly before
+                # goodbye; an answer that moved on gets its acknowledgement.
+                exit_line = _acknowledgement(inp.state, owner, outcome, closing.session_close)
             parts.append((owner.id, exit_line))
         if reason == "time":
             parts.append((lead.id, closing.time_up))

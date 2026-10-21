@@ -49,7 +49,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from .agents.guard import screen
 from .contracts import DEPTH_CAP
-from .phrasebook import BACKCHANNELS, LINES, Lines, Register
+from .phrasebook import ACKNOWLEDGEMENTS, BACKCHANNELS, CREDIT, LINES, Lines, Register
 
 PERSONA_DIR = Path(__file__).resolve().parent / "personas"
 
@@ -177,6 +177,16 @@ class Persona(BaseModel):
     def backchannels(self) -> tuple[str, ...]:
         """M11's FR-11.11: what this interviewer says while the student talks."""
         return BACKCHANNELS[self.speech]
+
+    @property
+    def acknowledgements(self) -> tuple[str, ...]:
+        """What this interviewer may say after any answer, before the next."""
+        return ACKNOWLEDGEMENTS[self.speech]
+
+    @property
+    def credit(self) -> tuple[str, ...]:
+        """What this interviewer may say only after an answer that counted."""
+        return CREDIT[self.speech]
 
     @property
     def backchannel_every_s(self) -> float:

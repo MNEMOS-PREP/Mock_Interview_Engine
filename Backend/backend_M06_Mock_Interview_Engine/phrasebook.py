@@ -6,7 +6,10 @@ They are on the hot path, and a template costs nothing. And they are the lines
 that must NEVER say "wrong", "incorrect" or "you should know this" — copy
 nobody generates is copy nobody has to police. No line praises an answer
 mid-session either: "that's a solid way to think about it" telegraphs a
-verdict as surely as "wrong" does (Trap 6).
+verdict as surely as "wrong" does (Trap 6). One exception, the user's call
+(2026-10-21): a short credit word ("Very good.", "Nicely put.") may follow an
+answer that counted — one of three things such an answer may get, so its
+absence never reads as a verdict (`CREDIT`).
 
 One table per register. A persona (`personas/*.yaml`) chooses a register and
 may override individual lines — its own greeting, its own exit — and every
@@ -343,6 +346,46 @@ BACKCHANNELS: dict[Register, tuple[str, ...]] = {
     "bar_raiser": ("Okay.",),
 }
 
+#: Said after an answer, before the next question: that it was heard, and
+#: nothing about how it went (2026-10-21, the user: "when my answer is
+#: correct it moves to the next question without anything like hmm, good,
+#: well said — it should be a mix, and sometimes just the next question").
+#: Any answer that moves on may get one of these, or none.
+#:
+#: Chosen by M11's probe, not by taste (2026-10-21, Voice_Engine
+#: `research/acknowledgements`): every candidate said by all eight cast voices
+#: and read back by Whisper. M11 keeps each voice's first render for good, so
+#: a word one voice garbles is garbled for every student who meets it. Out:
+#: "Understood." ("on twist tooth"), "Right." (three voices), "Alright." ("all
+#: eight"), "Hmm." alone ("Mmm. Audi next."), "I see." alone (a garbled tail
+#: in one voice), "Fair enough." ("sad enough"). In: what came back as itself
+#: in all eight — "Hmm, okay." and "Hmm, I see." included, where at worst the
+#: "hmm" is lost and an "Okay." remains.
+ACKNOWLEDGEMENTS: dict[Register, tuple[str, ...]] = {
+    "friendly": ("Okay.", "Got it.", "Hmm, okay.", "Hmm, I see.", "Okay, thank you."),
+    "neutral": ("Okay.", "Got it.", "Hmm, okay.", "Hmm, I see.", "Okay, thank you."),
+    "bar_raiser": ("Okay.", "Hmm, okay."),
+}
+
+#: Said only after an answer the ladder counted a success — never after one
+#: that ended gracefully, where it would be a false word. This relaxes Trap 6
+#: on the user's call (2026-10-21) and keeps its point: a credit word is one
+#: of three things a good answer may get (a credit, a plain acknowledgement,
+#: nothing), so its absence never reads as "wrong". Final Boss gives none:
+#: its interviewers are never warm (§6.4).
+#:
+#: The same probe: "Good." alone came back "bullet." in one voice, "Nice."
+#: trailed into "what, what, what do you…", and "Well said." was "Wang said"
+#: and "When said" — so the words a student hears for those are "Very good.",
+#: "Nice, thank you." and "Nicely put.", clean in all eight.
+CREDIT: dict[Register, tuple[str, ...]] = {
+    "friendly": (
+        "Very good.", "Nicely put.", "That makes sense.", "Good, thank you.", "Nice, thank you.",
+    ),
+    "neutral": ("Very good.", "Nicely put.", "That makes sense.", "Good, thank you."),
+    "bar_raiser": (),
+}  # fmt: skip
+
 #: The rung names are the fallback when a question has no follow-up of its
 #: own at that depth (spec §6.5). Phrased to be answerable about anything.
 GENERIC_RUNGS: dict[int, str] = {
@@ -399,7 +442,9 @@ def lines(register: Register = "neutral") -> Lines:
 
 
 __all__ = [
+    "ACKNOWLEDGEMENTS",
     "BACKCHANNELS",
+    "CREDIT",
     "GENERIC_RUNGS",
     "LINES",
     "RUDE",

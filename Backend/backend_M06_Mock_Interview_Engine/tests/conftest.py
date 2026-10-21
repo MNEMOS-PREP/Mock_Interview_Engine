@@ -39,6 +39,11 @@ def _fixed_seating(request, monkeypatch):
         from backend_M06_Mock_Interview_Engine import panel
 
         monkeypatch.setattr(panel, "draw", lambda seed, persona_id: 0.0)
+        # The words between questions vary by question too (2026-10-21):
+        # pinned the same way, so a line's text is the same every run.
+        from backend_M06_Mock_Interview_Engine.orchestration import graph
+
+        monkeypatch.setattr(graph, "word_draw", lambda seed, key: 0.0)
 
 
 @pytest.fixture(autouse=True)
