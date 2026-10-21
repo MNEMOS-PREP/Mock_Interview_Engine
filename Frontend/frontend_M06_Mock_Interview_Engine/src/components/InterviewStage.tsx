@@ -1041,6 +1041,52 @@ function PauseButton({
 const FLAG_REASONS = ["Unclear", "Wrong or broken", "Not relevant to the role"];
 
 
+const CAMERA_KEY = "m06.camera";
+
+function rememberedCamera(): string | null {
+  try {
+    return localStorage.getItem(CAMERA_KEY);
+  } catch {
+    return null; // private mode: the browser's own default each time
+  }
+}
+
+function rememberCamera(deviceId: string): void {
+  try {
+    localStorage.setItem(CAMERA_KEY, deviceId);
+  } catch {
+    /* private mode: chosen for this room only */
+  }
+}
+
+/**
+ * Which camera (2026-10-21, the user: "use my local PC camera — I don't know
+ * why it tries to access my phone camera"). The room asked for
+ * `facingMode: "user"`, which is a phone's question: on Windows a phone
+ * linked through Phone Link is a camera that declares it faces the user, and
+ * a laptop's own webcam often declares nothing, so the phone won. Now a
+ * desktop asks for no facing at all — the browser's own default camera —
+ * unless the student picked one here before, and a phone (a coarse pointer)
+ * still asks for its front camera.
+ */
+async function openCamera(deviceId: string | null): Promise<MediaStream> {
+  if (deviceId) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } },
+        audio: false,
+      });
+    } catch {
+      // The remembered camera is gone (unplugged, another machine): default.
+    }
+  }
+  const phone = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+  return navigator.mediaDevices.getUserMedia({
+    video: phone ? { facingMode: "user" } : true,
+    audio: false,
+  });
+}
+
 /** The student's own tile (2026-10-11): their place in the call. The camera is
  *  OFF and stays off until they turn it on; when on, it is a preview for them
  *  alone — nothing is recorded, uploaded or sent, and it stops when they turn
@@ -1048,6 +1094,8 @@ const FLAG_REASONS = ["Unclear", "Wrong or broken", "Not relevant to the role"];
 function YouTile({ level, listening }: { level: () => number; listening: boolean }) {
   const [on, setOn] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [current, setCurrent] = useState<string | null>(null);
   const video = useRef<HTMLVideoElement | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const release = () => {
@@ -1057,7 +1105,17 @@ function YouTile({ level, listening }: { level: () => number; listening: boolean
   useEffect(() => release, []);
   useEffect(() => {
     if (on && video.current && stream.current) video.current.srcObject = stream.current;
-  }, [on]);
+  }, [on, current]);
+  async function start(deviceId: string | null) {
+    release();
+    stream.current = await openCamera(deviceId);
+    const id = stream.current.getVideoTracks()[0]?.getSettings().deviceId ?? null;
+    setCurrent(id);
+    // Labels are only given once a camera is allowed, so the list is read now.
+    const all = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+    setCameras(all.filter((device) => device.kind === "videoinput" && device.deviceId));
+    return id;
+  }
   async function toggle() {
     if (on) {
       release();
@@ -1065,10 +1123,7 @@ function YouTile({ level, listening }: { level: () => number; listening: boolean
       return;
     }
     try {
-      stream.current = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" },
-        audio: false,
-      });
+      await start(rememberedCamera());
       setNote(null);
       setOn(true);
     } catch {
@@ -1076,6 +1131,20 @@ function YouTile({ level, listening }: { level: () => number; listening: boolean
       setOn(false);
     }
   }
+  /** The next camera the browser can see, remembered for the next room. */
+  async function switchCamera() {
+    const at = cameras.findIndex((camera) => camera.deviceId === current);
+    const next = cameras[(at + 1) % cameras.length];
+    if (!next) return;
+    try {
+      const id = await start(next.deviceId);
+      if (id) rememberCamera(id);
+      setNote(null);
+    } catch {
+      setNote("That camera isn't available.");
+    }
+  }
+  const currentLabel = cameras.find((camera) => camera.deviceId === current)?.label;
   return (
     <figure className="min-w-0 overflow-hidden rounded-xl border border-line bg-surface">
       <div className="relative aspect-[4/3] w-full bg-surface-sunken [@media(max-height:800px)]:aspect-video">
@@ -1108,6 +1177,22 @@ function YouTile({ level, listening }: { level: () => number; listening: boolean
             {!on && <path d="m3 3 18 18" />}
           </svg>
         </button>
+        {on && cameras.length > 1 && (
+          <button
+            type="button"
+            onClick={switchCamera}
+            aria-label={`Use another camera${currentLabel ? ` (now: ${currentLabel})` : ""}`}
+            title={`Use another camera${currentLabel ? ` — now: ${currentLabel}` : ""}`}
+            className="absolute right-11 bottom-2 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white hover:bg-black/70"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M4 9a8 8 0 0 1 14.3-3.7L20 7" />
+              <path d="M20 3v4h-4" />
+              <path d="M20 15a8 8 0 0 1-14.3 3.7L4 17" />
+              <path d="M4 21v-4h4" />
+            </svg>
+          </button>
+        )}
       </div>
       <figcaption className="flex min-w-0 items-center justify-between gap-2 px-2.5 py-1.5 text-2xs">
         <span className="truncate font-medium text-ink">You</span>
