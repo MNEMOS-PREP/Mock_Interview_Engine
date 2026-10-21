@@ -78,6 +78,7 @@ import {
   keepingAnswers,
   looksLikeBluetooth,
   serverAsrAvailable,
+  setBackdropSeed,
   setKeepingAnswers,
   InterviewerPhoto,
   TalkingHead,
@@ -1353,6 +1354,10 @@ function QuestionInfo({
 }
 
 export function InterviewStage({ sessionId }: { sessionId: string }) {
+  // Each interviewer's room is chosen for this interview (core v0.39.0): set
+  // before the tiles are drawn, so a reload keeps the same rooms and the next
+  // interview has new ones.
+  useMemo(() => setBackdropSeed(sessionId), [sessionId]);
   const session = useSession(sessionId);
   const start = useStart(sessionId);
   const answer = useAnswer(sessionId);

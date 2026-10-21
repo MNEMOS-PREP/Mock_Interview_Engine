@@ -13,6 +13,6 @@
     "preview": "vite preview --port 5206"
   },
   "dependencies": {
-    "@ai/core": "github:MNEMOS-PREP/Platform_Core#v0.37.0"
+    "@ai/core": "github:MNEMOS-PREP/Platform_Core#v0.39.0"
   }
 }
