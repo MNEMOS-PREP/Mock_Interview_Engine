@@ -95,19 +95,108 @@ function minutes(value: number): string {
   return Number.isInteger(value) ? `${value} min` : `${value.toFixed(1)} min`;
 }
 
+/** A face in a part's row, and how much of the next one shows beside it. */
+const FACE = 32;
+const FACE_OVERLAP = 22;
+
+/** A part with no topic of its own: the lead's, and nobody sits in on it. */
+const BOOKEND = new Set(["warmup", "closing"]);
+
+/** "a", "a and b", "a, b and c". */
+function listed(items: string[]): string {
+  return items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+}
+
+/**
+ * Everyone the student will meet, before the parts (2026-10-21). The parts
+ * each name one person — who asks — so a panel whose second member sits in
+ * on the lead's round showed one face down the whole list, and the student
+ * read "a panel of one". Each person here says what they do, in the plan's
+ * own words: which parts they run, or which they sit in on.
+ */
+function PanelStrip({
+  people,
+}: {
+  people: { card: PersonaCard; role: string }[];
+}) {
+  if (people.length < 2) return null;
+  return (
+    <section aria-labelledby="your-panel" className="mt-5">
+      <h2 id="your-panel" className="text-sm font-medium text-ink">
+        Your panel · {people.length} interviewers
+      </h2>
+      <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+        {people.map(({ card, role }) => (
+          <li key={card.id} className="flex items-start gap-3 rounded-lg border border-line bg-surface px-3 py-2.5">
+            <Face persona={card.id} name={card.name} size={40} />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-ink">{card.name}</p>
+              <p className="text-2xs text-ink-faint">{card.title}</p>
+              <p className="mt-1 text-2xs leading-relaxed text-ink-soft">{role}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** What each panelist does, from the plan itself: the parts they run, or
+ *  the parts they sit in on. In seating order, the lead first. */
+function panelRoles(
+  panel: string[],
+  live: PlannedSegment[],
+  byId: Map<string, PersonaCard>,
+): { card: PersonaCard; role: string }[] {
+  const middle = live.filter((s) => !BOOKEND.has(s.kind));
+  const ids = [...new Set([...live.map((s) => s.persona_id), ...panel])];
+  return ids
+    .map((id) => byId.get(id))
+    .filter((card): card is PersonaCard => card !== undefined)
+    .map((card) => {
+      const runs = live.filter((s) => s.persona_id === card.id);
+      if (runs.length === 0) {
+        const on = listed(middle.map((s) => s.title));
+        return {
+          card,
+          role: on
+            ? `Sits in on ${on}, and comes in with follow-ups.`
+            : "Sits in, and comes in with follow-ups.",
+        };
+      }
+      const opens = runs.some((s) => s.kind === "warmup");
+      const closes = runs.some((s) => s.kind === "closing");
+      const parts = runs.filter((s) => !BOOKEND.has(s.kind)).map((s) => s.title);
+      const doing = [
+        ...(opens ? ["opens"] : []),
+        ...(parts.length ? [`asks the ${listed(parts)} questions`] : []),
+        ...(closes ? ["closes"] : []),
+      ];
+      const said = listed(doing);
+      return { card, role: `${said.charAt(0).toUpperCase()}${said.slice(1)}.` };
+    });
+}
+
 function SegmentRow({
   segment,
   onDrop,
   busy,
   who,
+  alongside = [],
+  faceWidth = FACE,
 }: {
   segment: PlannedSegment;
   onDrop: () => void;
   busy: boolean;
   /** FR-6.3: a mock is a panel, so the preview says who runs each part. */
   who?: PersonaCard;
+  /** Whoever sits in on this part: at the table, with follow-ups. */
+  alongside?: PersonaCard[];
+  /** The face column's width, the same on every row. */
+  faceWidth?: number;
 }) {
   const dropped = segment.dropped_reason !== null;
+  const others = dropped ? [] : alongside;
   return (
     <li
       className={`flex items-start justify-between gap-4 border-b border-line py-3 last:border-0 ${
@@ -115,8 +204,15 @@ function SegmentRow({
       }`}
     >
       {who && !dropped && (
-        <span className="mt-0.5">
-          <Face persona={who.id} name={who.name} size={32} />
+        // Everyone at the table for this part, the one asking in front. One
+        // width for every row, so the titles line up however many sit in.
+        <span className="mt-0.5 flex shrink-0" style={{ width: faceWidth }}>
+          <Face persona={who.id} name={who.name} size={FACE} />
+          {others.map((card) => (
+            <span key={card.id} className="-ml-2.5 rounded-full ring-2 ring-surface">
+              <Face persona={card.id} name={card.name} size={FACE} />
+            </span>
+          ))}
         </span>
       )}
       <div className="min-w-0 flex-1">
@@ -132,6 +228,7 @@ function SegmentRow({
         </p>
         <p className="mt-0.5 text-2xs text-ink-faint">
           {who && !dropped && `with ${who.name}, ${who.title} · `}
+          {others.length > 0 && `${listed(others.map((card) => card.name))} sitting in · `}
           {minutes(segment.minutes)}
           {segment.question_budget > 0 &&
             ` · ${segment.question_budget} question${segment.question_budget === 1 ? "" : "s"}`}
@@ -248,7 +345,8 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
   const sittingIn = (built?.panel ?? [])
     .filter((id) => !runsAPart.has(id))
     .map((id) => byId.get(id))
-    .filter((card) => card !== undefined);
+    .filter((card): card is PersonaCard => card !== undefined);
+  const panelPeople = panelRoles(built?.panel ?? [], live, byId);
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -267,6 +365,8 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
         }
       />
 
+      <PanelStrip people={panelPeople} />
+
       <div className="mt-5">
         <Card>
           {segments.length === 0 ? (
@@ -280,6 +380,8 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
                 <SegmentRow
                   key={segment.index}
                   who={byId.get(segment.persona_id)}
+                  alongside={BOOKEND.has(segment.kind) ? [] : sittingIn}
+                  faceWidth={FACE + FACE_OVERLAP * sittingIn.length}
                   segment={segment}
                   busy={drop.isPending}
                   onDrop={() => drop.mutate(segment.index)}
@@ -289,17 +391,6 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
           )}
         </Card>
       </div>
-
-      {sittingIn.length > 0 && (
-        // FR-6.3: someone at the table without a part of their own.
-        <p className="mt-3 text-sm text-ink-soft">
-          Also on the panel:{" "}
-          {sittingIn
-            .map((card) => `${card.name} (${card.title})`)
-            .join(", ")}{" "}
-          — sitting in, with a follow-up now and then.
-        </p>
-      )}
 
       <p className="mt-3 text-2xs text-ink-faint">
         {minutes(totalMinutes)} · {totalQuestions} question
