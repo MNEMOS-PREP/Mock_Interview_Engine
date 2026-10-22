@@ -44,7 +44,7 @@ _Nothing scouted for this module yet._
 | | |
 |---|---|
 | Status | **Days 1–15 of 15 done — the build order is complete.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **564**, no socket opened, no API key (counted 2026-10-17) |
+| Backend tests passing | **570**, no socket opened, no API key (counted 2026-10-22) |
 | Release gates (`-m gate`) | **81** |
 | Route decorators | **42** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
@@ -1085,6 +1085,37 @@ The user sat interviews and listed what felt wrong. Each item, as fixed:
 - ✅ The notes call a resume question and a backup question what they are
   (`e8b02aa`).
 
+### 2026-10-22 — what the demo can claim: follow-ups, adaptivity, scoring
+
+An audit for the demo reference (`Final_Year_Project/demo_interview.md`,
+untracked), against M06 `9769401`, M05 `7634858` and M13 `77ead37`. No code
+changed. The engine does what it was designed to; what it has to work with is
+thinner than the pitch.
+
+- ⬜ **Follow-ups on bank questions are generic.** No M05 item has
+  `follow_ups` (12 reviewed, 292 drafts), so every rung is
+  `phrasebook.GENERIC_RUNGS` reworded around the student's words, and
+  `Persona.max_generic_rungs` caps them: 1 interviewer asks none, 33 ask one,
+  6 ask two. The "probe until it breaks, up to depth 5" ladder runs only on
+  M01's drills and resume probes. The fix is M05's data (§7).
+- ⬜ **The next question adapts to the answer on DSA only.** θ is observed only
+  for `m05_bank` items (`_record_decision`), and only 12 items are reviewed —
+  11 `dsa_verbal`, 1 shared with `dbms_verbal`. On every other track the next
+  question follows coverage, history and position in the round, not how the
+  last answer went. It is per concept too: M05 penalises repeating a concept,
+  so one answer mostly moves later questions on the same concept. The fix is
+  reviewing drafts (M05's FR-5.6 queue).
+- ⬜ **Notes show unreviewed key points as the answer.** For a drafted item,
+  "what a strong answer covers" (`report.py`) lists key points nobody has
+  checked. Label them as unreviewed, or hide them for `m05_draft` — the user's
+  call.
+- ⬜ **The checklist under a strong answer can be wrong** — M13's, not M06's
+  (§7). When the evaluators list nothing missing, M13 fills the list from its
+  word-overlap measure, which marked a correct paraphrase of the hashing item
+  as missing all three key points.
+- ⬜ **The README is stale.** It says "days 1–3" and 147 tests; today it is
+  570 tests, 81 gates and 42 routes.
+
 ### 2026-10-17 — a decision: two keys, two organizations?
 
 - ⬜ **Key rotation and Groq's policy — the user's call.** M06's `KeyRing`
@@ -1237,6 +1268,8 @@ than it is spoken); and *"we don't want dummy faces in the interview"*.
     (`POST /outbox/requeue`).
 - The live drill path with M01 running: the full chain on 2026-10-02 ran
   without M01, so the project segment was not exercised live.
+- Unreviewed key points in the notes for drafted items, and the stale README
+  (2026-10-22 above).
 
 Still open: FR-6.20 blocked, and FR-6.10, FR-6.11, FR-6.19, FR-6.21, FR-6.22 partial —
 each row below says what it waits on.
@@ -1379,6 +1412,10 @@ the other module's TODO once raised; tick it here when it has been. **Day 15 (20
 | M02, M15 | link "practise for this role" to `/mock?jd={id}` — M06's setup honours `?jd=` since day 13 | ⬜ raised (`cde74e6`; M15's local plan copy, which its repo does not track) |
 | M05 | `/questions/{id}/flag` takes any caller — no identity guard; and EC-5.9's retraction of observations already sent is still not wired (M06's ⚑ says "won't be picked again", not "undone") | ⬜ raised (`Question_Intelligence` `7b0bbf4`) |
 | M13 | M06's notes show `reasoning`, `missing_key_points` and verified quotes to the student (day 12); state in M13's contract that these are student-visible, so their wording is held to that | ⬜ raised (`Evaluation_Engine` `9e4c6c7`) |
+| M05 | author `follow_ups` (depth 1–3) for bank items, the 12 reviewed first, and have the drafter write them — none has any, so every probe on a bank question is generic and most interviewers stop after one | ⬜ raised in M05's TODO, 2026-10-22 |
+| M05 | review about ten drafted items per track — only DSA has reviewed items, so only DSA answers are scored or move θ | ⬜ raised in M05's TODO, 2026-10-22 |
+| M05 | `hint_ladder`s for the reviewed items — 1 of 12 has one, so Hint is empty on 11 DSA questions | ⬜ raised in M05's TODO, 2026-10-22 |
+| M13 | don't refill an empty `missing_key_points` from the word-overlap measure (`service.py` ~L209): a correct paraphrase was told it missed every key point | ⬜ raised in M13's TODO, 2026-10-22 |
 | Platform_Shell | add `interviews`/`drills`/`agents` to the proxy table and mount `m06Routes` | ✅ landed (`bbd4f69`); on GitHub (MNEMOS-PREP/Platform_Shell, private) since 2026-09-23 |
 | Platform | `modules_meta` M06 → built; `Platform_Shell` journey card | ⬜ (on ship) |
 
