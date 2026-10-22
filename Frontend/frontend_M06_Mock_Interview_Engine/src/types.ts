@@ -312,6 +312,83 @@ export interface QuestionReport {
   /** The first answer's turn: M13's evidence page is `/turns/{turn_id}`. */
   turn_id: string | null;
   asked_by: string | null;
+  // ── 2026-10-22: what the interview found, filled once it is over ────────
+  went_well?: string[];
+  went_wrong?: Finding[];
+  unsupported?: string[];
+  contradictions?: Finding[];
+  /** `self` — they caught it; `prompted` — after a push, a hint, a simpler question. */
+  corrected?: "self" | "prompted" | null;
+  outcome?: string | null;
+  outcome_words?: string | null;
+  misconception?: string | null;
+  how_it_went?: string[];
+  /** One strong answer — *a* good answer, not the only one. */
+  one_strong_answer?: string | null;
+  strong_answer_reviewed?: boolean;
+  study?: string[];
+  /** This attempt against their last one at the same question. */
+  last_time?: string | null;
+  question_key?: string | null;
+  starred?: boolean;
+  flagged?: boolean;
+  /** For a resume line: whether they backed it up. */
+  claim_check?: string | null;
+}
+
+/** One thing the interview found in an answer, in the student's words. */
+export interface Finding {
+  said: string;
+  why: string;
+}
+
+/** The interview in a few lines — built from the questions, never beside them. */
+export interface ReportSummary {
+  held: string[];
+  gaps: string[];
+  corrected: string[];
+  repeated_misconceptions: string[];
+  unsupported_claims: string[];
+  topics: string[];
+  communication: string[];
+}
+
+/** One past attempt at a library question. */
+export interface LibraryAttempt {
+  session_id: string;
+  at: string;
+  outcome: string | null;
+  outcome_words: string | null;
+  corrected: string | null;
+  misconception: string | null;
+  answers: string[];
+}
+
+/** A question in the student's library (`GET /v1/interviews/library`). */
+export interface LibraryEntry {
+  id: string;
+  question_key: string;
+  question_id: string | null;
+  stem: string;
+  concept_id: string;
+  topic: string;
+  source: string;
+  claim_text: string | null;
+  /** The student's own mark, and the interview's — independent of each other. */
+  starred: boolean;
+  flagged: boolean;
+  flagged_reason: string | null;
+  difficulty_band: string | null;
+  attempts: LibraryAttempt[];
+  last_time: string | null;
+  updated_at: string;
+}
+
+export interface StarResult {
+  question_turn_id: string;
+  starred: boolean;
+  flagged: boolean;
+  entry_id: string | null;
 }
 
 /** One track on the setup page (`GET /v1/interviews/tracks`). */
@@ -369,6 +446,8 @@ export interface SessionReport {
   plan_changes: string[];
   notes: string[];
   persona_note: string;
+  /** 2026-10-22: the interview in a few lines, built from the questions. */
+  summary?: ReportSummary;
 }
 
 /** §6.8: what a returning page needs (`GET /resume-state`). A read only —

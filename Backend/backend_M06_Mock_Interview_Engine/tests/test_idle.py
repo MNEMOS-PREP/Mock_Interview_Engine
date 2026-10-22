@@ -125,7 +125,11 @@ def test_taking_the_offer_moves_on_and_nothing_is_scored(db):
         if getattr(r, "turn_id", None) is not None
     )
     answered = [r for r in db.exec(select(LedgerOutbox)).all() if r.ledger_state == "answered"]
-    assert len(answered) == 1, "only the warm-up was answered"
+    # Nothing is `answered`: the question left after a silence had no answer,
+    # and the warm-up asks for no requirement. Until 2026-10-22 this was one
+    # row — the warm-up's answer, credited to the NEXT round's requirement,
+    # because it was written after the step had already crossed into it.
+    assert answered == []
 
     engine.end(row.id, "ended_by_student")
     built = report.build(engine.state(row.id), store.events_for(db, row.id), engine.clock())

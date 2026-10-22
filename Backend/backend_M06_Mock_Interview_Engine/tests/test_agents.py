@@ -89,7 +89,7 @@ def test_a_model_verdict_is_parsed_and_its_key_points_filtered():
     assert decision.verdict.source == "model"
     assert decision.verdict.band == "below"
     assert decision.verdict.key_points_missing == ["kp1"]
-    assert decision.call is not None and decision.call.prompt_version == "strategist-4"
+    assert decision.call is not None and decision.call.prompt_version == "strategist-5"
 
 
 def test_the_strategist_context_is_narrow_and_the_answer_is_fenced():

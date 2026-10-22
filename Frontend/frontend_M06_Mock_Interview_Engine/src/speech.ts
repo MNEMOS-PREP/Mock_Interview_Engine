@@ -50,20 +50,9 @@ export const SPEECH_SUPPORTED = recognitionCtor() !== null;
 
 export const RECOGNITION_LANG = "en-IN";
 
-/** The words people reach for while thinking. Counted, never removed. */
-const FILLERS = ["um", "umm", "uh", "uhh", "er", "erm", "like", "basically", "actually", "you know"];
-
-export function fillerCount(text: string): { total: number; top: string[] } {
-  const lower = ` ${text.toLowerCase().replace(/[^a-z\s']/g, " ")} `;
-  const counts = new Map<string, number>();
-  for (const word of FILLERS) {
-    const n = lower.split(` ${word} `).length - 1;
-    if (n > 0) counts.set(word, n);
-  }
-  const total = [...counts.values()].reduce((a, b) => a + b, 0);
-  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([w]) => w);
-  return { total, top };
-}
+// Filler words are counted on the server since 2026-10-22 (`delivery.py`):
+// one thresholded note, "like" told apart from the verb, with a cooldown —
+// where this file counted every "like" and showed any count above zero.
 
 /**
  * Dictation into a draft. `onText` receives each finished phrase; `interim`
@@ -73,6 +62,10 @@ export function useDictation(onText: (text: string) => void) {
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // The microphone, or the recogniser's connection, went mid-answer — not a
+  // pause ("no-speech") and not the student stopping it ("aborted"). What is
+  // in the box may be half an answer (the user's spec, case W, 2026-10-23).
+  const [cutOff, setCutOff] = useState(false);
   const recognition = useRef<Recognition | null>(null);
   const handler = useRef(onText);
   handler.current = onText;
@@ -101,6 +94,7 @@ export function useDictation(onText: (text: string) => void) {
       setInterim(heard);
     };
     r.onerror = (event) => {
+      setCutOff(event.error === "audio-capture" || event.error === "network");
       setError(
         event.error === "not-allowed"
           ? "The browser blocked the microphone. Allow it in the address bar and try again."
@@ -114,11 +108,12 @@ export function useDictation(onText: (text: string) => void) {
     };
     recognition.current = r;
     setError(null);
+    setCutOff(false);
     setListening(true);
     r.start();
   }, []);
 
   useEffect(() => () => recognition.current?.stop(), []);
 
-  return { supported: SPEECH_SUPPORTED, listening, interim, error, start, stop };
+  return { supported: SPEECH_SUPPORTED, listening, interim, error, cutOff, start, stop };
 }

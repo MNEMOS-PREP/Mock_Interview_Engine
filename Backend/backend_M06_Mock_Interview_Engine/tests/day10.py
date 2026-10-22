@@ -19,7 +19,7 @@ from backend_M06_Mock_Interview_Engine.adapters.fixtures import (
 )
 from backend_M06_Mock_Interview_Engine.engine import Engine, ThetaCache
 
-from .stubs import BankQuestions, NoClaims, StubLLM, verdict
+from .stubs import BankQuestions, NoClaims, StubLLM, answer, verdict
 
 FAIL = verdict(band="below", justification="failed")
 
@@ -124,7 +124,7 @@ def session(engine: Engine, *, mode="mock", minutes=30, jd=True):
 def say(engine: Engine, row, text: str):
     state = engine.state(row.id)
     assert state.open_turn_id is not None, "nothing is open to answer"
-    return engine.answer(row.id, state.open_turn_id, text)
+    return answer(engine, row, text)
 
 
 def events(engine: Engine, row, kind: str) -> list[dict]:

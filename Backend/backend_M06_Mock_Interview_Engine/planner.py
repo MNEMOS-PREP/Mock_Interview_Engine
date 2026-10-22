@@ -136,6 +136,13 @@ class PlanInputs:
     #: Who the student met in their last few interviews (`store.recent_
     #: panelists`): they stand back, so the next panel is someone else.
     recent_personas: frozenset[str] = frozenset()
+    #: 2026-10-22: a resume interview — the student's own resume is the
+    #: interview, every line with questions behind it, not a project part
+    #: inside another track (`RESUME_TRACK`).
+    resume_only: bool = False
+    #: 2026-10-22: questions from the student's library to practise again,
+    #: as stored (`memory.SavedQuestion.item`), in the order they chose.
+    revisit: tuple[dict[str, Any], ...] = ()
 
 
 def reserved_minutes(requested_minutes: int) -> tuple[float, float]:
@@ -217,6 +224,12 @@ TRACK_UNSERVED = (
     "The question bank had nothing in this track it could ask you right now, so this "
     "part is left out. Pick another track, or add a job description."
 )
+#: A focus no track asks about (2026-10-23): with M05 held to the focus, the
+#: part would end before its first question, so it is left out, and said so.
+FOCUS_UNSERVED = (
+    "The question bank has no questions on this yet, so this part is left out. "
+    "Pick a track, or star a question to practise it from your library."
+)
 
 
 def _blocked(inputs: PlanInputs, modality: str) -> str | None:
@@ -249,30 +262,45 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
     """
     warmup_minutes, closing_minutes = reserved_minutes(inputs.requested_minutes)
     mode = mode_config(inputs.mode)
-    middle = (
-        _from_coverage(inputs, mode)
-        if inputs.coverage
-        else _without_a_job_description(inputs, mode, warmup_minutes, closing_minutes)
-    )
-    claims = defendable(inputs.claims) if inputs.resume_included else []
-    project = _project_segment(claims, mode, middle)
-    if project is not None:
-        # §6.1's order: warm-up, then the student's own work, then the
-        # posting's. Defending your resume first is the gentler ramp and it
-        # is also the part a student is most able to talk about cold.
-        middle = [project, *middle]
+    if inputs.revisit:
+        # Practising chosen questions again: no warm-up — they chose these.
+        middle = [_revisit_segment(inputs, mode, closing_minutes)]
+        claims: list[dict[str, Any]] = []
+        warmup_minutes = 0.0
+    elif inputs.resume_only:
+        claims = defendable(inputs.claims, bands=ALL_BANDS)
+        middle = [_resume_segment(claims, mode, inputs, warmup_minutes, closing_minutes)]
+    else:
+        middle = (
+            _from_coverage(inputs, mode)
+            if inputs.coverage
+            else _without_a_job_description(inputs, mode, warmup_minutes, closing_minutes)
+        )
+        claims = defendable(inputs.claims) if inputs.resume_included else []
+        project = _project_segment(claims, mode, middle)
+        if project is not None:
+            # §6.1's order: warm-up, then the student's own work, then the
+            # posting's. Defending your resume first is the gentler ramp and it
+            # is also the part a student is most able to talk about cold.
+            middle = [project, *middle]
 
-    segments: list[PlannedSegment] = [
-        PlannedSegment(
-            index=0,
-            kind="warmup",
-            title="Warm-up",
-            persona_id=mode.persona_for("warmup"),
-            minutes=warmup_minutes,
-            question_budget=1,
-            rubric_round_types=list(inputs.available_round_types),
-            rationale="One question to get talking before anything counts.",
+    warmup = PlannedSegment(
+        index=0,
+        kind="warmup",
+        title="Warm-up",
+        persona_id=mode.persona_for("warmup"),
+        minutes=warmup_minutes,
+        question_budget=1,
+        rubric_round_types=[] if inputs.resume_only else list(inputs.available_round_types),
+        source="template" if inputs.resume_only else "m05_bank",
+        rationale=(
+            "Walk me through your resume — the way most resume interviews open."
+            if inputs.resume_only
+            else "One question to get talking before anything counts."
         ),
+    )
+    segments: list[PlannedSegment] = [
+        *([] if inputs.revisit else [warmup]),
         *middle,
         PlannedSegment(
             index=0,
@@ -324,7 +352,78 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
     )
 
 
-def defendable(claims: tuple[dict[str, Any], ...] | list[dict[str, Any]]) -> list[dict[str, Any]]:
+#: 2026-10-22: the track a resume interview is — not one of M05's round
+#: types, so it is offered beside them (`Engine.offered_tracks`).
+RESUME_TRACK = "resume"
+#: In a resume interview every claim with questions behind it is fair game —
+#: a strong line still has to be defended — the shakiest first.
+ALL_BANDS = frozenset({"risky", "vague", "strong"})
+
+
+def _resume_segment(
+    claims: list[dict[str, Any]],
+    mode: ModeConfig,
+    inputs: PlanInputs,
+    warmup_minutes: float,
+    closing_minutes: float,
+) -> PlannedSegment:
+    """The whole interview, between the warm-up and the closing, is the
+    student's resume — or, with nothing to ask about, a part that says why."""
+    minutes = max(round(inputs.requested_minutes - warmup_minutes - closing_minutes, 1), 0.0)
+    if not claims:
+        return PlannedSegment(
+            index=0,
+            kind="project",
+            title="Your resume",
+            persona_id=mode.persona_for("project"),
+            minutes=minutes,
+            question_budget=0,
+            source="m01_claims",
+            dropped_reason=(
+                "There are no lines on your resume with questions behind them yet — "
+                "upload or confirm a resume first, on the resume page."
+            ),
+        )
+    return PlannedSegment(
+        index=0,
+        kind="project",
+        title="Your resume",
+        persona_id=mode.persona_for("project"),
+        minutes=minutes,
+        question_budget=max(1, min(len(claims), int(minutes // MINUTES_PER_CLAIM))),
+        source="m01_claims",
+        rationale=(
+            "Every line here is yours: what you built, why you built it that way, and how you "
+            "know it worked. Not scored — the notes say which claims held up."
+        ),
+    )
+
+
+def _revisit_segment(
+    inputs: PlanInputs, mode: ModeConfig, closing_minutes: float
+) -> PlannedSegment:
+    minutes = max(round(inputs.requested_minutes - closing_minutes, 1), 0.0)
+    concepts = list(
+        dict.fromkeys(str(i.get("concept_id")) for i in inputs.revisit if i.get("concept_id"))
+    )
+    return PlannedSegment(
+        index=0,
+        kind="technical",
+        title="Questions you chose to practise again",
+        persona_id=mode.persona_for("technical"),
+        minutes=minutes,
+        question_budget=len(inputs.revisit),
+        concept_ids=concepts,
+        source="revisit",
+        rationale="Asked again as they were; followed up on what you say this time.",
+    )
+
+
+def defendable(
+    claims: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+    *,
+    bands: frozenset[str] = DEFENDABLE_BANDS,
+) -> list[dict[str, Any]]:
     """The claims worth a project segment: risky or vague, with probes —
     spread across the resume rather than taken in M01's order.
 
@@ -339,9 +438,7 @@ def defendable(claims: tuple[dict[str, Any], ...] | list[dict[str, Any]]) -> lis
     not yet asked about; riskier first within that.
     """
     shaky = [
-        claim
-        for claim in claims
-        if str(claim.get("risk_band")) in DEFENDABLE_BANDS and claim.get("probes")
+        claim for claim in claims if str(claim.get("risk_band")) in bands and claim.get("probes")
     ]
     shaky.sort(key=lambda c: -float(c.get("risk_score") or 0.0))
     ordered: list[dict[str, Any]] = []
@@ -475,16 +572,38 @@ def _without_a_job_description(
         label = inputs.focus_label or ", ".join(
             c.split(":")[-1].replace("_", " ") for c in inputs.focus_concepts
         )
+        # Asked under the tracks that hold the focus, the one holding most of
+        # it first: `_bank_request` asks under the first. Planned under every
+        # available track, a live hashing focus was asked under the first
+        # alphabetically — behavioural — and heard "tell me about a time…"
+        # (2026-10-22).
+        holding = _tracks_holding(inputs, available, inputs.focus_concepts)
+        if inputs.tracks and not holding:
+            return [
+                PlannedSegment(
+                    index=0,
+                    kind="technical",
+                    title=f"Focus: {label}",
+                    persona_id=mode.persona_for("technical"),
+                    minutes=round(usable, 1),
+                    question_budget=0,
+                    concept_ids=list(inputs.focus_concepts),
+                    concepts_only=True,
+                    rationale=f"You chose to practise {label}.",
+                    dropped_reason=FOCUS_UNSERVED,
+                )
+            ]
         return [
             PlannedSegment(
                 index=0,
-                kind="technical",
+                kind=_track_kind(inputs, holding[0]) if holding else "technical",
                 title=f"Focus: {label}",
                 persona_id=mode.persona_for("technical"),
                 minutes=round(usable, 1),
                 question_budget=max(1, int(usable // MINUTES_PER_VERBAL_QUESTION)),
                 concept_ids=list(inputs.focus_concepts),
-                rubric_round_types=list(available),
+                concepts_only=True,
+                rubric_round_types=holding or list(available),
                 rationale=(
                     # Neutral about WHERE the choice came from: Today's
                     # bottleneck, the skill graph's Learn panel and the notes'
@@ -567,6 +686,20 @@ def _taught_by_track(inputs: PlanInputs, available: tuple[str, ...]) -> dict[str
         if overlap:
             taught[round_type] = overlap
     return taught
+
+
+def _tracks_holding(
+    inputs: PlanInputs, available: tuple[str, ...], concepts: tuple[str, ...]
+) -> list[str]:
+    """The available tracks that ask about any of `concepts`, the one holding
+    the most of them first (ties keep `available`'s order). Empty when M05
+    did not say what its tracks hold; the caller then keeps them all."""
+    wanted = set(concepts)
+    held = {
+        rt: len(wanted & set((inputs.tracks.get(rt) or {}).get("concept_ids") or ()))
+        for rt in available
+    }
+    return sorted((rt for rt in available if held[rt]), key=lambda rt: -held[rt])
 
 
 def _track_kind(inputs: PlanInputs, round_type: str) -> SegmentKind:

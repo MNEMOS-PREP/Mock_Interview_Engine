@@ -30,12 +30,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, StringConstraints, field_validator
 from sqlmodel import Session, select
 
-from . import degrade, outbox, presence, store
+from . import degrade, memory, outbox, planner, presence, store
+from . import items as items_module
 from . import report as report_module
 from .access import enforce_access, require_candidate
 from .adapters import Upstreams, UpstreamUnavailable, get_upstreams
 from .broker import broker
 from .contracts import (
+    CompletionReason,
     HintOffer,
     InterviewPlan,
     Mode,
@@ -56,7 +58,7 @@ from .engine import (
     welcome_line,
 )
 from .llm import get_llm
-from .models import InterviewSession, LLMCall, SessionEvent
+from .models import InterviewSession, LLMCall, SavedQuestion, SessionEvent
 from .modes import MODES, mode_config
 from .orchestration import mermaid, snapshot
 from .personas import personas
@@ -138,6 +140,10 @@ class SessionCreate(BaseModel):
     #: (2026-10-07 — "not every interview is meant to ask from resume"), and
     #: from the resume they pick, when they have several.
     include_resume: bool = False
+    #: 2026-10-22: questions from the student's library to practise again
+    #: (`GET /interviews/library` ids), in the order to ask them. The session
+    #: is those questions and the closing.
+    revisit: list[uuid.UUID] = Field(default_factory=list, max_length=8)
     resume_id: uuid.UUID | None = None
     mode: Mode = "mock"
     minutes: int = Field(default=45, ge=MIN_MINUTES, le=MAX_MINUTES)
@@ -187,6 +193,9 @@ class AsrNote(BaseModel):
     #: answer in Hindi is written as said and scored on content, never on
     #: language (M13's rule 4).
     language: str | None = Field(default=None, max_length=24)
+    #: How long they spoke, seconds (2026-10-22) — for pace only
+    #: (`delivery.py`); absent when the room cannot say.
+    duration_s: float | None = Field(default=None, ge=0.0, le=900.0)
 
 
 class AnswerIn(BaseModel):
@@ -194,6 +203,10 @@ class AnswerIn(BaseModel):
     text: str = Field(max_length=MAX_ANSWER_CHARS)
     #: Present when the answer was spoken and written down by M11.
     asr: AsrNote | None = None
+    #: How the answer ended (2026-10-22): `interrupted` when the connection or
+    #: the microphone cut it off — the interviewer asks them to finish instead
+    #: of judging half an answer. `submit` when absent.
+    completion_reason: CompletionReason | None = None
 
 
 class InterruptionIn(BaseModel):
@@ -639,6 +652,113 @@ def resumes(
     return engine.resumes(uuid.UUID(principal.candidate_id))
 
 
+def _signed_in(principal: Principal | None) -> uuid.UUID:
+    if principal is None or principal.candidate_id is None:
+        raise HTTPException(status_code=403, detail="Not signed in.")
+    return uuid.UUID(principal.candidate_id)
+
+
+class LibraryAttempt(BaseModel):
+    session_id: uuid.UUID
+    at: datetime
+    outcome: str | None = None
+    outcome_words: str | None = None
+    corrected: str | None = None
+    misconception: str | None = None
+    answers: list[str] = Field(default_factory=list)
+
+
+class LibraryEntry(BaseModel):
+    """One question in a student's library (2026-10-22, `memory.py`)."""
+
+    id: uuid.UUID
+    question_key: str
+    question_id: uuid.UUID | None = None
+    stem: str
+    concept_id: str = ""
+    topic: str = ""
+    source: str = ""
+    claim_text: str | None = None
+    #: The two marks, independent: the student's own, and the interview's.
+    starred: bool = False
+    flagged: bool = False
+    flagged_reason: str | None = None
+    #: How hard the question is in itself, when the bank says (M05's band).
+    difficulty_band: str | None = None
+    attempts: list[LibraryAttempt] = Field(default_factory=list)
+    #: The latest attempt against the one before, in words.
+    last_time: str | None = None
+    updated_at: datetime
+
+
+def _library_entry(db: Session, entry) -> LibraryEntry:
+    attempts = memory.attempts_for(db, entry.candidate_id, entry.question_key)
+    return LibraryEntry(
+        id=entry.id,
+        question_key=entry.question_key,
+        question_id=entry.question_id,
+        stem=entry.stem,
+        concept_id=entry.concept_id,
+        topic=entry.topic,
+        source=entry.source,
+        claim_text=entry.claim_text,
+        starred=entry.starred_at is not None,
+        flagged=entry.flagged_at is not None,
+        flagged_reason=entry.flagged_reason,
+        difficulty_band=entry.difficulty_band,
+        attempts=[
+            LibraryAttempt(
+                session_id=a.session_id,
+                at=a.at,
+                outcome=a.outcome,
+                outcome_words=memory.OUTCOME_WORDS.get(a.outcome or ""),
+                corrected=a.corrected,
+                misconception=a.misconception,
+                answers=list(a.answers or []),
+            )
+            for a in attempts
+        ],
+        last_time=memory.compare(attempts),
+        updated_at=entry.updated_at,
+    )
+
+
+@router.get("/interviews/library", response_model=list[LibraryEntry], tags=["library"])
+def question_library(
+    principal: Principal | None = Depends(enforce_access),
+    db: Session = Depends(get_session),
+    topic: str | None = Query(default=None, max_length=80),
+    mark: str | None = Query(default=None, pattern="^(starred|flagged)$"),
+) -> list[LibraryEntry]:
+    """The signed-in student's questions: starred by them, flagged by the
+    interview as ones they struggled with, or both (2026-10-22)."""
+    candidate_id = _signed_in(principal)
+    entries = memory.library(db, candidate_id)
+    if mark == "starred":
+        entries = [e for e in entries if e.starred_at is not None]
+    elif mark == "flagged":
+        entries = [e for e in entries if e.flagged_at is not None]
+    if topic:
+        wanted = topic.lower()
+        entries = [
+            e for e in entries if wanted in (e.topic or "").lower() or wanted in e.concept_id
+        ]
+    return [_library_entry(db, e) for e in entries]
+
+
+@router.delete("/interviews/library/{entry_id}", status_code=204, tags=["library"])
+def remove_from_library(
+    entry_id: uuid.UUID,
+    principal: Principal | None = Depends(enforce_access),
+    db: Session = Depends(get_session),
+) -> Response:
+    """Remove a question from the library — both marks. Its attempts stay:
+    they are what happened, and a later star brings the history back."""
+    if not memory.remove(db, _signed_in(principal), entry_id):
+        raise HTTPException(status_code=404, detail="No such question in your library.")
+    return Response(status_code=204)
+
+
 @router.get("/interviews/phrases", tags=["meta"])
 def phrases() -> dict:
     """Every interviewer's stock phrases — what they say between questions —
@@ -703,6 +823,15 @@ def create_session(
     jd_id, unplanned = body.jd_id, None
     if jd_id is None and body.company_id is not None and body.drive_id:
         jd_id, unplanned = _jd_for_drive(upstreams, body.company_id, body.drive_id, candidate_id)
+    revisit: list[dict] = []
+    for entry_id in body.revisit:
+        entry = db.get(SavedQuestion, entry_id)
+        # Only the student's own library — a stranger's id is not found.
+        if entry is None or entry.candidate_id != candidate_id or not entry.item:
+            raise HTTPException(status_code=404, detail="That question isn't in your library.")
+        revisit.append(
+            {"entry_id": str(entry.id), "question_key": entry.question_key, "item": entry.item}
+        )
     try:
         row, state = store.create_session(
             db,
@@ -714,8 +843,13 @@ def create_session(
             focus_concepts=body.focus_concepts,
             focus_label=body.focus_label,
             track=body.track,
-            include_resume=body.include_resume or body.resume_id is not None,
+            include_resume=(
+                body.include_resume
+                or body.resume_id is not None
+                or body.track == planner.RESUME_TRACK
+            ),
             resume_id=body.resume_id,
+            revisit=revisit,
         )
     except store.LiveSessionExists as exc:
         raise _live_conflict(exc) from exc
@@ -1041,6 +1175,7 @@ def answer(
             body.question_turn_id,
             body.text,
             asr=body.asr.model_dump(mode="json") if body.asr else None,
+            completion_reason=body.completion_reason,
         )
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="No such session.") from exc
@@ -1231,7 +1366,65 @@ def session_report(
     """FR-6.18 — for every session, finished or not (AC-6.1)."""
     _row_or_404(db, session_id)
     state = store.load_state(db, session_id)
-    return report_module.build(state, store.events_for(db, session_id), utcnow())
+    events = store.events_for(db, session_id)
+    built = report_module.build(state, events, utcnow())
+    keys = {q.question_key for q in built.questions if q.question_key}
+    if keys and state.is_final:
+        # 2026-10-22: each question beside the student's last attempt at it,
+        # and the library's marks — one student's, by their own id.
+        history = {k: memory.attempts_for(db, state.candidate_id, k) for k in keys}
+        marks = memory.marks(db, state.candidate_id, keys)
+        built = report_module.build(state, events, utcnow(), history=history, marks=marks)
+    return built
+
+
+class StarIn(BaseModel):
+    on: bool = True
+
+
+@router.post("/interviews/{session_id}/questions/{turn_id}/star", tags=["library"])
+def star_question(
+    session_id: uuid.UUID,
+    turn_id: uuid.UUID,
+    body: StarIn,
+    db: Session = Depends(get_session),
+) -> dict:
+    """The student's star on a question of this interview — during it or in
+    its notes (2026-10-22). `turn_id` is any line of the question, asked or
+    answered — the notes know an answer's turn, the room the open line; the
+    question's first line names it. Unstarring keeps a question the
+    interview flagged."""
+    _row_or_404(db, session_id)
+    state = store.load_state(db, session_id)
+    found = state.turn(turn_id)
+    if found is None or found.role not in ("interviewer", "candidate"):
+        raise HTTPException(status_code=404, detail="That question isn't part of this interview.")
+    question = next(
+        (
+            t
+            for t in reversed(state.transcript[: state.transcript.index(found) + 1])
+            if t.role == "interviewer" and t.probe_move is None and t.question_source is not None
+        ),
+        None,
+    )
+    if question is None or question.question_source == "closing":
+        raise HTTPException(status_code=409, detail="Only a question can be starred.")
+    raw = next(
+        (
+            e.payload.get("item")
+            for e in store.events_for(db, session_id)
+            if e.kind == "question.asked" and e.payload.get("turn_id") == str(question.turn_id)
+        ),
+        None,
+    )
+    item = items_module.from_dict(raw) if raw else None
+    entry = memory.star(db, state, question, item, on=body.on)
+    return {
+        "question_turn_id": str(question.turn_id),
+        "starred": bool(entry and entry.starred_at),
+        "flagged": bool(entry and entry.flagged_at),
+        "entry_id": str(entry.id) if entry else None,
+    }
 
 
 @router.get("/interviews/{session_id}/trace", response_model=TraceOut)

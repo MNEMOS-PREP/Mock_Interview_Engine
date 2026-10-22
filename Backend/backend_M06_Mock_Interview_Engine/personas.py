@@ -154,7 +154,9 @@ class Persona(BaseModel):
     def max_generic_rungs(self) -> int:
         """Generic "why does that work?" rungs allowed on a question that has
         run out of follow-ups of its own. A gentle interviewer asks none; a
-        bar-raiser keeps going with two."""
+        bar-raiser keeps going with two. Since 2026-10-22 a topic going well
+        allows one more (`ladder.decide`), so a strong student is taken
+        further than the persona's default, and only in that topic."""
         if self.follow_up_aggression < 0.35:
             return 0
         return 2 if self.follow_up_aggression >= 0.95 else 1

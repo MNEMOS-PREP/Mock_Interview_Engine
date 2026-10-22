@@ -31,14 +31,31 @@ from ai_core.timeutil import utcnow
 from ai_core.versions import VersionStamp
 from sqlmodel import Session, select
 
-from . import PROMPT_VERSION, degrade, outbox, pacing, planner, prefill, presence, replan, store
+from . import (
+    PROMPT_VERSION,
+    decompose,
+    degrade,
+    delivery,
+    difficulty,
+    memory,
+    outbox,
+    pacing,
+    planner,
+    prefill,
+    presence,
+    replan,
+    store,
+    thread,
+)
 from .adapters import Upstreams, UpstreamUnavailable
 from .agents import Interviewer, ProbeStrategist, Summariser, summariser
 from .agents.guard import SafetyGuard
 from .broker import TokenBroker, broker
 from .contracts import (
     DEPTH_CAP,
+    JUDGED_CATEGORIES,
     M05_OWNED,
+    MISCONCEIVED,
     PHASE1_MODALITIES,
     HintOffer,
     InterviewPlan,
@@ -47,6 +64,7 @@ from .contracts import (
     SessionKind,
     SessionStatus,
     TurnView,
+    category_of,
 )
 from .items import Item, from_dict, from_drill, from_m05, to_dict
 from .ladder import LadderConfig, Outcome
@@ -54,7 +72,7 @@ from .llm import LLM, LLMResult, get_llm
 from .models import InterviewSession, LLMCall, SessionEvent
 from .modes import mode_config
 from .orchestration import Deps, Selected, StepInput, StepResult, build, enabled, run_step
-from .orchestration.graph import MIN_SECONDS_FOR_A_QUESTION, UNJUDGED
+from .orchestration.graph import MIN_SECONDS_FOR_A_QUESTION
 from .personas import Persona, persona
 from .phrasebook import GENERIC_RUNGS
 from .state import InvalidTransition, SessionState
@@ -262,19 +280,26 @@ def ladder_config(state: SessionState) -> LadderConfig:
     """
     mode = mode_config(state.mode)
     if state.kind == SessionKind.drill.value:
-        return LadderConfig(hints_available=False)
+        # A two-minute drill stops at the edge of what the student can defend
+        # — that edge IS its finding — so it offers no simpler question.
+        return LadderConfig(hints_available=False, resume=True, simplify=False)
     who = speaker(state)
     # §6.9: ahead of schedule at 70%, one follow-up deeper from then on. Not
     # for that round only: the check runs before the step's crossing, so a
     # 70% step that also ends a round granted the depth to the round it left.
     ahead = state.extra_depth_segment is not None
     extra = 1 if ahead and state.current_segment >= state.extra_depth_segment else 0
+    item = state.current_item or {}
     return LadderConfig(
         steelman_enabled=mode.steelman_enabled,
         steelman_rate=mode.steelman_rate,
         hints_available=mode.hints and who.hints_available,
         max_depth=min(who.max_depth + extra, DEPTH_CAP),
         max_generic_rungs=who.max_generic_rungs,
+        # Final Boss keeps going until the reasoning runs out (FR-6.9): a
+        # simpler question is a rescue it does not offer.
+        simplify=state.mode != "final_boss",
+        resume=item.get("source") == "m01_probe",
     )
 
 
@@ -512,6 +537,26 @@ def _turn_id(session_id: uuid.UUID, turn_index: int) -> uuid.UUID:
     return uuid.uuid5(session_id, f"turn:{turn_index}")
 
 
+#: 2026-10-22: how a resume interview opens. Authored, like every structural
+#: line; not scored (there is no rubric for it), and the follow-ups that come
+#: after it are about whatever the student chose to talk about.
+RESUME_OPENER = Item(
+    stem=(
+        "To start, walk me through your resume — pick the project you're proudest of and tell "
+        "me what you built and what your part in it was."
+    ),
+    source="template",
+    concept_id="resume:overview",
+    label="Your resume",
+)
+
+
+def queued_index(state: SessionState, turn_id: uuid.UUID, default: int) -> int:
+    """The turn index an evaluation is recorded at: its first answer's."""
+    found = state.turn(turn_id)
+    return found.turn_index if found is not None else default
+
+
 @dataclass
 class Engine:
     db: Session
@@ -723,8 +768,15 @@ class Engine:
         # The track the student picked is the only one asked about: an ML
         # interview that probes every round type and splits the time among
         # them asks DSA (2026-10-07). No track is a mixed interview.
+        resume_only = state.track == planner.RESUME_TRACK
         candidates = (state.track,) if state.track else scoreable
-        round_types = self._available_round_types(row, state, candidates)
+        # A resume interview's questions are M01's and a revisit's are the
+        # student's own choices: neither asks M05 what it can serve.
+        round_types = (
+            ()
+            if resume_only or state.revisit
+            else self._available_round_types(row, state, candidates)
+        )
         plan = planner.assemble(
             planner.PlanInputs(
                 session_id=row.id,
@@ -741,11 +793,13 @@ class Engine:
                 track=state.track,
                 tracks=self._tracks(),
                 studied_concepts=studied,
-                resume_included=state.include_resume,
+                resume_included=state.include_resume or resume_only,
                 resume_id=state.resume_id,
                 recent_personas=store.recent_panelists(
                     self.db, row.candidate_id, exclude=row.id
                 ),
+                resume_only=resume_only,
+                revisit=tuple(r.get("item") or {} for r in state.revisit),
             )
         )
         store.record(
@@ -918,7 +972,30 @@ class Engine:
                     "scored": round_type in scoreable and approved > 0,
                 }
             )
-        return {"groups": list(body.get("groups") or []), "tracks": tracks, "note": note}
+        # 2026-10-22: the resume interview — the student's own resume, every
+        # line with questions behind it. Not one of M05's round types: its
+        # questions are M01's, so it is offered whenever M01 can be read.
+        groups = list(body.get("groups") or [])
+        if up.available("M01"):
+            tracks.insert(
+                0,
+                {
+                    "round_type": planner.RESUME_TRACK,
+                    "title": "Your resume",
+                    "group": "Your resume",
+                    "blurb": (
+                        "Defend your own resume: your projects, the decisions behind them, the "
+                        "numbers you claim, and what you would do differently."
+                    ),
+                    "kind": "project",
+                    "approved": 0,
+                    "drafts": 0,
+                    "scored": False,
+                },
+            )
+            if "Your resume" not in groups:
+                groups.insert(0, "Your resume")
+        return {"groups": groups, "tracks": tracks, "note": note}
 
     def resumes(self, candidate_id: uuid.UUID) -> dict[str, Any]:
         """The student's resumes, for the setup page's picker: newest first,
@@ -1064,6 +1141,7 @@ class Engine:
         text: str,
         *,
         asr: dict | None = None,
+        completion_reason: str | None = None,
     ) -> SessionState:
         row = self.row(session_id)
         self.back(session_id)
@@ -1083,6 +1161,8 @@ class Engine:
                 raise AnswerRejected("That question has already been answered.")
             return self.continue_session(session_id)
         payload = self._answer_payload(row, answer_index, question_turn_id, text, asr)
+        if completion_reason:
+            payload["completion_reason"] = completion_reason
         # M11's FR-11.6: the thinking done while the student paused is used
         # only for these exact words — anything else and the model is asked.
         ahead = prefill.take(session_id, question_turn_id)
@@ -1104,10 +1184,42 @@ class Engine:
         except InvalidTransition as exc:
             self._replay = None
             raise AnswerRejected(str(exc)) from exc
+        self._note_delivery(row, answer_index, text, asr)
         try:
             return self.continue_session(session_id)
         finally:
             self._replay = None
+
+    def _note_delivery(
+        self, row: InterviewSession, answer_index: int, text: str, asr: dict | None
+    ) -> None:
+        """How the answer was said (2026-10-22, `delivery.py`): kept for the
+        report always; said to the student now only when it crosses a line,
+        in a mode that coaches live, and not twice running."""
+        state = self.state(row.id)
+        found = delivery.analyse(
+            text,
+            spoken=asr is not None,
+            unsure=[tuple(r) for r in (asr or {}).get("unsure") or []],
+            duration_s=(asr or {}).get("duration_s"),
+        )
+        answered = [t.turn_index for t in state.transcript if t.role == "candidate"]
+        last = state.coached_at[-1] if state.coached_at else None
+        since = None if last is None else sum(1 for i in answered if i > last)
+        line = delivery.live_note(found, mode=state.mode, answers_since_last=since)
+        store.record(
+            self.db,
+            row,
+            "delivery.noted",
+            step="delivery",
+            turn_index=answer_index,
+            payload={
+                "for": str(_turn_id(row.id, answer_index)),
+                "turn_index": answer_index,
+                "note": line,
+                **found.as_payload(),
+            },
+        )
 
     def _answer_payload(
         self,
@@ -1196,6 +1308,12 @@ class Engine:
         path fills it in — and leaving it empty here ended the first live
         session on a repeated question, with the interviewer saying nothing."""
         row = self.row(session_id)
+        state = self.state(session_id)
+        if state.is_final:
+            # Ending twice — a double click, a retried request, the room's
+            # "left the page" after the End button — is a no-op, not a 409:
+            # the session is over either way (2026-10-22).
+            return state
         self.back(session_id)
         state = self.state(session_id)
         aborted = state.status is SessionStatus.planned
@@ -1218,6 +1336,10 @@ class Engine:
             payload=payload,
         )
         self._close_m05(row, state)
+        if not aborted:
+            # The question open when they ended is over too.
+            opened = state.open_question_turn()
+            self._close_thread(row, opened.turn_id if opened is not None else None, how="ended")
         return self.state(session_id)
 
     def _closing_for(self, state: SessionState) -> str:
@@ -1270,6 +1392,10 @@ class Engine:
             success=p.get("success"),
             break_depth=p.get("break_depth"),
             ceiling=p.get("ceiling"),
+            reason=p.get("reason") or "",
+            quality=p.get("quality"),
+            left=p.get("left"),
+            corrected=p.get("corrected"),
         )
 
     def _current_item(self, state: SessionState) -> Item | None:
@@ -1291,6 +1417,8 @@ class Engine:
         now = self.clock()
         self._changed_this_step = False
         item = self._current_item(state)
+        # The question this step answers — closed below if the step moves on.
+        opened = state.open_question_turn() if answer is not None else None
         inp = StepInput(
             state=state,
             now=now,
@@ -1332,13 +1460,9 @@ class Engine:
 
         if answer_turn is not None and recorded is None and result.outcome is not None:
             self._record_decision(row, state, answer_turn, item, result)
-            # Words the recogniser could not make out, a word it was unsure
-            # of, an answer to a question never heard: asked about, not scored
-            # — the answer that follows is (M11's FR-11.16, EC-11.1).
-            if result.outcome.move.kind not in UNJUDGED:
-                self._owe(row, answer_turn, item)
         if result.offer_retry:
             self._offer_retry(row, result)
+            self._close_thread(row, opened.turn_id if opened is not None else None)
             return
         if result.closing_question and answer_turn is not None:
             # FR-6.21: in the student's own words, recorded; scoring them
@@ -1362,6 +1486,12 @@ class Engine:
                 payload={"level": result.hint_level},
             )
         self._say(row, result)
+        if opened is not None and (result.new_question or result.finish):
+            # The question this answer belonged to is over (2026-10-22): what
+            # it owes M13 is written now, once, for all of its answers.
+            self._close_thread(
+                row, opened.turn_id, how="ended" if result.finish and not result.outcome else None
+            )
 
     # ── the degradation ladder (§10, EC-6.12) ────────────────────────────
 
@@ -1546,36 +1676,68 @@ class Engine:
         )
         return self.state(row.id)
 
-    def _owe(self, row: InterviewSession, answer_turn, item: Item | None) -> None:
-        """What this answer owes M13 and M02, written before it is delivered.
+    def _close_thread(
+        self, row: InterviewSession, question_turn_id: uuid.UUID | None, *, how: str | None = None
+    ) -> None:
+        """One question is over: what it owes M13, M04 and M02 — once.
 
-        In its own transaction rather than the turn's, because `store.record`
-        owns that one — same guarantee either way: the row is on disk before
-        anything tries to send it, so a crash costs a delay and not a score.
-        """
-        state = self.state(row.id)
-        if answer_turn.retry:
-            # §15.4: a retry is practice on top of the measurement. It owes
-            # M13 nothing (the first attempt is scored) and M02 nothing (the
-            # requirement was already asked and answered once).
+        2026-10-22: owed per QUESTION, not per answer. A follow-up's answer is
+        not a whole answer, and scoring each one against the whole question's
+        key points told the student the same points were missing once per
+        follow-up. Written in its own transaction rather than the turn's,
+        because `store.record` owns that one: the row is on disk before
+        anything tries to send it either way.
+
+        Called wherever a question can end: the next question asked, a retry
+        offered, a skip, a silence moved on from, the session's end. Idempotent
+        (keyed by the question's first answer), so ending a session just
+        after a question closed writes nothing twice. Written before anything
+        is sent, so a crash costs a delay and not a score."""
+        if question_turn_id is None:
             return
-        segment = (
-            state.plan.segments[state.current_segment]
-            if state.plan is not None and state.current_segment < len(state.plan.segments)
-            else None
+        state = self.state(row.id)
+        question, _asked, answered = outbox.thread_of(state, question_turn_id)
+        if question is None or not answered or question.retry:
+            # §15.4: a retry is practice on top of the measurement; the first
+            # attempt is the one M13 scores.
+            return
+        events = store.events_for(self.db, row.id)
+        raw_item = next(
+            (
+                e.payload.get("item")
+                for e in events
+                if e.kind == "question.asked" and e.payload.get("turn_id") == str(question.turn_id)
+            ),
+            None,
         )
-        # The answer text goes to M04 before the evaluation goes to M13:
-        # M13's evidence cites this turn, and M04 refuses an observation whose
-        # evidence does not resolve.
-        outbox.enqueue_artifact(self.db, state, answer_turn)
-        queued = outbox.enqueue_evaluation(self.db, state, answer_turn, item)
+        item = from_dict(raw_item) if raw_item else None
+        indices = {t.turn_index for t in answered}
+        decisions = [
+            e.payload for e in events if e.kind == "probe.decided" and e.turn_index in indices
+        ]
+        scope = None
+        if item is not None and item.parts:
+            parts = [int(d["move"]["part"]) for d in decisions if d["move"].get("part")]
+            scope = thread.in_scope(item, parts)
+        queued = outbox.enqueue_thread(
+            self.db, state, question.turn_id, item, decisions=decisions, key_point_ids=scope
+        )
+        first = next((t for t in answered if t.text.strip()), answered[0])
+        segment = next(
+            (
+                s
+                for s in (state.plan.segments if state.plan else [])
+                if s.index == question.segment_index
+            ),
+            None,
+        )
         if segment is not None:
             outbox.enqueue_ledger(
                 self.db,
                 state,
                 requirement_ids=segment.requirement_ids,
                 ledger_state="answered",
-                turn_id=answer_turn.turn_id,
+                turn_id=first.turn_id,
             )
         self.db.commit()
         if queued is not None:
@@ -1584,9 +1746,14 @@ class Engine:
                 row,
                 "evaluation.queued",
                 step="queue",
-                turn_index=answer_turn.turn_index,
-                payload={"delta": 1, "turn_id": str(answer_turn.turn_id)},
+                turn_index=queued_index(state, queued.turn_id, first.turn_index),
+                payload={"delta": 1, "turn_id": str(queued.turn_id)},
             )
+        try:
+            memory.remember(self.db, self.state(row.id), question, decisions, item, how=how)
+        except Exception:  # noqa: BLE001 — memory never costs a student their interview
+            log.warning("M06: attempt for %s not remembered", question.turn_id, exc_info=True)
+            self.db.rollback()
 
     def deliver(self, session_id: uuid.UUID) -> outbox.Drained:
         """Send what is owed, and record what came back (FR-6.14).
@@ -1615,6 +1782,12 @@ class Engine:
         outcome = result.outcome
         assert outcome is not None
         verdict = result.verdict
+        # What the answer showed is folded only from an answer that was
+        # judged: one to another question, a request or a remark says nothing
+        # about this one, whatever the model wrote beside it. The trace keeps
+        # the model's verdict whole (2026-10-23, a live run's notes).
+        judged = verdict is not None and category_of(verdict) in JUDGED_CATEGORIES
+        shown = verdict if judged else None
         store.record(
             self.db,
             row,
@@ -1634,6 +1807,25 @@ class Engine:
                 # EC-6.6: what the guard found. Trace only — `public.py`
                 # passes the move and nothing else to a browser.
                 "screen": result.screen.as_payload() if result.screen else None,
+                # 2026-10-22: what the answer was and why the move followed —
+                # folded into the question's thread and its topic's level
+                # (`state._thread`, `difficulty.py`).
+                "category": category_of(verdict) if verdict is not None else None,
+                "quality": outcome.quality,
+                "left": outcome.left,
+                "corrected": outcome.corrected,
+                "reason": outcome.reason,
+                "misconception": (
+                    shown.misconception
+                    if shown is not None and category_of(shown) in MISCONCEIVED
+                    else None
+                ),
+                "missing": list(verdict.key_points_missing) if verdict is not None else None,
+                "correct_points": list(shown.correct_points) if shown is not None else [],
+                "error_quote": shown.error_quote if shown is not None else None,
+                "error_note": shown.error_note if shown is not None else None,
+                "unsupported_quote": shown.unsupported_quote if shown is not None else None,
+                "contradiction_quote": shown.contradiction_quote if shown is not None else None,
             },
         )
         flagged = result.screen is not None and result.screen.injection
@@ -1648,6 +1840,9 @@ class Engine:
             # the first attempt is the measurement (§15.4).
             and not flagged
             and not answer_turn.retry
+            # A request, a remark, an answer to another question: not a
+            # judgement of what the student knows (2026-10-22).
+            and category_of(verdict) in JUDGED_CATEGORIES
         ):
             self._observe(row, answer_turn.turn_id, item.concept_id, verdict)
 
@@ -1862,6 +2057,8 @@ class Engine:
                 "closing": asked.question_source == "closing",
             },
         )
+        opened = self.state(session_id).open_question_turn()
+        self._close_thread(row, opened.turn_id if opened is not None else None, how="silence")
         return self.continue_session(session_id)
 
     def skip(self, session_id: uuid.UUID, question_turn_id: uuid.UUID) -> SessionState:
@@ -1919,6 +2116,9 @@ class Engine:
         )
         if not follow_up and not replaced:
             self._count_unanswered(row, question)
+        # Answered before it was skipped (a follow-up open): what was said
+        # is still owed its evaluation. Skipped at its opening: nothing is.
+        self._close_thread(row, question.turn_id, how="skipped")
         return self.continue_session(session_id)
 
     def _count_unanswered(self, row: InterviewSession, question) -> None:
@@ -2561,6 +2761,35 @@ class Engine:
                 return Selected(item, {"reason": "m01_claim"})
         return Selected(None, empty_reason="claims_exhausted")
 
+    def _select_a_revisit(self, state: SessionState) -> Selected:
+        """The next question the student chose to practise again, as it was
+        stored — asked afresh, and followed up on the new answer (2026-10-22).
+        Announced, as M05 announces a repeat: a silent repeat is the failure,
+        an announced one is practice the student asked for."""
+        asked = {
+            memory.question_key(t.question_id, t.question_text or t.text)
+            for t in state.transcript
+            if t.role == "interviewer" and t.probe_move is None
+        }
+        asked_ids = {str(t.question_id) for t in state.transcript if t.question_id is not None}
+        for chosen in state.revisit:
+            raw = chosen.get("item") or {}
+            if not raw.get("stem"):
+                continue
+            if chosen.get("question_key") in asked or (
+                raw.get("question_id") and str(raw["question_id"]) in asked_ids
+            ):
+                continue
+            item = from_dict(raw)
+            return Selected(
+                item,
+                {
+                    "reason": "revisit",
+                    "disclosure": "This is one you chose to practise again.",
+                },
+            )
+        return Selected(None, empty_reason="revisit_done")
+
     def _abandon_segment(
         self, row: InterviewSession, state: SessionState, reason: str | None
     ) -> tuple[bool, SessionState, str | None]:
@@ -2600,6 +2829,11 @@ class Engine:
             return self._closing_item(state, None)
         if segment is not None and segment.kind == "project":
             return self._select_a_claim(state)
+        if segment is not None and segment.source == "revisit":
+            return self._select_a_revisit(state)
+        if segment is not None and segment.kind == "warmup" and state.track == planner.RESUME_TRACK:
+            # A resume interview opens the way they do: on the resume.
+            return Selected(RESUME_OPENER, {"reason": "resume_opener"})
         up = self.upstreams
         request = self._bank_request(row, state, now)
         asked_here = {str(t.question_id) for t in state.transcript if t.question_id is not None}
@@ -2619,6 +2853,9 @@ class Engine:
                     else:
                         source = "m05_bank"
                     item = from_m05(question, round_type=chosen["round_type"], source=source)
+                    # One thing at a time (2026-10-22): a stem that asks
+                    # several is asked as its first part, the rest to follow.
+                    item = decompose.for_item(self.db, item, self.llm)
                     return Selected(item, chosen)
                 # A question this interview has already asked: never again,
                 # whoever offers it. M06's own playlist below, or the round ends.
@@ -2636,6 +2873,7 @@ class Engine:
             return Selected(None, degraded=degraded, empty_reason="fallback_exhausted")
         question = up.local_questions.question(uuid.UUID(chosen["question_id"]))
         item = from_m05(question, round_type=chosen["round_type"], source="local_fallback")
+        item = decompose.for_item(self.db, item, self.llm)
         return Selected(item, chosen, degraded=degraded)
 
     def _bank_request(
@@ -2677,6 +2915,11 @@ class Engine:
             # `required_requirement_ids` is how a plan's promise to cover a
             # requirement becomes the question that covers it.
             "coverage_debt": {c: 1.0 for c in (segment.concept_ids if segment else [])},
+            # 2026-10-23: a focus is every question, not a preference — the
+            # debt's pull lost to M05's variety penalties after one question.
+            "only_concepts": (
+                list(segment.concept_ids) if segment is not None and segment.concepts_only else []
+            ),
             "required_requirement_ids": list(segment.requirement_ids) if segment else [],
             # In memory only — see ThetaCache.
             "theta_provisional": self.thetas.get(row.id),
@@ -2703,6 +2946,17 @@ class Engine:
             # nothing approved fits, and M05 says so (`scored_use`); it is
             # then practised, never scored and never moves θ (FR-5.6).
             "allow_drafts": True,
+            # 2026-10-22: where to pitch it. Each topic's level in THIS
+            # interview (`difficulty.py`) — so a strong run on hashing asks a
+            # harder hashing question next, and nothing harder about DBMS — and
+            # the mode's shift. M05 moves its target by them, never its
+            # estimate; both die with the session.
+            "difficulty_offset": {
+                concept: difficulty.selection_offset(topic.level)
+                for concept, topic in state.topics.items()
+                if topic.level
+            },
+            "difficulty_shift": mode_config(state.mode).difficulty_offset,
         }
         return request
 
@@ -2791,6 +3045,9 @@ class Engine:
             for question_id in ids:
                 question = up.m05.question(uuid.UUID(str(question_id)))
                 item = from_m05(question, round_type=chosen["round_type"], source="m05_bank")
+                # Split now, while the student answers, so the question that
+                # is asked is its first part — and that is what M11 makes.
+                item = decompose.for_item(self.db, item, self.llm)
                 stems.append(item.stem)
             return stems
         except (UpstreamUnavailable, KeyError, ValueError) as exc:

@@ -396,6 +396,150 @@ GENERIC_RUNGS: dict[int, str] = {
     5: "Where would that idea stop being the right choice?",
 }
 
+#: 2026-10-22: a harder (or plainer) follow-up by its kind — what a rung says
+#: when the model is not there to phrase it from the student's own words
+#: (`difficulty.angle_for`). Each is answerable about anything technical.
+ANGLE_RUNGS: dict[str, str] = {
+    "mechanism": "What is actually happening underneath that makes it work?",
+    "edge_case": "What happens at the edges — an empty input, or an extreme one?",
+    "failure": "What breaks first if that goes wrong, and what happens then?",
+    "trade_off": "What does that approach cost you, compared with the alternative?",
+    "scale": "What changes as the input gets much larger?",
+    "alternative": "Is there another way to do this, and when would it be the better one?",
+    "example": "Can you walk me through a small example of that?",
+    "implementation": "How did you actually implement that part?",
+    "decision": "Why did you choose that approach over the alternatives?",
+    "measurement": "How did you measure that?",
+}
+
+#: 2026-10-22: the authored lines for the moves that react to an answer — the
+#: fallback when the model is off, or its line fails the guard. They quote
+#: the student's own words where the move has them (`{focus}`), so even a
+#: template reacts to what was said rather than to a script. `_bare` is the
+#: variant with no quote to give. Every line is screened at load in its tone.
+REACTIONS: dict[Register, dict[str, tuple[str, ...]]] = {
+    "friendly": {
+        "challenge": (
+            "Hmm, I'm not sure that's right — you said \"{focus}\". "
+            "Can you take another look at that?",
+            "I don't think that part holds: \"{focus}\". What makes you say that?",
+        ),
+        "challenge_bare": (
+            "Hmm, I'm not sure that part holds. Can you walk me through it again?",
+        ),
+        "challenge_minor": (
+            "I think there's a small issue with \"{focus}\". Can you reconsider that bit?",
+        ),
+        "challenge_credit": (
+            "You're right about {credit}, but I'm not sure about \"{focus}\". "
+            "Can you look at that again?",
+        ),
+        "simplify": (
+            "Let's step back a little. In simple terms, what is {topic} for?",
+            "Let's try it from a simpler angle. What does {topic} actually do?",
+        ),
+        "probe_specifics": (
+            "You mentioned \"{focus}\" — what actually happens there, step by step?",
+            "Can you be a bit more specific about how that works?",
+        ),
+        "ask_evidence": (
+            "You mentioned \"{focus}\". How did you measure that, and what was the baseline?",
+            "How do you know that worked — what did you measure?",
+        ),
+        "confront": (
+            "Earlier you said \"{other}\", and now \"{focus}\". How do those fit together?",
+        ),
+        "probe_missing": (
+            "That's part of it. What else would you need to think about here?",
+            "Okay. Is there anything that answer leaves out?",
+        ),
+        "redirect_repeat": ("That's what you said a moment ago. What I'm asking now is: {asked}",),
+        "give_time": ("Of course — take your time.", "Sure, take a moment."),
+        "resume_cut": ("Sorry, I think you got cut off there. You were saying?",),
+        "leave_open": ("Okay — let's leave that one there for now.",),
+    },
+    "neutral": {
+        "challenge": (
+            "I'm not sure that's right — you said \"{focus}\". Can you look at that again?",
+            "I don't think that holds: \"{focus}\". Can you explain your reasoning there?",
+        ),
+        "challenge_bare": ("I'm not convinced by that part. Can you walk me through it again?",),
+        "challenge_minor": (
+            "I think there's a small issue with \"{focus}\". Can you reconsider that part?",
+        ),
+        "challenge_credit": (
+            "You're right about {credit}, but I'm not sure about \"{focus}\". "
+            "Can you look at that again?",
+        ),
+        "simplify": (
+            "Let's step back. In simple terms, what is {topic} for?",
+            "Let's take a simpler angle first. What does {topic} actually do?",
+        ),
+        "probe_specifics": (
+            "You mentioned \"{focus}\". What actually happens there, step by step?",
+            "Can you be more specific about how that works?",
+        ),
+        "ask_evidence": (
+            "You mentioned \"{focus}\". How did you measure that, and what was the baseline?",
+            "How do you know that — what did you measure?",
+        ),
+        "confront": (
+            "Earlier you said \"{other}\", and now \"{focus}\". How do those fit together?",
+        ),
+        "probe_missing": (
+            "That's part of it. What else would you need to consider here?",
+            "Is there anything that answer leaves out?",
+        ),
+        "redirect_repeat": ("That's what you said before. My question now is: {asked}",),
+        "give_time": ("Sure, take a moment.", "Take your time."),
+        "resume_cut": ("Sorry, I think you were cut off. You were saying?",),
+        "leave_open": ("Okay, let's leave that there.",),
+    },
+    "bar_raiser": {
+        "challenge": (
+            "That doesn't hold: \"{focus}\". Look at it again — why would that be?",
+            "I'm not convinced. You said \"{focus}\". Defend that.",
+        ),
+        "challenge_bare": ("I'm not convinced by that. Walk me through it again?",),
+        "challenge_minor": ("Small issue with \"{focus}\". Reconsider that part?",),
+        "challenge_credit": (
+            "Right about {credit}. Not about \"{focus}\" — look at that again?",
+        ),
+        "simplify": ("Step back. What is {topic} for, in one line?",),
+        "probe_specifics": (
+            "\"{focus}\" — what actually happens there, step by step?",
+            "Be specific: how does that work?",
+        ),
+        "ask_evidence": (
+            "\"{focus}\" — measured how, against what baseline?",
+            "How do you know? What did you measure?",
+        ),
+        "confront": ("You said \"{other}\". Now \"{focus}\". Which is it?",),
+        "probe_missing": ("That's part of it. What's missing?",),
+        "redirect_repeat": ("You said that already. The question is: {asked}",),
+        "give_time": ("Take a moment.",),
+        "resume_cut": ("You got cut off. Go on?",),
+        "leave_open": ("Alright, let's leave it.",),
+    },
+}  # fmt: skip
+
+#: The tone each reacting move speaks in (`guard.screen`).
+REACTION_TONE: dict[str, str] = {
+    "challenge": "challenge",
+    "challenge_bare": "challenge",
+    "challenge_minor": "challenge",
+    "challenge_credit": "challenge",
+    "confront": "challenge",
+    "probe_missing": "credit",
+    "simplify": "neutral",
+    "probe_specifics": "neutral",
+    "ask_evidence": "neutral",
+    "redirect_repeat": "neutral",
+    "give_time": "neutral",
+    "resume_cut": "neutral",
+    "leave_open": "neutral",
+}
+
 #: Words an interviewer line must never contain — they telegraph a verdict
 #: (Trap 6, FR-6.15) or judge the student (§6.5). Checked by `guard.screen`.
 TELEGRAPHS = (
@@ -443,9 +587,12 @@ def lines(register: Register = "neutral") -> Lines:
 
 __all__ = [
     "ACKNOWLEDGEMENTS",
+    "ANGLE_RUNGS",
     "BACKCHANNELS",
     "CREDIT",
     "GENERIC_RUNGS",
+    "REACTIONS",
+    "REACTION_TONE",
     "LINES",
     "RUDE",
     "TELEGRAPHS",

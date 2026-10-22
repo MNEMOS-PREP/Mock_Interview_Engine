@@ -22,9 +22,13 @@ from backend_M06_Mock_Interview_Engine.models import (
     LedgerOutbox,
 )
 
-from .stubs import BankQuestions, DownMemory, StubLLM, drill_body, verdict
+from .stubs import BankQuestions, DownMemory, StubLLM, answer, drill_body, verdict
 
 JD_ID = uuid.UUID("0d0d0d0d-0000-4000-8000-00000000000d")
+#: An answer that ends its question. Since 2026-10-22 an evaluation is owed per
+#: QUESTION, when its thread closes (`Engine._close_thread`); these tests are
+#: about delivery, so each answer closes its question, as each did before.
+MOVES_ON = verdict(justification="failed", band="below")
 
 
 def make(db, llm=None, **upstreams) -> Engine:
@@ -73,8 +77,7 @@ def mock_with_plan(engine: Engine, *, jd: bool = True, requirements=("r1", "r2")
 
 
 def say(engine: Engine, row, text: str):
-    state = engine.state(row.id)
-    return engine.answer(row.id, state.open_turn_id, text)
+    return answer(engine, row, text)
 
 
 def queued(db, session_id) -> list[EvaluationOutbox]:
@@ -100,7 +103,7 @@ def ledger(db, session_id) -> list[LedgerOutbox]:
 @pytest.mark.gate
 def test_the_request_m13_receives_carries_the_answer_and_nothing_else(db):
     """AC-6.2. What is absent is the blind-scoring property."""
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     row = mock_with_plan(engine)
     engine.start(row.id)
     say(engine, row, "Linear: constant work, n times.")
@@ -122,7 +125,7 @@ def test_the_request_m13_receives_carries_the_answer_and_nothing_else(db):
 
 def test_practice_mode_asks_for_the_single_evaluator(db):
     """M13's `n1_practice` drops the COUNT, never the tier (its ensemble.py)."""
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     row, _ = store.create_session(
         db, candidate_id=uuid.uuid4(), kind="mock", mode="practice", minutes=10
     )
@@ -135,7 +138,7 @@ def test_practice_mode_asks_for_the_single_evaluator(db):
 
 
 def test_a_drill_turn_is_never_queued(db):
-    engine = make(db, llm=StubLLM([verdict()] * 4))
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4))
     body = drill_body(uuid.uuid4())
     row, _ = engine.create_drill(
         candidate_id=uuid.UUID(body["candidate_id"]),
@@ -156,7 +159,7 @@ def test_a_backup_question_is_not_queued_and_the_report_says_why(db):
     """M13 resolves a package from M05; M06's own fallback items are not there."""
     from .stubs import DownQuestions
 
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=DownQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=DownQuestions())
     row = mock_with_plan(engine)
     engine.start(row.id)
     say(engine, row, "A hash map.")
@@ -174,7 +177,7 @@ def test_a_backup_question_is_not_queued_and_the_report_says_why(db):
 
 
 def test_delivery_sends_to_m13_and_records_what_came_back(db):
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     row = mock_with_plan(engine)
     engine.start(row.id)
     say(engine, row, "Linear.")
@@ -207,7 +210,7 @@ def test_delivery_sends_to_m13_and_records_what_came_back(db):
 
 
 def test_m13_being_down_keeps_the_row_and_the_student_is_told(db):
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     engine.upstreams.m13.fail = True
     row = mock_with_plan(engine)
     engine.start(row.id)
@@ -233,7 +236,7 @@ def test_an_outage_never_holds_a_row(db):
     """`ai_core.outbox`: an upstream that does not answer says nothing about the
     row. M06 used to hold a row after five tries even when M13 was simply
     down, and then it needed a person to notice M13 had come back."""
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     engine.upstreams.m13.fail = True  # nobody answers
     row = mock_with_plan(engine)
     engine.start(row.id)
@@ -252,7 +255,7 @@ def test_a_row_m13_keeps_refusing_is_held_and_shown_with_its_reason(db):
     """Answered with an error, again and again: that needs a person. It stops
     being retried and is listed — with the reason — rather than retried for
     ever behind a `pending: 1`."""
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     engine.upstreams.m13.fail = True
     engine.upstreams.m13.fail_status = 500
     row = mock_with_plan(engine)
@@ -275,7 +278,7 @@ def test_a_row_m13_keeps_refusing_is_held_and_shown_with_its_reason(db):
 
 def test_a_request_m13_will_never_take_is_rejected_not_retried(db):
     """A 4xx will not change on its own: one try, then `rejected`."""
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     engine.upstreams.m13.fail = True
     engine.upstreams.m13.fail_status = 422
     row = mock_with_plan(engine)
@@ -290,7 +293,7 @@ def test_a_request_m13_will_never_take_is_rejected_not_retried(db):
 @pytest.mark.gate
 def test_delivering_twice_sends_once(db):
     """AC-6.16, on the outbox: at-least-once delivery, never twice from here."""
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     row = mock_with_plan(engine)
     engine.start(row.id)
     say(engine, row, "Linear.")
@@ -304,7 +307,7 @@ def test_two_senders_over_the_same_row_post_it_once(db):
     """The first live run's bug: a background task and an explicit drain both
     took the same row, so M13 scored one answer three times concurrently and
     the third call timed out at 60 s. A row is claimed before it is sent."""
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     row = mock_with_plan(engine)
     engine.start(row.id)
     say(engine, row, "Linear.")
@@ -330,7 +333,7 @@ def test_a_row_abandoned_mid_send_is_picked_up_again(db):
     row. One that is merely slow must keep it."""
     from datetime import timedelta
 
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     row = mock_with_plan(engine)
     engine.start(row.id)
     say(engine, row, "Linear.")
@@ -348,7 +351,7 @@ def test_a_row_abandoned_mid_send_is_picked_up_again(db):
 
 
 def test_a_retried_answer_queues_one_evaluation(db):
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     row = mock_with_plan(engine)
     engine.start(row.id)
     open_turn = engine.state(row.id).open_turn_id
@@ -361,7 +364,7 @@ def test_a_retried_answer_queues_one_evaluation(db):
 
 
 def test_asking_and_answering_write_m02s_ledger(db):
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     row = mock_with_plan(engine)
     engine.start(row.id)
     asked = ledger(db, row.id)
@@ -385,7 +388,7 @@ def test_asking_and_answering_write_m02s_ledger(db):
 
 
 def test_without_a_job_description_there_is_no_ledger_to_write(db):
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     row = mock_with_plan(engine, jd=False)
     engine.start(row.id)
     say(engine, row, "Linear.")
@@ -398,7 +401,7 @@ def test_m02_being_down_does_not_hold_up_the_evaluation(db):
     """Two obligations, two rows: one upstream's outage is not the other's."""
     from .stubs import DownPlanner
 
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions(), m02=DownPlanner())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions(), m02=DownPlanner())
     row = mock_with_plan(engine)
     engine.start(row.id)
     say(engine, row, "Linear.")
@@ -411,7 +414,7 @@ def test_m02_being_down_does_not_hold_up_the_evaluation(db):
 def test_a_drain_that_moves_nothing_says_whether_anything_is_owed(db):
     """`evaluations_sent: 0` has two meanings and a student-facing route has to
     tell them apart: nothing to send, or somebody else is sending it."""
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     row = mock_with_plan(engine)
     engine.start(row.id)
     say(engine, row, "Linear.")
@@ -439,7 +442,7 @@ def test_the_outbox_is_visible_over_http(client, candidate_id, as_student):
 
 def test_the_session_still_ends_with_everything_queued(db):
     """FR-6.18 with AC-6.1: a report exists whatever the upstreams are doing."""
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     engine.upstreams.m13.fail = True
     row = mock_with_plan(engine)
     engine.start(row.id)
@@ -453,7 +456,7 @@ def test_the_session_still_ends_with_everything_queued(db):
 def test_a_student_is_told_a_consequence_once(db):
     """M04 owns consent, so when M04 is absent its own sentence is the whole
     story. The first live run printed both, which reads as two problems."""
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     row = mock_with_plan(engine)
     engine.start(row.id)
     state = engine.state(row.id)
@@ -467,7 +470,7 @@ def test_a_student_is_told_a_consequence_once(db):
 
     # M04 absent: its own sentence already says the session will not count, and
     # M06 does not repeat the consequence underneath it.
-    down = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions(), m04=DownMemory())
+    down = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions(), m04=DownMemory())
     row = mock_with_plan(down)
     down.start(row.id)
     state = down.state(row.id)
@@ -488,7 +491,7 @@ def test_the_answer_reaches_m04_before_the_evaluation_reaches_m13(db):
     live, every one of nine observations came back "evidence does not
     resolve", so the score existed and the skill graph did not move.
     """
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     row = mock_with_plan(engine)
     engine.start(row.id)
     say(engine, row, "Keys are hashed to a bucket index, so you do not scan.")
@@ -519,7 +522,7 @@ def test_the_answer_reaches_m04_before_the_evaluation_reaches_m13(db):
 def test_the_registered_text_is_exactly_what_was_scored(db):
     """M13 quotes character offsets into this string. Trimming, joining or
     re-punctuating it here moves every span that points at it."""
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     row = mock_with_plan(engine)
     engine.start(row.id)
     answer = "   Buckets, and a load factor — kept bounded by resizing.   "
@@ -540,7 +543,7 @@ def test_the_sweeper_retries_what_nobody_is_left_to_retry(engine_db):
     `pending`, the student had stopped answering, and no code path asked M13
     again. A score must not depend on somebody being in the room."""
     db, session_factory = engine_db
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     engine.upstreams.m13.fail = True
     row = mock_with_plan(engine)
     engine.start(row.id)
@@ -567,7 +570,7 @@ def test_the_sweeper_leaves_a_held_row_alone(engine_db):
     """A row M13 refused MAX_ATTEMPTS times is a row for a person to look at.
     Sweeping it for ever would hide the problem and keep M13 busy with it."""
     db, session_factory = engine_db
-    engine = make(db, llm=StubLLM([verdict()] * 4), m05=BankQuestions())
+    engine = make(db, llm=StubLLM([MOVES_ON] * 4), m05=BankQuestions())
     engine.upstreams.m13.fail = True
     engine.upstreams.m13.fail_status = 500  # answered, and refused: a person's
     row = mock_with_plan(engine)

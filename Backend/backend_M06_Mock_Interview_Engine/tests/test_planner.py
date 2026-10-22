@@ -409,6 +409,67 @@ def test_a_focus_without_a_label_is_named_from_its_concept():
     ]
 
 
+FOCUS_TRACKS = {
+    "behavioural": {
+        "round_type": "behavioural",
+        "kind": "behavioural",
+        "concept_ids": ["concept:thinking_aloud", "concept:explaining_tradeoffs"],
+    },
+    "dbms_verbal": {
+        "round_type": "dbms_verbal",
+        "concept_ids": ["concept:indexing", "concept:hashing"],
+    },
+    "dsa_verbal": {
+        "round_type": "dsa_verbal",
+        "concept_ids": ["concept:hashing", "concept:hashing_internals"],
+    },
+}
+
+
+def focused(*concepts: str, **overrides) -> InterviewPlan:
+    return planner.assemble(
+        inputs(
+            coverage=None,
+            jd_id=None,
+            available_round_types=tuple(FOCUS_TRACKS),
+            tracks=FOCUS_TRACKS,
+            focus_concepts=concepts,
+            **overrides,
+        )
+    )
+
+
+def test_a_focus_is_asked_under_the_tracks_that_hold_it_most_first():
+    """A live "Focus: Hashing" was planned under every available track and
+    asked under the first alphabetically — behavioural — so it heard "tell me
+    about a time…" (2026-10-22). And M05 is told to keep to it."""
+    plan = focused("concept:hashing", "concept:hashing_internals", focus_label="Hashing")
+    part = next(s for s in plan.segments if s.title == "Focus: Hashing")
+    assert part.rubric_round_types == ["dsa_verbal", "dbms_verbal"]
+    assert part.concepts_only and part.kind == "technical"
+
+
+def test_a_behavioural_focus_is_run_by_that_side_of_the_panel():
+    plan = focused("concept:thinking_aloud", focus_label="Thinking aloud")
+    part = next(s for s in plan.segments if s.title == "Focus: Thinking aloud")
+    assert (part.kind, part.rubric_round_types) == ("behavioural", ["behavioural"])
+
+
+def test_a_focus_m05_says_nothing_about_keeps_every_track():
+    """No track contents from M05: every available track, as before."""
+    plan = planner.assemble(
+        inputs(
+            coverage=None,
+            jd_id=None,
+            available_round_types=("behavioural", "dsa_verbal"),
+            focus_concepts=("concept:hashing",),
+        )
+    )
+    part = next(s for s in plan.segments if s.title.startswith("Focus:"))
+    assert part.rubric_round_types == ["behavioural", "dsa_verbal"]
+    assert part.concepts_only
+
+
 # ── a mixed interview from the student's courses (2026-10-13) ──────────────
 
 COURSE_TRACKS = {
@@ -497,3 +558,13 @@ def test_each_part_is_steered_to_at_most_eight_studied_concepts():
         mixed(available_round_types=("dsa_verbal",), tracks=tracks, studied_concepts=many)
     )
     assert parts(plan)["dsa_verbal"] == list(many[:8])  # freshest first
+
+
+def test_a_focus_no_track_asks_about_is_left_out_and_says_why():
+    """A resume line's id reached the focus from the notes' "practise again"
+    (2026-10-23). Held to the focus, M05 has nothing: the part is on the plan,
+    left out, with the reason — not a warm-up and a goodbye."""
+    plan = focused("claim:0ac8493e", focus_label="Led a team of 4")
+    part = next(s for s in plan.segments if s.title == "Focus: Led a team of 4")
+    assert part.dropped_reason == planner.FOCUS_UNSERVED
+    assert part.question_budget == 0

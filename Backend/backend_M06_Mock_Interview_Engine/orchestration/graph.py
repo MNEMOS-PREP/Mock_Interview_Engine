@@ -52,6 +52,7 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
 from .. import panel as seating
+from .. import thread
 from ..agents.guard import AnswerScreen, SafetyGuard, neutralise, rule_screen
 from ..agents.interviewer import Interviewer, Utterance
 from ..agents.strategist import ProbeStrategist
@@ -61,6 +62,7 @@ from ..items import Item
 from ..ladder import LadderConfig, Outcome, decide
 from ..llm import LLMResult
 from ..personas import Persona
+from ..phrasebook import REACTIONS
 from ..projection import project_for_interviewer
 from ..state import SessionState
 
@@ -167,12 +169,43 @@ PROBE_MOVES = frozenset(
         "clarify_term",
         "reoffer",
         "rephrase",
+        # 2026-10-22: the moves that react to what an answer is.
+        "challenge",
+        "simplify",
+        "probe_specifics",
+        "ask_evidence",
+        "confront",
+        "probe_missing",
+        "next_part",
+        "give_time",
+        "redirect_repeat",
+        "resume_cut",
+    }
+)
+
+#: The moves the interviewer model phrases from the student's words
+#: (`Interviewer.react`); the rest are authored lines.
+REACTING_MOVES = frozenset(
+    {
+        "rung",
+        "challenge",
+        "simplify",
+        "probe_specifics",
+        "ask_evidence",
+        "confront",
+        "probe_missing",
+        "next_part",
+        "redirect_repeat",
+        "give_time",
+        "resume_cut",
     }
 )
 
 #: Moves that ask about an answer instead of judging it: no verdict, nothing
 #: owed to M13 for the answer they asked about.
-UNJUDGED = frozenset({"didnt_catch", "clarify_term", "reoffer", "rephrase"})
+UNJUDGED = frozenset(
+    {"didnt_catch", "clarify_term", "reoffer", "rephrase", "give_time", "resume_cut"}
+)
 
 #: Spec §6.8: "max 3 per session — beyond that it's annoying".
 MAX_CLARIFY_PER_SESSION = 3
@@ -182,8 +215,9 @@ MAX_CLARIFY_PER_SESSION = 3
 #: garbled or drowned speech falls under 0.4.
 NOT_CAUGHT_BELOW = 0.4
 
-#: The moves "let's keep it moving" may precede (§6.7).
-NUDGEABLE = frozenset({"rung", "redirect_once", "answer_briefly"})
+#: The moves "let's keep it moving" may precede (§6.7) — never a pushback or
+#: a simpler question, where it would read as impatience with a struggle.
+NUDGEABLE = frozenset({"rung", "redirect_once", "answer_briefly", "next_part"})
 
 #: Leave room for a real answer. Below this a new question is not asked.
 MIN_SECONDS_FOR_A_QUESTION = 60
@@ -682,6 +716,37 @@ def _term_to_check(state: SessionState, item: Item | None) -> tuple[str, str] | 
     return unsure_term(last.text, last.unsure, item)
 
 
+def ladder_depth(state: SessionState) -> int:
+    return state.ladder.depth if state.ladder is not None else 0
+
+
+#: How a question was left that the graceful exit's comfort would misdescribe
+#: (2026-10-22): "it's a detail people usually look up" after a misunderstanding
+#: is false reassurance, and the student hears it as "that was fine".
+UNRESOLVED = frozenset(
+    {
+        "gap:misunderstanding",
+        "gap:complete",
+        "gap:surface",
+        "gap:advanced",
+        "unsupported",
+        "avoided",
+        "no_answer",
+    }
+)
+
+
+def graceful_exit(persona: Persona, outcome: Outcome | None) -> str:
+    """The exit after a struggle: the persona's own graceful line for a slip
+    or a forgotten detail; a plain, honest one when the gap is real."""
+    said = persona.said()
+    if outcome is not None and outcome.left in UNRESOLVED:
+        lines = REACTIONS.get(persona.speech, REACTIONS["neutral"]).get("leave_open")
+        if lines:
+            return lines[0]
+    return said.graceful_exit
+
+
 def _answer_given(state: SessionState, answer: str) -> str:
     """The answer as given: a reply to "did you say …?" with the answer it
     clarifies, that answer first."""
@@ -730,7 +795,19 @@ def build(deps: Deps):
         # strategist would make the verdict — which becomes an M05 θ
         # observation (FR-6.25) — depend on the interviewer's manner. The
         # adapted probe IS the question and survives; only the lead is cut.
-        d = deps.strategist.decide(inp.item, ladder.depth, _question_to_repeat(inp.state), answer)
+        d = deps.strategist.decide(
+            inp.item,
+            ladder.depth,
+            _question_to_repeat(inp.state),
+            answer,
+            # 2026-10-22: the question's own thread, so a correction, a
+            # contradiction and the same answer twice are visible — and the
+            # student's earlier statements, for a direct contradiction only.
+            thread=thread.thread_before_answer(inp.state),
+            earlier=thread.earlier_statements(inp.state),
+            claim=thread.claim_text(inp.state, inp.item),
+            later=thread.not_asked_yet(inp.state, inp.item),
+        )
         verdict = d.verdict
         if verdict.off_question and on_topic(answer, inp.item, _question_to_repeat(inp.state)):
             # 2026-10-07: a wrong attempt that uses the question's own words
@@ -764,6 +841,7 @@ def build(deps: Deps):
             has_own_rung=lambda d: d in item.follow_ups,
             hints_left=max(len(item.hint_ladder) - inp.state.hint_level, 0),
             conduct_warnings=inp.state.flags.conduct_warnings,
+            ctx=thread.context(inp.state, item, inp.answer or ""),
         )
         out: dict[str, Any] = {"outcome": outcome}
         if outcome.move.kind == "end_session":
@@ -842,12 +920,13 @@ def build(deps: Deps):
         back = _taken_back(inp.state, persona, seated) if asker.id == persona.id else ""
         if back:
             _emit(back)
-        if move.kind == "rung":
-            assert move.depth is not None
+        if move.kind in REACTING_MOVES:
+            # 2026-10-22: the answer decided the move; the interviewer phrases
+            # it from the student's own words, in the move's tone.
             view = project_for_interviewer(
                 transcript=inp.state.transcript,
                 move=move.kind,
-                ladder_depth=move.depth,
+                ladder_depth=move.depth if move.depth is not None else ladder_depth(inp.state),
                 time_remaining_s=inp.state.time_remaining_s(inp.now),
                 profile_prefix=inp.state.profile_prefix,
                 # §6.6: what happened before the last six turns. Without it a
@@ -858,13 +937,29 @@ def build(deps: Deps):
                 persona_style=asker.style,
                 max_words=asker.verbosity_target,
             )
-            utterance = deps.interviewer.probe(
-                item, move.depth, view=view, last_answer=last_answer, on_token=_emit
+            utterance = deps.interviewer.react(
+                item,
+                move,
+                view=view,
+                name=asker.name,
+                last_answer=last_answer,
+                asked=repeat_q,
+                openers=thread.recent_openers(inp.state, asker.id),
+                answer_key=item.answer_key,
+                on_token=_emit,
+                seed=f"{inp.state.session_id}:{len(inp.state.transcript)}",
             )
             if utterance.call is not None:
                 out["calls"] = [utterance.call]
+            if move.kind in ("give_time", "resume_cut"):
+                # Nothing new is asked: the question stays the one before.
+                utterance.question = repeat_q
         elif move.kind == "clarify":
-            utterance = Utterance(lines.clarify, "template")
+            # The question stays open: "Can you rephrase that?" is about the
+            # answer. Without it a redirect after a clarify repeated the
+            # clarify — "Here's mine again. Can you rephrase that?" (live run,
+            # 2026-10-22).
+            utterance = Utterance(lines.clarify, "template", question=repeat_q)
         elif move.kind == "didnt_catch":
             utterance = Utterance(lines.didnt_catch, "template", question=repeat_q)
         elif move.kind == "reoffer":
@@ -915,8 +1010,8 @@ def build(deps: Deps):
             out["hint_level"] = level
         else:  # steelman — unreachable while FR-6.20 is blocked
             raise RuntimeError(f"move {move.kind} has no utterance in Phase 1")
-        if move.kind not in ("rung", "rephrase") or (
-            move.kind == "rephrase" and utterance.source == "template"
+        if (move.kind not in REACTING_MOVES and move.kind != "rephrase") or (
+            utterance.source == "template"
         ):
             _emit(utterance.text)
         out["utterance"] = _voiced(
@@ -932,9 +1027,12 @@ def build(deps: Deps):
         go?" — and nothing is selected until the student chooses.
         """
         inp, outcome = s["inp"], s["outcome"]
-        lines = deps.persona_for(inp.state).said()
-        exit_line = Interviewer.exit_then(
-            lines, graceful=outcome.move.graceful, ceiling=outcome.ceiling is not None
+        who = deps.persona_for(inp.state)
+        lines = who.said()
+        exit_line = (
+            graceful_exit(who, outcome)
+            if outcome.move.graceful
+            else Interviewer.exit_then(lines, graceful=False, ceiling=outcome.ceiling is not None)
         )
         text = f"{exit_line} {lines.retry_offer}".strip()
         _emit(text)
@@ -1017,7 +1115,7 @@ def build(deps: Deps):
             recent = " ".join(spoken_by(inp.state, leaving.id)[-3:])
             if graceful:
                 exit_line = _fresh_exit(
-                    inp.state, leaving, said_leaving.graceful_exit, (said_leaving.moving_on,)
+                    inp.state, leaving, graceful_exit(leaving, outcome), (said_leaving.moving_on,)
                 )
             elif outcome.ceiling is not None and said_leaving.ceiling_exit not in recent:
                 exit_line = said_leaving.ceiling_exit

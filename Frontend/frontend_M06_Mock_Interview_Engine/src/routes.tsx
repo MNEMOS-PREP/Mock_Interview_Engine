@@ -12,6 +12,7 @@ import { Navigate, Route, useParams } from "react-router-dom";
 import { InterviewStage } from "./components/InterviewStage";
 import { PlanPreview } from "./components/PlanPreview";
 import { MockHome } from "./components/MockHome";
+import { QuestionLibrary } from "./components/QuestionLibrary";
 import { SessionNotes } from "./components/SessionNotes";
 import { SystemPage } from "./components/SystemPage";
 
@@ -37,6 +38,7 @@ export const m06Routes = (
   <Route key="m06">
     <Route path="/mock" element={<MockHome />} />
     <Route path="/mock/system" element={<SystemPage />} />
+    <Route path="/mock/library" element={<QuestionLibrary />} />
     <Route path="/mock/:sessionId/plan" element={<PlanRoute />} />
     <Route path="/mock/:sessionId" element={<StageRoute />} />
     <Route path="/mock/:sessionId/report" element={<NotesRoute />} />

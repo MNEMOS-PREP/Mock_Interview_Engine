@@ -375,7 +375,9 @@ def test_a_drafts_only_track_is_offered_and_says_it_is_not_scored(client):
             m05=Tracks(), m13=FixtureEvaluator(round_types=("dsa_verbal", "ml_verbal"))
         )
     )
-    (ml,) = client.get("/v1/interviews/tracks").json()["tracks"]
+    # M05's tracks — the resume interview (2026-10-22) is offered beside them.
+    offered = client.get("/v1/interviews/tracks").json()["tracks"]
+    (ml,) = [t for t in offered if t["round_type"] != "resume"]
     assert (ml["title"], ml["scored"], ml["drafts"]) == ("Machine learning", False, 50)
 
 

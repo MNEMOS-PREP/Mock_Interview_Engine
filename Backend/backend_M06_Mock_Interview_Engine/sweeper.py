@@ -104,6 +104,17 @@ def close_abandoned(
     return closed
 
 
+#: 2026-10-22: a short session's graces scale with it — a two-minute drill
+#: left behind held the student's one slot for half an hour. At least this…
+SHORT_GRACE_S = 120
+#: …and the session's own length this many times over, up to the long grace.
+GRACE_FACTOR = 2
+
+
+def _grace(state, long_grace: float) -> float:
+    return min(long_grace, max(SHORT_GRACE_S, state.requested_minutes * 60 * GRACE_FACTOR))
+
+
 def _abandoned(state, now) -> bool:
     """True when nobody is coming back to this one."""
     if state.status is SessionStatus.paused:
@@ -112,15 +123,16 @@ def _abandoned(state, now) -> bool:
     if state.status is SessionStatus.live and state.flags.away_since is not None:
         # §8: a disconnect stops the clock, so the check below would never
         # fire for a student who closed the tab mid-question. Away for as long
-        # as an abandoned pause is abandoned.
+        # as an abandoned pause is abandoned — or, for a drill, a few minutes.
         away_s = (now - state.flags.away_since).total_seconds()
-        return away_s > ABANDONED_PAUSE_S
+        return away_s > _grace(state, ABANDONED_PAUSE_S)
     if state.status is SessionStatus.live:
         # Its own clock ran out, and then some. Measured on `time_used_s`
         # rather than on what is left, because `time_remaining_s` clamps at
         # zero — "overdue by an hour" and "just finished" look identical
         # through it, which made the first version of this check dead code.
-        return state.time_used_s(now) > state.requested_minutes * 60 + ABANDONED_LIVE_GRACE_S
+        grace = _grace(state, ABANDONED_LIVE_GRACE_S)
+        return state.time_used_s(now) > state.requested_minutes * 60 + grace
     return False
 
 

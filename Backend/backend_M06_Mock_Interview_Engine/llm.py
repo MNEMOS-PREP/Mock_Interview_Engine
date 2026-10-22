@@ -48,6 +48,9 @@ log = logging.getLogger("uvicorn.error")
 JOB_STRATEGIST = "probe_strategist"
 JOB_INTERVIEWER = "interviewer_phrasing"
 JOB_SUMMARY = "segment_summary"
+#: 2026-10-22: a multi-part question split into a primary and follow-ups,
+#: once per stem (`decompose.py`).
+JOB_DECOMPOSE = "question_split"
 #: EC-6.6. The guard tier is a classifier, not a conversation: it takes the
 #: text as the user message and answers with a probability (`classify`).
 JOB_GUARD = "input_guard"
@@ -93,6 +96,16 @@ JOBS: dict[str, JobSpec] = {
         reasoning_effort="low",
         max_tokens=1500,
         timeout_s=10.0,
+    ),
+    JOB_DECOMPOSE: JobSpec(
+        tier="extraction",
+        env="M06_MODEL_DECOMPOSE",
+        reasoning_effort="low",
+        max_tokens=900,
+        # On the path to a new question when the split is not cached yet —
+        # `/upcoming` usually makes it while the student answers the last one.
+        timeout_s=float(os.getenv("M06_DECOMPOSE_TIMEOUT", "5")),
+        temperature=0.0,
     ),
     JOB_GUARD: JobSpec(
         tier="guard",

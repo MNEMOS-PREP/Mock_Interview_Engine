@@ -13,6 +13,7 @@ has one, and the generic rung only when it does not.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
@@ -25,6 +26,20 @@ class KeyPoint:
     id: str
     statement: str
     required: bool = False
+
+
+@dataclass(frozen=True)
+class Part:
+    """One part of a question asked one part at a time (`decompose.py`).
+
+    Part 0 is the question as first asked; parts 1… come as follow-ups, each
+    once the answer before it has been heard. `key_point_ids` are the points
+    of the whole question this part asks about — so an answer that already
+    covered them skips the part, and M13 scores only what was asked."""
+
+    index: int
+    text: str
+    key_point_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -44,6 +59,25 @@ class Item:
     hint_ladder: tuple[str, ...] = ()
     time_budget_s: int = 300
     label: str = ""
+    #: M05's reference answer: *a* good answer. Never said during the
+    #: interview — the guard refuses a line that repeats it — and shown in
+    #: the notes afterwards as one way a strong answer goes.
+    reference_answer: str = ""
+    #: 2026-10-22: the question asked one part at a time — part 0 is `stem`
+    #: as first said, the rest are follow-ups (`decompose.py`). Empty for a
+    #: question asked whole.
+    parts: tuple[Part, ...] = ()
+    #: The full stem as authored, when `stem` is only its first part.
+    full_stem: str = ""
+
+    @property
+    def answer_key(self) -> list[str]:
+        """What must never be said to the student mid-interview."""
+        key = [kp.statement for kp in self.key_points]
+        key += [point for points in self.expects.values() for point in points]
+        if self.reference_answer:
+            key.append(self.reference_answer)
+        return key
 
     def rung(self, depth: int) -> tuple[str, bool]:
         """(wording, is_own). `is_own` is False when the generic rung was used."""
@@ -119,7 +153,37 @@ def from_m05(question: dict[str, Any], *, round_type: str, source: str) -> Item:
         hint_ladder=tuple(question.get("hint_ladder") or ()),
         time_budget_s=int(question.get("time_budget_s") or 300),
         label=str(question.get("label") or ""),
+        reference_answer=str(question.get("reference_answer") or ""),
     )
+
+
+#: Words M01's probe templates use themselves ("Walk me through this project",
+#: "how did you split the work across the team"): sharing one with the claim
+#: does not make a question say which line it is about.
+_TEMPLATE_WORDS = frozenset(
+    "walk through what actually build built words your this that project work team "
+    "with from into about situation took split across track format were judged".split()
+)
+#: The most of a claim read out before its question.
+CLAIM_QUOTE_WORDS = 30
+
+
+def shorten(text: str, limit: int) -> str:
+    """At most `limit` characters, cut at a word and marked when cut — a
+    claim's label used to end "…reduced average order w"."""
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rsplit(" ", 1)[0].rstrip(" ,;:.") + "…"
+
+
+def _content(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) >= 4} - _TEMPLATE_WORDS
+
+
+def names_its_claim(question: str, claim: str) -> bool:
+    """Whether a claim's question says which resume line it is about."""
+    return bool(_content(question) & _content(claim))
 
 
 def from_drill(drill: dict[str, Any]) -> Item:
@@ -128,15 +192,28 @@ def from_drill(drill: dict[str, Any]) -> Item:
     if not probes:
         raise ValueError("a drill needs at least one probe")
     opening = probes[0]
+    stem = str(opening["question"])
+    claim = " ".join(str(drill.get("claim_text", "")).split()).rstrip(" .;,")
+    if claim and not names_its_claim(stem, claim):
+        # 2026-10-23: M01's opening probes are generic by design ("Walk me
+        # through this project", "What was the situation when you took this
+        # on?") — its page shows the line beside them. Spoken, nothing does: a
+        # live resume interview asked "walk me through this project" about two
+        # different lines. The interviewer reads the line out first.
+        words = claim.split()
+        quoted = " ".join(words[:CLAIM_QUOTE_WORDS])
+        if len(words) > CLAIM_QUOTE_WORDS:
+            quoted += "…"
+        stem = f"On your resume: “{quoted}”. {stem}"
     return Item(
-        stem=opening["question"],
+        stem=stem,
         source="m01_probe",
         concept_id=f"claim:{drill.get('claim_id', '')}",
         rubric_round_type=None,
         follow_ups={int(p["depth"]): p["question"] for p in probes[1:] if int(p["depth"]) >= 1},
         expects=_expects({p["depth"]: p.get("expects") for p in probes}),
         time_budget_s=120,
-        label=str(drill.get("claim_text", ""))[:80],
+        label=shorten(str(drill.get("claim_text", "")), 80),
     )
 
 
@@ -159,6 +236,12 @@ def to_dict(item: Item) -> dict[str, Any]:
         "hint_ladder": list(item.hint_ladder),
         "time_budget_s": item.time_budget_s,
         "label": item.label,
+        "reference_answer": item.reference_answer,
+        "parts": [
+            {"index": p.index, "text": p.text, "key_point_ids": list(p.key_point_ids)}
+            for p in item.parts
+        ],
+        "full_stem": item.full_stem,
     }
 
 
@@ -175,12 +258,23 @@ def from_dict(data: dict[str, Any]) -> Item:
         hint_ladder=tuple(data.get("hint_ladder") or ()),
         time_budget_s=int(data.get("time_budget_s", 300)),
         label=data.get("label", ""),
+        reference_answer=str(data.get("reference_answer") or ""),
+        parts=tuple(
+            Part(
+                index=int(p["index"]),
+                text=str(p["text"]),
+                key_point_ids=tuple(str(k) for k in p.get("key_point_ids") or ()),
+            )
+            for p in data.get("parts") or []
+        ),
+        full_stem=str(data.get("full_stem") or ""),
     )
 
 
 __all__ = [
     "Item",
     "KeyPoint",
+    "Part",
     "expected_statements",
     "from_dict",
     "from_drill",

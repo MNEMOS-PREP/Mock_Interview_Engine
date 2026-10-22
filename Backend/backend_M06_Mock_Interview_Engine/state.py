@@ -32,7 +32,7 @@ from uuid import UUID
 from ai_core.timeutil import as_utc
 from pydantic import BaseModel, Field
 
-from . import degrade
+from . import degrade, difficulty
 from .contracts import (
     DEPTH_CAP,
     InterviewPlan,
@@ -41,6 +41,7 @@ from .contracts import (
     SessionFlags,
     SessionStatus,
     SpokenPart,
+    TopicState,
     TurnView,
 )
 
@@ -76,6 +77,9 @@ class SessionState(BaseModel):
     track: str | None = None
     include_resume: bool = False
     resume_id: UUID | None = None
+    #: 2026-10-22: questions from the student's library to practise again —
+    #: each `{entry_id, question_key, item}`, in the order they chose.
+    revisit: list[dict] = Field(default_factory=list)
     #: M04's pinned summary text (AC-4.13). The interviewer's cached prefix.
     profile_prefix: str = ""
 
@@ -139,6 +143,10 @@ class SessionState(BaseModel):
     transcript: list[TurnView] = Field(default_factory=list)
 
     ladder: ProbeLadderState | None = None
+    #: The ladder a part's end closed (2026-10-23). The step that moves on
+    #: records the new part before its own decision, so the last answer of a
+    #: part was folded into no question: its topic never heard it.
+    closed_ladder: ProbeLadderState | None = None
     pending_move: Move | None = None
     #: The interviewer turn waiting for an answer, if any.
     open_turn_id: UUID | None = None
@@ -151,6 +159,13 @@ class SessionState(BaseModel):
     hint_level: int = 0
     #: FR-6.6: the shallowest depth each concept broke at in this session.
     break_depths: dict[str, int] = Field(default_factory=dict)
+    #: 2026-10-22: how each topic is going in THIS interview — the level its
+    #: next follow-up is pitched at and why (`difficulty.py`). Folded from the
+    #: decisions; never carried to another topic or another interview.
+    topics: dict[str, TopicState] = Field(default_factory=dict)
+    #: 2026-10-22: the answers (turn indices) after which a delivery note was
+    #: given — the cooldown counts from the last (`delivery.py`).
+    coached_at: list[int] = Field(default_factory=list)
 
     flags: SessionFlags = Field(default_factory=SessionFlags)
     #: turn_id -> what M13 said about it. A STATUS, never a score: M13 owns
@@ -271,6 +286,7 @@ def _created(_s: SessionState | None, p: dict, at: datetime) -> SessionState:
         # Sessions created before 2026-10-07 always read the resume.
         include_resume=bool(p.get("include_resume", "track" not in p)),
         resume_id=UUID(str(p["resume_id"])) if p.get("resume_id") else None,
+        revisit=list(p.get("revisit") or []),
         flags=SessionFlags(pauses_allowed=pause_allowance(int(p.get("requested_minutes", 45)))),
         created_at=at,
     )
@@ -317,6 +333,7 @@ def _question_asked(s: SessionState, p: dict, at: datetime) -> None:
         # A fresh question opens a fresh ladder; a rung or a clarify continues
         # the one already open.
         s.ladder = ProbeLadderState(concept_id=p.get("concept_id") or "")
+        s.closed_ladder = None
         s.hint_level = 0
         s.ladder_is_retry = retry
         if retry:
@@ -395,6 +412,7 @@ def _answer_received(s: SessionState, p: dict, at: datetime) -> None:
             unsure=[tuple(r) for r in (p.get("asr") or {}).get("unsure") or []],
             language=(p.get("asr") or {}).get("language"),
             prefill=p.get("prefill"),
+            completion_reason=p.get("completion_reason"),
             at=at,
         )
     )
@@ -475,7 +493,9 @@ def _probe_decided(s: SessionState, p: dict, _at: datetime) -> None:
     """Reduce the verdict to ladder mechanics; the band itself is not kept."""
     _require_open(s, "probe.decided")
     move = Move.model_validate(p["move"])
-    ladder = s.ladder
+    # A decision is always about the question that was open when the answer
+    # came: after a part's end, the one that end closed.
+    ladder = s.ladder if s.ladder is not None else s.closed_ladder
     if ladder is not None:
         ladder.moves.append(move.kind)
         if p.get("success") is True:
@@ -492,12 +512,58 @@ def _probe_decided(s: SessionState, p: dict, _at: datetime) -> None:
                 s.break_depths[concept] = min(depth, s.break_depths.get(concept, depth))
         if p.get("ceiling") is not None:
             ladder.ceiling = int(p["ceiling"])
+        _thread(s, ladder, move, p)
     if p.get("conduct"):
         # EC-6.4: counted, because the second one ends the session.
         s.flags.conduct_warnings += 1
     if (p.get("screen") or {}).get("injection"):
         s.flags.inputs_flagged += 1
     s.pending_move = move
+
+
+def _thread(s: SessionState, ladder: ProbeLadderState, move: Move, p: dict) -> None:
+    """The question's own thread, and its topic (2026-10-22). Decisions from
+    before then carry none of these keys and change nothing here."""
+    if p.get("category"):
+        ladder.categories.append(str(p["category"]))
+    quality = p.get("quality")
+    if quality is not None:
+        ladder.qualities.append(float(quality))
+    if move.kind == "challenge":
+        ladder.challenges += 1
+    elif move.kind == "ask_evidence":
+        ladder.evidence_asks += 1
+    elif move.kind == "next_part" and move.part is not None and move.part not in ladder.parts_asked:
+        ladder.parts_asked.append(move.part)
+    if move.angle and move.kind == "rung" and move.angle not in ladder.angles:
+        ladder.angles.append(move.angle)
+    if p.get("missing") is not None:
+        ladder.missing = [str(k) for k in p["missing"]]
+    if p.get("corrected"):
+        # Help once needed stays needed: a later "self" does not undo it.
+        if ladder.corrected != "prompted":
+            ladder.corrected = str(p["corrected"])
+        ladder.misconception = None
+    if p.get("misconception"):
+        ladder.misconception = str(p["misconception"])
+    if p.get("left"):
+        ladder.outcome = str(p["left"])
+    concept = ladder.concept_id
+    if concept and (quality is not None or p.get("misconception")):
+        s.topics[concept] = difficulty.update(
+            s.topics.get(concept),
+            concept,
+            quality=float(quality) if quality is not None else None,
+            misconception=p.get("misconception"),
+            decision=str(p.get("reason") or ""),
+        )
+
+
+def _delivery_noted(s: SessionState, p: dict, _at: datetime) -> None:
+    """How an answer was said. Only a note that was GIVEN is kept here —
+    the counts are the report's, read from the log."""
+    if p.get("note"):
+        s.coached_at.append(int(p.get("turn_index", 0)))
 
 
 def _retry_offered(s: SessionState, p: dict, at: datetime) -> None:
@@ -540,6 +606,7 @@ def _segment_transition(s: SessionState, p: dict, _at: datetime) -> None:
     # The round's own clock starts here (EC-6.9). Recorded by the writer,
     # because the fold has no clock of its own.
     s.segment_started_used_s = float(p.get("used_s", s.segment_started_used_s))
+    s.closed_ladder = s.ladder
     s.ladder = None
     s.pending_move = None
     s.pending_bridge = p.get("line") or None
@@ -759,6 +826,7 @@ _REDUCERS = {
     # interview, so neither has anything to fold.
     "question.repeated": _noted,
     "question.flagged": _noted,
+    "delivery.noted": _delivery_noted,
     "turn.heard": _turn_heard,
     "consent.resolved": _consent,
     "evaluation.queued": _evaluation,

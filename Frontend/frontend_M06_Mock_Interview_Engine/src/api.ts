@@ -19,6 +19,7 @@ import type {
   CohortStats,
   DependencyRow,
   Health,
+  LibraryEntry,
   ModeOption,
   PersonaCard,
   Reliability,
@@ -27,6 +28,7 @@ import type {
   Session,
   SessionReport,
   SessionSummary,
+  StarResult,
   TracksResponse,
   TurnView,
 } from "./types";
@@ -207,9 +209,42 @@ export function useCreateSession() {
       /** Questions from the resume — off unless asked for — and which one. */
       include_resume?: boolean;
       resume_id?: string;
+      /** 2026-10-22: library entries to practise again, in order. */
+      revisit?: string[];
     }) =>
       api.post<Session>("/v1/interviews", body),
     onSuccess: write,
+  });
+}
+
+// ── the question library (2026-10-22) ───────────────────────────────────
+
+export const libraryKey = ["m06", "library"] as const;
+
+/** The student's questions: starred by them, flagged by the interview. */
+export function useLibrary() {
+  return useQuery({
+    queryKey: libraryKey,
+    queryFn: () => api.get<LibraryEntry[]>("/v1/interviews/library"),
+  });
+}
+
+/** Star or unstar a question of an interview — during it, or in its notes. */
+export function useStar(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ turnId, on }: { turnId: string; on: boolean }) =>
+      api.post<StarResult>(`/v1/interviews/${id}/questions/${turnId}/star`, { on }),
+    onSuccess: () => client.invalidateQueries({ queryKey: libraryKey }),
+  });
+}
+
+/** Remove a question from the library — both marks; its history stays. */
+export function useRemoveFromLibrary() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (entryId: string) => api.del<void>(`/v1/interviews/library/${entryId}`),
+    onSuccess: () => client.invalidateQueries({ queryKey: libraryKey }),
   });
 }
 
@@ -258,7 +293,11 @@ export function useAnswer(id: string) {
         unsure: [number, number][];
         model?: string | null;
         language?: string | null;
+        /** How long they spoke, seconds — for pace only (2026-10-22). */
+        duration_s?: number | null;
       };
+      /** `interrupted` when the connection or the mic cut the answer off. */
+      completion_reason?: "submit" | "interrupted";
     }) => api.post<Session>(`/v1/interviews/${id}/answer`, body),
     onSuccess: write,
   });

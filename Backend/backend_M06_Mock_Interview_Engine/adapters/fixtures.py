@@ -47,9 +47,14 @@ class LocalQuestions:
     def select(self, request: dict[str, Any]) -> dict[str, Any] | None:
         self.selected.append(request)
         seen = {UUID(str(i)) for i in request.get("seen_item_ids", [])}
+        # As M05 keeps it (2026-10-23): a focus is a hard filter on any
+        # concept the item measures, so a focus with M05 down stays on topic.
+        only = set(request.get("only_concepts") or ())
         for item in self.items:
             item_id = UUID(item["id"])
             if item_id in seen or request["round_type"] not in item["round_types"]:
+                continue
+            if only and not only & {c["concept_id"] for c in item.get("concepts", [])}:
                 continue
             if item["time_budget_s"] > request.get("time_remaining_s", 1800):
                 continue

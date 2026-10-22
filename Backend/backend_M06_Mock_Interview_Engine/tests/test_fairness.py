@@ -39,7 +39,7 @@ from backend_M06_Mock_Interview_Engine.engine import Engine, ThetaCache
 from backend_M06_Mock_Interview_Engine.llm import NullLLM
 from backend_M06_Mock_Interview_Engine.models import EvaluationOutbox
 
-from .stubs import BankQuestions, NoClaims, StubLLM, verdict
+from .stubs import BankQuestions, NoClaims, StubLLM, close, verdict
 
 #: Every mode, now that each one is a config with its own personas (day 9):
 #: the gate has to hold for the feature it was written before.
@@ -62,6 +62,8 @@ def run(db, mode: str) -> tuple[Engine, uuid.UUID]:
     engine.start(row.id)
     state = engine.state(row.id)
     engine.answer(row.id, state.open_turn_id, ANSWER)
+    # The question's evaluation is owed when it closes (2026-10-22).
+    close(engine, row)
     return engine, row.id
 
 
@@ -201,6 +203,12 @@ def test_the_null_model_is_judged_the_same_way_too(db):
             e.payload for e in store.events_for(engine.db, row.id) if e.kind == "probe.decided"
         )
         verdicts[mode] = {k: v for k, v in decided.items() if k not in ("turn_id",)}
-    assert (
-        verdicts["practice"] == verdicts["mock"] == verdicts["real_drive"] == verdicts["final_boss"]
-    )
+    # The judgement is the same in every mode. What the interviewer DOES with
+    # it is a mode's mechanics (2026-10-22): Final Boss offers no simpler
+    # question, so there — and only there — the move differs.
+    judgement = ("verdict", "category", "quality", "misconception", "missing", "screen")
+    reads = {mode: {k: verdicts[mode].get(k) for k in judgement} for mode in MODES}
+    assert reads["practice"] == reads["mock"] == reads["real_drive"] == reads["final_boss"]
+    assert verdicts["practice"] == verdicts["mock"] == verdicts["real_drive"]
+    assert verdicts["mock"]["move"]["kind"] == "simplify"
+    assert verdicts["final_boss"]["move"]["kind"] == "move_on"

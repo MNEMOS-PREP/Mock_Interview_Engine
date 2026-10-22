@@ -50,9 +50,9 @@ import {
   type KeptAnswer,
 } from "@ai/core";
 
-import { useReport } from "../api";
+import { useReport, useStar } from "../api";
 import { bandOf, missingStatements, topicName } from "../bands";
-import type { QuestionReport, SessionReport } from "../types";
+import type { QuestionReport, ReportSummary, SessionReport } from "../types";
 
 /** The colour is a dot and a tint; the word stays in ink, which passes
  *  contrast in both themes where orange text on white did not. */
@@ -246,6 +246,161 @@ function depthSentence(question: QuestionReport): string {
   }.`;
 }
 
+/** 2026-10-22: what the interview itself found in the answers — the
+ *  student's own words, what held, what did not and why, kept until now. */
+function Found({ question }: { question: QuestionReport }) {
+  const wrong = question.went_wrong ?? [];
+  const well = question.went_well ?? [];
+  const unsupported = question.unsupported ?? [];
+  const resumeLine = question.source === "m01_probe";
+  const contradictions = question.contradictions ?? [];
+  const corrected =
+    question.corrected === "self"
+      ? "You caught that one yourself and corrected it."
+      : question.corrected === "prompted"
+        ? "You got there after the interviewer pushed back — that counts, with the help noted."
+        : null;
+  if (
+    !wrong.length &&
+    !well.length &&
+    !unsupported.length &&
+    !contradictions.length &&
+    !question.claim_check &&
+    !corrected &&
+    !question.misconception &&
+    !question.last_time
+  )
+    return null;
+  return (
+    <div className="mt-4 space-y-3 rounded-xl border border-line bg-surface p-4">
+      <p className="text-2xs uppercase tracking-wide text-ink-faint">What the interview found</p>
+      {question.claim_check && <p className="text-sm font-medium text-ink">{question.claim_check}</p>}
+      {well.length > 0 && (
+        <div>
+          <p className="text-2xs text-ink-faint">What held</p>
+          <ul className="mt-1 space-y-1 text-sm text-ink">
+            {well.map((point) => (
+              <li key={point} className="flex gap-2">
+                <span aria-hidden className="text-confirmed">✓</span>
+                {point}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {wrong.length > 0 && (
+        <div>
+          <p className="text-2xs text-ink-faint">What didn't hold</p>
+          <ul className="mt-1 space-y-2">
+            {wrong.map((finding) => (
+              <li key={finding.said} className="text-sm leading-relaxed text-ink">
+                <span className="text-ink-soft">You said “{finding.said}”.</span>
+                {finding.why && <span> {finding.why}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {unsupported.length > 0 && (
+        <div>
+          {/* A resume line is backed by its number; anything else by its reason. */}
+          <p className="text-2xs text-ink-faint">{resumeLine ? "Claimed, not shown" : "Said, not shown"}</p>
+          <ul className="mt-1 space-y-1 text-sm text-ink-soft">
+            {unsupported.map((claim) => (
+              <li key={claim}>
+                “{claim}” —{" "}
+                {resumeLine
+                  ? "be ready with the number, the baseline and how you measured it."
+                  : "say why it holds, not only that it does."}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {contradictions.map((pair) => (
+        <p key={`${pair.why}-${pair.said}`} className="text-sm text-ink-soft">
+          Earlier you said “{pair.why}”{pair.said ? `, then “${pair.said}”` : ""} — those don't fit together.
+        </p>
+      ))}
+      {corrected && <p className="text-sm text-ink-soft">{corrected}</p>}
+      {question.misconception && (
+        <p className="text-sm text-ink-soft">
+          <span className="text-ink-faint">The idea to revisit:</span> {question.misconception}
+        </p>
+      )}
+      {question.last_time && (
+        <p className="rounded-lg bg-surface-sunken px-3 py-2 text-sm text-ink-soft">{question.last_time}</p>
+      )}
+    </div>
+  );
+}
+
+/** The question's star (2026-10-22): saved to practise again. The
+ *  interview's own flag is shown beside it and survives an unstar. */
+function SaveToggle({ sessionId, question }: { sessionId: string; question: QuestionReport }) {
+  const star = useStar(sessionId);
+  const [starred, setStarred] = useState(Boolean(question.starred));
+  const anchor = question.turn_id;
+  if (!anchor) return null;
+  return (
+    <span className="inline-flex items-center gap-2">
+      {question.flagged && (
+        <span
+          className="rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-2xs text-ink-soft"
+          title="The interview marked this one as worth practising again"
+        >
+          Worth practising
+        </span>
+      )}
+      <button
+        type="button"
+        aria-pressed={starred}
+        disabled={star.isPending}
+        onClick={() =>
+          star.mutate(
+            { turnId: anchor, on: !starred },
+            { onSuccess: (result) => setStarred(result.starred) },
+          )
+        }
+        className="text-2xs font-medium text-brand hover:underline disabled:opacity-60"
+      >
+        {starred ? "★ Saved" : "☆ Save to your library"}
+      </button>
+    </span>
+  );
+}
+
+/** The interview in a few lines — built from the questions below. */
+function Summary({ summary }: { summary: ReportSummary }) {
+  const blocks: [string, string[]][] = [
+    ["Held up", summary.held],
+    ["Gaps to work on", summary.gaps],
+    ["Corrected along the way", summary.corrected],
+    ["Came up more than once", summary.repeated_misconceptions],
+    ["Claims to back up", summary.unsupported_claims],
+    ["How each topic went", summary.topics],
+    ["How you said it", summary.communication],
+  ];
+  const shown = blocks.filter(([, lines]) => lines.length > 0);
+  if (!shown.length) return null;
+  return (
+    <section className="mt-5 grid gap-3 sm:grid-cols-2" aria-label="The interview in brief">
+      {shown.map(([title, lines]) => (
+        <div key={title} className="rounded-xl border border-line bg-surface p-4">
+          <p className="text-2xs uppercase tracking-wide text-ink-faint">{title}</p>
+          <ul className="mt-2 space-y-1.5">
+            {lines.map((line) => (
+              <li key={line} className="text-sm leading-relaxed text-ink">
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function Stat({ value, label }: { value: string | number; label: string }) {
   return (
     <div>
@@ -275,6 +430,10 @@ function QuestionBlock({
       <p className="flex flex-wrap items-center gap-2 text-2xs text-ink-faint">
         <span className="uppercase tracking-wide">Question {index + 1}</span>
         {question.asked_by && <span>· {question.asked_by}</span>}
+        {question.outcome_words && <span>· {question.outcome_words}</span>}
+        <span className="ml-auto">
+          <SaveToggle sessionId={sessionId} question={question} />
+        </span>
         {bandOf(question) && (
           <span
             className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-semibold text-ink ${BAND_STYLE[bandOf(question)!]}`}
@@ -296,6 +455,8 @@ function QuestionBlock({
           {question.hints_used === 1 ? "" : "s"} here.
         </p>
       )}
+
+      <Found question={question} />
 
       {question.feedback.length > 0 && (
         // M13's words, never its numbers: the display gate holds those until
@@ -354,13 +515,45 @@ function QuestionBlock({
               </li>
             ))}
           </ul>
+          {question.one_strong_answer && (
+            // *A* good answer, not the only one — said so, because a valid
+            // alternative is still right (M13's rule 3).
+            <details className="mt-3">
+              <summary className="cursor-pointer text-2xs font-medium text-ink-soft hover:text-ink">
+                One strong answer
+                {question.strong_answer_reviewed === false ? " (not yet reviewed by a person)" : ""}
+              </summary>
+              <p className="mt-2 text-sm leading-relaxed text-ink">{question.one_strong_answer}</p>
+              <p className="mt-1 text-2xs text-ink-faint">
+                One way to answer it well — a different correct approach is just as good.
+              </p>
+            </details>
+          )}
         </div>
       )}
 
-      {(question.concept_id || question.turn_id || firstHeard) && (
+      {(question.study ?? []).length > 0 && (
+        <div className="mt-4">
+          <p className="text-2xs uppercase tracking-wide text-ink-faint">What to practise next</p>
+          <ul className="mt-2 space-y-1.5 text-sm text-ink">
+            {(question.study ?? []).map((line) => (
+              <li key={line} className="flex gap-2">
+                <span aria-hidden className="text-ink-faint">→</span>
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {(question.concept_id?.startsWith("concept:") ||
+        (question.turn_id && question.feedback.length > 0) ||
+        firstHeard) && (
         <div className="mt-4 flex flex-wrap gap-2">
           {firstHeard && <HearIt sessionId={sessionId} turnId={firstHeard} label="Hear your answer" />}
-          {question.concept_id && (
+          {/* A topic the bank asks about. A resume line or the opener is not
+              one — a focus on it plans an empty part; star it instead. */}
+          {question.concept_id?.startsWith("concept:") && (
             <Link
               to={`/mock?focus=${encodeURIComponent(question.concept_id)}&label=${encodeURIComponent(topicName(question) ?? "")}`}
               className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium text-ink hover:border-brand-line hover:text-brand"
@@ -384,6 +577,14 @@ function QuestionBlock({
         <summary className="cursor-pointer text-2xs text-ink-faint hover:text-ink-soft">
           The exchange
         </summary>
+        {(question.how_it_went ?? []).length > 0 && (
+          // Why each follow-up came — the decisions, in plain words.
+          <ol className="mt-3 list-decimal space-y-1 pl-5 text-2xs text-ink-faint">
+            {(question.how_it_went ?? []).map((step, position) => (
+              <li key={`${position}-${step}`}>{step}</li>
+            ))}
+          </ol>
+        )}
         <div className="mt-3 space-y-3">
           {question.exchanges.map((exchange, position) => (
             <div key={`${position}-${exchange.text.slice(0, 12)}`}>
@@ -475,6 +676,8 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
           <ShareButton data={data} />
         </div>
       </header>
+
+      {data.summary && <Summary summary={data.summary} />}
 
       {data.notes.length > 0 && (
         <ul className="mt-5 space-y-1.5 rounded-lg border border-line bg-surface p-4">

@@ -73,6 +73,55 @@ _PERSONAL_RE = re.compile(r"\b(" + "|".join(re.escape(p) for p in PERSONAL) + r"
 # `seriously?` ends in punctuation, so a trailing \b would never match it.
 _RUDE_RE = re.compile(r"\b(" + "|".join(re.escape(r) for r in RUDE) + r")(?!\w)", re.I)
 
+#: 2026-10-22: a line has a tone (`contracts.Tone`), and what it may say about
+#: the answer depends on it. Never, in any tone: effusive praise (it is what a
+#: student learns to fish for), a judgement of the person, or "you're wrong".
+EFFUSIVE = (
+    "exactly",
+    "perfect",
+    "great answer",
+    "good answer",
+    "good job",
+    "well done",
+    "nice work",
+    "excellent",
+    "brilliant",
+    "spot on",
+    "fantastic",
+    "amazing",
+    "awesome",
+    "outstanding",
+    "superb",
+    "impressive",
+)
+JUDGES = ("you should know", "obviously")
+_EFFUSIVE_RE = re.compile(r"\b(" + "|".join(re.escape(t) for t in EFFUSIVE) + r")\b", re.I)
+_JUDGES_RE = re.compile(r"\b(" + "|".join(re.escape(t) for t in JUDGES) + r")\b", re.I)
+_PERSONAL_VERDICT_RE = re.compile(
+    r"\b(you'?re|you are)\s+(totally\s+|completely\s+|just\s+|simply\s+)?(wrong|incorrect)\b", re.I
+)
+#: Doubt about the answer: what a challenge says, and nothing else may.
+_DOUBT_RE = re.compile(
+    r"\b(not\s+quite|not\s+convinced|(does\s*n[o']?t|does\s+not)\s+(quite\s+)?hold"
+    r"|(is\s*n[o']?t|is\s+not|not)\s+(quite\s+)?(right|correct|accurate)"
+    r"|(that'?s|that\s+is|this\s+is|it'?s|it\s+is)\s+(not\s+(quite\s+)?(right|correct)"
+    r"|(totally\s+|completely\s+)?(wrong|incorrect))|small\s+issue|a\s+mistake|an\s+error)\b",
+    re.I,
+)
+#: "What goes wrong when the cache fails?" is a failure question, not a
+#: verdict — the words about a SYSTEM going wrong are taken out before the
+#: verdict words are looked for.
+_TECHNICAL_RE = re.compile(
+    r"\b(go|goes|going|went|gone|something|anything|can|could|might|will)\s+(go\s+)?wrong\b"
+    r"|\bwrong\s+(order|type|key|bucket|index|value|result|output|node|thread|lock|branch|answer\s+set)\b",
+    re.I,
+)
+#: A plain "that's right" — what an answer that held may get, briefly.
+_ASSENT_RE = re.compile(
+    r"\b((that'?s|that\s+is|you'?re|you\s+are)\s+(quite\s+)?(right|correct)|right\s+answer)\b",
+    re.I,
+)
+
 
 @dataclass(frozen=True)
 class Screened:
@@ -80,17 +129,66 @@ class Screened:
     reason: str = ""
 
 
-def screen(text: str) -> Screened:
-    """May the interviewer say this?"""
+def screen(text: str, tone: str = "neutral") -> Screened:
+    """May the interviewer say this, in this tone?
+
+    `neutral` — nothing about the answer either way: the rule every line
+    followed until 2026-10-22, and still the rule for every structural line.
+    `credit` — after an answer that held: a brief, plain acknowledgement
+    ("Right.", "That makes sense.") and no doubt. `challenge` — after an
+    error: doubt about the reasoning, pointed at, and no praise. Rudeness,
+    personal questions, effusive praise and verdicts on the person are
+    refused in every tone.
+    """
     if not text or not text.strip():
         return Screened(False, "empty")
-    if match := _TELEGRAPH_RE.search(text):
+    said = text
+    text = _TECHNICAL_RE.sub(" ", text)
+    if match := _PERSONAL_VERDICT_RE.search(said):
+        return Screened(False, f"a verdict on the person: {match.group(0)!r}")
+    if match := _EFFUSIVE_RE.search(text):
         return Screened(False, f"telegraphs a verdict: {match.group(0)!r}")
+    if match := _JUDGES_RE.search(text):
+        return Screened(False, f"judges the student: {match.group(0)!r}")
+    if tone == "neutral":
+        if match := _TELEGRAPH_RE.search(text) or _DOUBT_RE.search(text):
+            return Screened(False, f"telegraphs a verdict: {match.group(0)!r}")
+    elif tone == "credit":
+        if match := _DOUBT_RE.search(text):
+            return Screened(False, f"doubt after an answer that held: {match.group(0)!r}")
+        rest = _ASSENT_RE.sub("", text)
+        if match := _TELEGRAPH_RE.search(rest):
+            return Screened(False, f"telegraphs a verdict: {match.group(0)!r}")
     if match := _RUDE_RE.search(text):
         return Screened(False, f"rude: {match.group(0)!r}")
     if match := _PERSONAL_RE.search(text):
         return Screened(False, f"personal question: {match.group(0)!r}")
     return Screened(True)
+
+
+_LEAK_WORD = re.compile(r"[a-z0-9]+")
+#: A model line that repeats this many consecutive words of the answer key —
+#: not found in the question asked or the student's own answer — is giving
+#: the answer away.
+LEAK_RUN = 5
+
+
+def _grams(text: str, n: int = LEAK_RUN) -> set[tuple[str, ...]]:
+    words = _LEAK_WORD.findall(text.lower())
+    return {tuple(words[i : i + n]) for i in range(len(words) - n + 1)}
+
+
+def leaks(text: str, answer_key: list[str], allowed: list[str]) -> str | None:
+    """The run of answer-key words a line gives away, if any."""
+    key: set[tuple[str, ...]] = set()
+    for source in answer_key:
+        key |= _grams(source)
+    if not key:
+        return None
+    for source in allowed:
+        key -= _grams(source)
+    found = _grams(text) & key
+    return " ".join(sorted(found)[0]) if found else None
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -249,7 +347,10 @@ def _skipped(rule: AnswerScreen, why: str) -> AnswerScreen:
 
 
 __all__ = [
+    "EFFUSIVE",
     "INJECTION_THRESHOLD",
+    "LEAK_RUN",
+    "leaks",
     "PERSONAL",
     "REMOVED",
     "AnswerScreen",

@@ -118,6 +118,10 @@ def signals(state: SessionState, events, segment: PlannedSegment, now: datetime)
     # question turn index -> (concept, selection reason), for the ladder the
     # answers below belong to.
     asked: dict[int, tuple[str, str | None]] = {}
+    # Shallow failures are counted per QUESTION (2026-10-22): a wrong answer
+    # is now challenged, or met with a simpler question, before it is left —
+    # two judged answers to one question are still one question that failed.
+    failed_questions: set[int] = set()
     for event in sorted(events, key=lambda e: e.seq):
         p = event.payload
         if event.kind == "question.asked" and p.get("new_question"):
@@ -137,7 +141,9 @@ def signals(state: SessionState, events, segment: PlannedSegment, now: datetime)
                 verdict.get("band") == "below"
                 and verdict.get("justification") == "failed"
                 and answer.probe_depth <= SHALLOW
+                and (question if question is not None else -1) not in failed_questions
             ):
+                failed_questions.add(question if question is not None else -1)
                 out.shallow_fails += 1
             if p.get("break_depth") is not None and int(p["break_depth"]) <= SHALLOW and concept:
                 out.shallow_breaks.append(concept)

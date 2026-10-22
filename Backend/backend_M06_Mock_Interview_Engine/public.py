@@ -35,6 +35,9 @@ _KEEP: dict[str, tuple[str, ...]] = {
     "question.skipped": ("for", "number", "replaced", "follow_up"),
     "question.repeated": ("for",),
     "question.flagged": ("question_id", "forwarded"),
+    # 2026-10-22: the one line about HOW an answer was said, when one was
+    # earned (`delivery.py`) — shown beside the answer, never spoken.
+    "delivery.noted": ("for", "note"),
     "session.ended": ("reason", "closing_text", "closing_turn_id", "closing_turn_index"),
     "session.aborted": ("reason",),
     "question.asked": (

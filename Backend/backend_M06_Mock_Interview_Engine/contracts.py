@@ -105,10 +105,16 @@ class PlannedSegment(BaseModel):
     #: The same requirements as M05 matches them — `coverage_debt` is compared
     #: against item concept ids, whatever its field name says (M06_REVIEW 1.2).
     concept_ids: list[str] = Field(default_factory=list)
+    #: 2026-10-23: every question in this part is on `concept_ids` — a focus
+    #: the student chose — so M05 is told to keep to them (`only_concepts`)
+    #: rather than steered toward them, and the part ends when the bank has
+    #: no more. Other parts are steered: a course's concepts, a posting's.
+    concepts_only: bool = False
     #: What M05 can actually fill for this segment, probed at plan time.
     rubric_round_types: list[str] = Field(default_factory=list)
     modality: Modality = Modality.verbal
-    source: Literal["m05_bank", "m01_claims", "template"] = "m05_bank"
+    #: `revisit` (2026-10-22): questions from the student's library, asked again.
+    source: Literal["m05_bank", "m01_claims", "template", "revisit"] = "m05_bank"
     rationale: str = ""
     #: The closing segment. Never dropped, by a re-plan or by the clock.
     is_reserved: bool = False
@@ -252,7 +258,90 @@ MoveKind = Literal[
     #: again?" was answered "That's a different question"). The same ask, put
     #: differently; nothing judged.
     "rephrase",
+    # ── 2026-10-22: answers are reacted to as what they are ────────────────
+    #: A material error, pointed at in the student's own words, with a chance
+    #: to reconsider. Once per error; the answer that follows is judged.
+    "challenge",
+    #: A simpler, diagnostic question on the same idea: does the student have
+    #: the fundamental, or not? Once per question.
+    "simplify",
+    #: Terminology without the mechanism: "what actually happens when…?"
+    "probe_specifics",
+    #: A claim with nothing behind it (a resume number, "I optimised it"):
+    #: how was it measured, against what baseline?
+    "ask_evidence",
+    #: Two statements that cannot both be true, quoted back.
+    "confront",
+    #: Right as far as it went: the area it did not reach, asked about without
+    #: saying what the answer is. Same depth.
+    "probe_missing",
+    #: The next part of a question asked one part at a time (`decompose.py`).
+    "next_part",
+    #: "Give me a second" — given, and nothing judged.
+    "give_time",
+    #: The same answer again to a different follow-up: what is being asked now.
+    "redirect_repeat",
+    #: The answer was cut off (connection, mic): asked to finish it.
+    "resume_cut",
 ]
+
+#: What the strategist decides an answer IS (strategist-5). The ladder reacts
+#: to this, never to a free-form instruction to "adjust difficulty".
+AnswerCategory = Literal[
+    #: Right, and covers what was asked.
+    "correct",
+    #: Right as far as it goes; an important detail is missing.
+    "correct_incomplete",
+    #: Some right, and a material error elsewhere.
+    "partial",
+    #: Wrong — `severity` says how wrong.
+    "incorrect",
+    #: Terms without the mechanism behind them.
+    "vague",
+    #: About something else.
+    "off_question",
+    #: "I don't know" — said, or meant.
+    "dont_know",
+    #: A claim of experience or a result, with nothing to show for it.
+    "unsupported",
+    #: Contradicts something the student said earlier.
+    "contradiction",
+    #: Could be read two ways.
+    "ambiguous",
+    #: Not an attempt at all: a request, a remark, a pleasantry.
+    "non_answer",
+]
+Severity = Literal["none", "minor", "material", "fundamental"]
+#: What a line may say about the answer before it (`guard.screen`): nothing
+#: (`neutral`), a brief acknowledgement that it held (`credit`), or doubt about
+#: it (`challenge`). Never praise of a wrong answer, never a verdict on a
+#: right one dressed as doubt.
+Tone = Literal["neutral", "credit", "challenge"]
+
+#: How much one answer shows, 0–1, by what it is — the per-topic difficulty
+#: (`difficulty.py`) is a function of these and nothing else. Measured on the
+#: answer as given: a correct answer after a challenge counts as `CORRECTED`.
+QUALITY: dict[str, float] = {
+    "correct": 1.0,
+    "correct_incomplete": 0.75,
+    "partial": 0.45,
+    "vague": 0.3,
+    "unsupported": 0.3,
+    "contradiction": 0.2,
+    "incorrect": 0.15,
+    "dont_know": 0.0,
+}
+#: `incorrect` by severity: a slip is not a misunderstanding.
+QUALITY_INCORRECT: dict[str, float] = {
+    "none": 0.15,
+    "minor": 0.4,
+    "material": 0.15,
+    "fundamental": 0.0,
+}
+#: An answer that became right only after the interviewer pushed back.
+QUALITY_CORRECTED = 0.6
+#: Remembered the idea, not the detail (`partial_recall`).
+QUALITY_PARTIAL_RECALL = 0.4
 
 
 class Move(BaseModel):
@@ -262,9 +351,31 @@ class Move(BaseModel):
     #: For `rung`: the depth it takes the ladder to.
     depth: int | None = None
     #: For `rung`: the question's own follow-up at that depth, when it has one.
+    #: For `next_part`: the part's own wording.
     text: str | None = None
     #: For `move_on`: the neutral exit copy is used (§6.5).
     graceful: bool = False
+    # ── what the line reacts to (2026-10-22) ────────────────────────────────
+    #: The student's own words the line is about: the claim challenged, the
+    #: term without a mechanism, the number with nothing behind it.
+    focus: str | None = None
+    #: For a partly right answer, what WAS right — said before the challenge,
+    #: so pushing back on one part never reads as dismissing the whole.
+    credit: str | None = None
+    #: For `confront`: the earlier statement it does not fit with. For
+    #: `probe_missing`: the area to ask about — never to be said as an answer.
+    other: str | None = None
+    #: For a rung: what kind of harder (or simpler) question — `edge_case`,
+    #: `failure`, `trade_off`, `scale`, `alternative`, `mechanism`,
+    #: `implementation`, `decision`, `measurement`.
+    angle: str | None = None
+    #: How the line may sound about the answer (`guard.screen`).
+    tone: Tone = "neutral"
+    #: For `next_part`: which part, 1-based (part 0 is the question itself).
+    part: int | None = None
+    #: For `challenge`: how wrong (`Severity`) — a slip gets "a small issue",
+    #: a misunderstanding gets "I don't think that holds".
+    severity: Severity = "none"
 
     @property
     def is_rung(self) -> bool:
@@ -281,6 +392,54 @@ class ProbeLadderState(BaseModel):
     #: Set when two successes at depth ≥ 4 end the ladder early.
     ceiling: int | None = None
     consecutive_successes: int = 0
+    # ── the question's own thread (2026-10-22) ──────────────────────────────
+    #: What each judged answer in this question was, in order.
+    categories: list[str] = Field(default_factory=list)
+    #: …and how much each showed (`QUALITY`).
+    qualities: list[float] = Field(default_factory=list)
+    #: Pushbacks on a wrong answer so far — one per question.
+    challenges: int = 0
+    #: "How did you measure that?" so far — two per claim.
+    evidence_asks: int = 0
+    #: The parts of a decomposed question asked so far (1-based).
+    parts_asked: list[int] = Field(default_factory=list)
+    #: Harder-question angles already used, so a question does not ask the
+    #: same kind of follow-up twice.
+    angles: list[str] = Field(default_factory=list)
+    #: `self` — the student fixed their own error; `prompted` — after a
+    #: challenge, hint or simpler question. The notes and M13 both read it.
+    corrected: str | None = None
+    #: Key points the last judged answer had not reached.
+    missing: list[str] = Field(default_factory=list)
+    #: The misconception left standing when the question closed, if any.
+    misconception: str | None = None
+    #: How the question was left: `held`, `gap:<kind>`, `unsupported`, …
+    outcome: str | None = None
+
+
+class TopicState(BaseModel):
+    """How one topic is going in THIS interview — `difficulty.py`.
+
+    Inspectable on purpose (it is in every checkpoint and the trace): which
+    level the next follow-up in this topic is pitched at, and why. Temporary
+    by construction — recomputed from this topic's own recent answers, never
+    carried to another topic or another interview. Not an ability estimate:
+    that is M05's θ, which M06 never holds (FR-6.25).
+    """
+
+    concept_id: str
+    #: -2 (step back to basics) … 0 (as asked) … +2 (edge cases, failure, scale).
+    level: int = 0
+    #: The last few answers' `QUALITY`, newest last.
+    recent: list[float] = Field(default_factory=list, max_length=6)
+    #: Judged answers in this topic so far.
+    answers: int = 0
+    #: Misconceptions seen in this topic, in the strategist's own short words.
+    misconceptions: list[str] = Field(default_factory=list)
+    #: Misconceptions seen twice or more — the report says "repeated".
+    repeated: list[str] = Field(default_factory=list)
+    #: The last decision taken in this topic and why, in plain words.
+    last_decision: str = ""
 
 
 class StrategistVerdict(BaseModel):
@@ -309,6 +468,104 @@ class StrategistVerdict(BaseModel):
     #: `rule` is spec §10's fallback when the model is off or failed. It is not
     #: a judgement of the answer, so it is never sent to M05 as one.
     source: Literal["model", "rule"] = "model"
+    # ── strategist-5 (2026-10-22): what the answer IS ──────────────────────
+    #: None on a verdict from before strategist-5 (and on the rule's "no
+    #: idea"): `category_of()` reads one off band and justification then.
+    category: AnswerCategory | None = None
+    severity: Severity = "none"
+    #: What the answer got right, in a few words each — said back before a
+    #: challenge, and listed in the notes.
+    correct_points: list[str] = Field(default_factory=list)
+    #: The student's own words that are wrong (verbatim, short), and what is
+    #: wrong about them. The note is for the notes after the session; only the
+    #: quote reaches the interviewer.
+    error_quote: str | None = None
+    error_note: str | None = None
+    #: A claim with nothing behind it, in their words.
+    unsupported_quote: str | None = None
+    #: The EARLIER statement this answer contradicts, in their words.
+    contradiction_quote: str | None = None
+    #: The misunderstanding, as a short label ("thinks threads share stacks").
+    misconception: str | None = None
+    #: The student caught and fixed their own mistake in this answer.
+    self_corrected: bool = False
+    #: The answer questions the question's own premise — and is right to.
+    challenges_question: bool = False
+    challenge_valid: bool = False
+    #: Knows the idea, cannot recall the specific detail.
+    partial_recall: bool = False
+    #: "Give me a moment to think."
+    asks_for_time: bool = False
+    #: Goes correctly beyond what was asked.
+    beyond: bool = False
+
+
+#: Categories that are a judgement of the answer, and so move the topic's
+#: difficulty and M05's θ. The rest are requests and remarks.
+JUDGED_CATEGORIES = frozenset(
+    {
+        "correct",
+        "correct_incomplete",
+        "partial",
+        "incorrect",
+        "vague",
+        "dont_know",
+        "unsupported",
+        "contradiction",
+    }
+)
+
+
+#: Categories in which something wrong was said — the only ones that can show
+#: a misconception. A vague answer or an "I don't know" shows a gap: a live
+#: run's notes read "revisit the idea behind this: no mechanism" (2026-10-23).
+MISCONCEIVED = frozenset({"incorrect", "partial", "contradiction"})
+
+
+def category_of(verdict: StrategistVerdict) -> str | None:
+    """What the answer is, for verdicts that say and for older ones that do
+    not. None when nothing can be read: the rule strategist's "no idea"."""
+    if verdict.category is not None:
+        return verdict.category
+    if verdict.source == "rule" and verdict.justification != "failed":
+        return None
+    if verdict.justification == "held":
+        return "correct"
+    if verdict.justification == "failed":
+        return "incorrect"
+    return "correct_incomplete" if verdict.band != "below" else "partial"
+
+
+def legacy_fields(
+    category: str, severity: str, beyond: bool
+) -> tuple[Literal["below", "at", "above"], Literal["held", "partial", "failed"]]:
+    """band and justification, from the category — one judgement, read two
+    ways, so M05's θ and the ladder can never disagree about an answer."""
+    if category == "correct":
+        return ("above" if beyond else "at"), "held"
+    if category == "correct_incomplete":
+        return "at", "held"
+    if category == "partial":
+        return ("at" if severity in ("none", "minor") else "below"), "partial"
+    if category == "incorrect":
+        return "below", ("partial" if severity == "minor" else "failed")
+    if category == "dont_know":
+        return "below", "failed"
+    return "below", "partial"
+
+
+def quality_of(verdict: StrategistVerdict, *, corrected: bool = False) -> float | None:
+    """How much this answer showed (`QUALITY`); None for one not judged."""
+    category = category_of(verdict)
+    if category not in JUDGED_CATEGORIES:
+        return None
+    if corrected and category in ("correct", "correct_incomplete"):
+        return QUALITY_CORRECTED
+    if category == "dont_know" and verdict.partial_recall:
+        return QUALITY_PARTIAL_RECALL
+    if category == "incorrect":
+        return QUALITY_INCORRECT.get(verdict.severity, QUALITY["incorrect"])
+    return QUALITY[category]
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -383,6 +640,10 @@ class TurnView(BaseModel):
     #: M11's FR-11.6 for this answer: prefills its question had ("tried") and
     #: whether one was used — AC-11.7's cancel rate. None when there were none.
     prefill: dict | None = None
+    #: Candidate turns: how the answer ended (`CompletionReason`) — the room's
+    #: word for "the connection cut it off" (`interrupted`) is what lets the
+    #: interviewer ask them to finish rather than judge half an answer.
+    completion_reason: str | None = None
     at: datetime
 
 
@@ -436,6 +697,15 @@ class SessionFlags(BaseModel):
 
 
 __all__ = [
+    "JUDGED_CATEGORIES",
+    "QUALITY",
+    "AnswerCategory",
+    "Severity",
+    "Tone",
+    "TopicState",
+    "category_of",
+    "legacy_fields",
+    "quality_of",
     "DEPTH_CAP",
     "FINAL_STATUSES",
     "OCCUPYING_STATUSES",

@@ -198,12 +198,103 @@ class LLMCall(SQLModel, table=True):
     at: datetime = Field(default_factory=utcnow)
 
 
+class QuestionSplit(SQLModel, table=True):
+    """How one question is asked one part at a time (`decompose.py`).
+
+    Keyed by the stem's hash, not the item id: the same words split the same
+    way whichever bank or session they come from, and a split is worked out
+    once — usually while the student is answering the question before."""
+
+    __tablename__ = "m06_question_split"
+
+    key: str = Field(primary_key=True)
+    question_id: uuid.UUID | None = None
+    stem: str
+    #: `whole` — asked as written; `rule` — split on its own question marks;
+    #: `model` — split by the extraction tier and validated.
+    method: str = "whole"
+    primary: str = ""
+    primary_key_point_ids: list = Field(default_factory=list, sa_column=Column(JSON))
+    parts: list = Field(default_factory=list, sa_column=Column(JSON))
+    prompt_version: str = ""
+    at: datetime = Field(default_factory=utcnow)
+
+
+class SavedQuestion(SQLModel, table=True):
+    """A question in a student's library (2026-10-22): starred by them,
+    flagged as difficult by the interview, or both — the two marks are
+    independent, and either keeps the entry.
+
+    One row per student per question (`question_key`), however many
+    interviews asked it; `attempts` lives in `QuestionAttempt`."""
+
+    __tablename__ = "m06_saved_question"
+    __table_args__ = (UniqueConstraint("candidate_id", "question_key"),)
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    candidate_id: uuid.UUID = Field(index=True)
+    #: The M05 item id when there is one; `stem:<hash>` for a resume probe or
+    #: a backup-set question, so the same words are one entry.
+    question_key: str = Field(index=True)
+    question_id: uuid.UUID | None = None
+    stem: str
+    concept_id: str = ""
+    topic: str = ""
+    difficulty_band: str | None = None
+    source: str = ""
+    #: The resume line, for a question about one.
+    claim_text: str | None = None
+    #: The item as asked (`items.to_dict`), so it can be practised again
+    #: without asking the bank for it.
+    item: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    starred_at: datetime | None = None
+    #: Set by the interview when a question was left as a real gap.
+    flagged_at: datetime | None = None
+    flagged_reason: str | None = None
+    first_session_id: uuid.UUID | None = None
+    last_session_id: uuid.UUID | None = None
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class QuestionAttempt(SQLModel, table=True):
+    """One time a student answered a question, as the interview left it —
+    the memory a later interview compares against (2026-10-22). Written when
+    the question's thread closes, idempotently per (session, question turn)."""
+
+    __tablename__ = "m06_question_attempt"
+    __table_args__ = (UniqueConstraint("session_id", "question_turn_id"),)
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    candidate_id: uuid.UUID = Field(index=True)
+    question_key: str = Field(index=True)
+    session_id: uuid.UUID = Field(index=True)
+    question_turn_id: uuid.UUID
+    #: The first answer's turn — what M13's evaluation of the thread is keyed on.
+    answer_turn_id: uuid.UUID | None = None
+    stem: str = ""
+    concept_id: str = ""
+    #: The thread's outcome: `held`, `ceiling`, `gap:…`, `unsupported`, …
+    outcome: str | None = None
+    #: The categories of each judged answer, in order.
+    categories: list = Field(default_factory=list, sa_column=Column(JSON))
+    #: The mean QUALITY of the thread's judged answers, 0–1.
+    quality: float | None = None
+    depth: int = 0
+    corrected: str | None = None
+    misconception: str | None = None
+    answers: list = Field(default_factory=list, sa_column=Column(JSON))
+    at: datetime = Field(default_factory=utcnow)
+
+
 __all__ = [
     "Checkpoint",
     "EvaluationOutbox",
     "InterviewSession",
     "LLMCall",
     "LedgerOutbox",
+    "QuestionAttempt",
+    "QuestionSplit",
+    "SavedQuestion",
     "SessionEvent",
     "TurnRecord",
 ]

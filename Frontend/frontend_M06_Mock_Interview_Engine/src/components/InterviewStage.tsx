@@ -109,9 +109,11 @@ import {
   useRetry,
   useSession,
   useSkip,
+  useStar,
   useStart,
 } from "../api";
-import { fillerCount, useDictation } from "../speech";
+import { useDictation } from "../speech";
+import { identityHeaders } from "../identity";
 import {
   notBeforeFor,
   nowMs,
@@ -1376,9 +1378,19 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const prefillAnswer = usePrefill(sessionId);
   const interruption = useInterruption(sessionId);
   const flag = useFlag(sessionId);
+  const star = useStar(sessionId);
   const [repeated, setRepeated] = useState<string | null>(null);
   const [flagging, setFlagging] = useState(false);
   const [flagged, setFlagged] = useState<string | null>(null);
+  /** Questions starred in this room, by their first line (2026-10-22). */
+  const [starred, setStarred] = useState<Set<string>>(() => new Set());
+  /** The one note about how the last answer was said, while it shows. */
+  const [coachNote, setCoachNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!coachNote) return;
+    const timer = window.setTimeout(() => setCoachNote(null), 9000);
+    return () => window.clearTimeout(timer);
+  }, [coachNote]);
   const resumeState = useResumeState(sessionId);
   const navigate = useNavigate();
   // The plan screen starts the session and then comes here; the session is
@@ -1387,7 +1399,10 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
 
   const [draft, setDraft] = useState("");
   const [codeMode, setCodeMode] = useState(false);
-  const [spoken, setSpoken] = useState("");
+  // What was dictated into the box. Its filler count moved to the server
+  // (2026-10-22, `delivery.py`), which says one thresholded thing instead of
+  // counting every "like"; the words are still tracked as the box fills.
+  const [, setSpoken] = useState("");
   /** Words into the answer box, after whatever is there. */
   const append = (words: string) => {
     if (!words) return;
@@ -1409,6 +1424,49 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   const convoRef = useRef<HTMLDivElement | null>(null);
 
   const data = session.data;
+  /** The first line of the question open now — what a star saves. */
+  const questionId = useMemo(() => {
+    const turns = data?.transcript ?? [];
+    for (let i = turns.length - 1; i >= 0; i -= 1) {
+      const turn = turns[i];
+      if (
+        turn.role === "interviewer" &&
+        !turn.probe_move &&
+        turn.question_source &&
+        turn.question_source !== "closing"
+      )
+        return turn.turn_id;
+    }
+    return null;
+  }, [data?.transcript]);
+  // 2026-10-22: a drill left behind is ended, not left holding the
+  // student's one session slot. Only a drill — an interview left behind is
+  // there to come back to. On a real leave (the page hidden for good, or this
+  // page unmounted); StrictMode's rehearsal unmount is undone by its remount
+  // before the timer fires. Idempotent on the server, so a drill that already
+  // ended costs nothing.
+  const liveDrill = data?.kind === "drill" && data?.status === "live";
+  const leaving = useRef<number | null>(null);
+  useEffect(() => {
+    if (!liveDrill) return;
+    if (leaving.current !== null) {
+      window.clearTimeout(leaving.current);
+      leaving.current = null;
+    }
+    const leave = () => {
+      void fetch(`/v1/interviews/${sessionId}/end`, {
+        method: "POST",
+        keepalive: true,
+        headers: { ...identityHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "left" }),
+      }).catch(() => undefined);
+    };
+    window.addEventListener("pagehide", leave);
+    return () => {
+      window.removeEventListener("pagehide", leave);
+      leaving.current = window.setTimeout(leave, 0);
+    };
+  }, [liveDrill, sessionId]);
   // FR-6.3: who is on the panel, by the persona files' own cards.
   const personaCards = usePersonas();
   const cards = useMemo(
@@ -1526,6 +1584,11 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   // The box's text, read by a turn that ends after this render.
   const draftNow = useRef("");
   draftNow.current = draft;
+  // The box as the microphone left it when it cut out mid-answer (case W).
+  const cutDraft = useRef<string | null>(null);
+  useEffect(() => {
+    if (dictation.cutOff) cutDraft.current = draftNow.current.trim();
+  }, [dictation.cutOff]);
   const lastAsked = () =>
     [...(data?.transcript ?? [])].reverse().find((turn) => turn.role === "interviewer");
   /** The question being answered: the recogniser's prompt. */
@@ -1621,8 +1684,16 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     const full = draftNow.current.trim() ? `${draftNow.current.trimEnd()} ${turn.text}` : turn.text;
     const open = data?.status === "live" && Boolean(data.open_turn_id) && !waiting && !codeMode;
     // How sure the recogniser was, and of which words (FR-11.15/11.16):
-    // M06 asks again rather than judging words nobody could make out.
-    const note = turn.asr ? noteFor(turn.asr, full, turn.text) : undefined;
+    // M06 asks again rather than judging words nobody could make out. And,
+    // when the answer is this one spoken turn, how long it took to say —
+    // the timing M06's delivery notes need for pace (2026-10-23).
+    const whole = !draftNow.current.trim();
+    const note = turn.asr
+      ? {
+          ...noteFor(turn.asr, full, turn.text),
+          duration_s: whole ? Math.max(0, turn.endedAt - turn.startedAt) / 1000 : null,
+        }
+      : undefined;
     const audio = turn.audio ? { audio: turn.audio, startedAt: turn.startedAt, endedAt: turn.endedAt } : undefined;
     if (open) submit(full, turn.endedAt, note, audio);
     else append(turn.text);
@@ -1769,6 +1840,12 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
         // The text of record has landed; the preview has served its purpose.
         if (event.kind === "question.asked" || event.kind === "session.ended")
           setPreview("");
+        if (event.kind === "delivery.noted") {
+          // Nothing to refetch: the note is the whole of it.
+          const note = event.data.note;
+          if (typeof note === "string" && note) setCoachNote(note);
+          return;
+        }
         session.refetch();
       },
     },
@@ -2073,11 +2150,16 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
       unsure: [number, number][];
       model?: string | null;
       language?: string | null;
+      duration_s?: number | null;
     },
     audio?: { audio: Blob; startedAt: number; endedAt: number },
   ) {
     const typed = (spoken ?? draft).trim();
     if (!typed || !data?.open_turn_id || (spoken === undefined && listening.writing)) return;
+    // Sent as the microphone left it: M06 asks them to finish it rather
+    // than judging half an answer. Anything added since, and it is theirs.
+    const cut = cutDraft.current !== null && cutDraft.current === typed;
+    cutDraft.current = null;
     voice.stop("send");
     voice.mark("answer_sent", speechEndedAt);
     answeredAt.current = speechEndedAt ?? nowMs();
@@ -2090,7 +2172,12 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     setPreview("");
     const boxHad = draft;
     answer.mutate(
-      { question_turn_id: data.open_turn_id, text, ...(asr ? { asr } : {}) },
+      {
+        question_turn_id: data.open_turn_id,
+        text,
+        ...(asr ? { asr } : {}),
+        ...(cut ? { completion_reason: "interrupted" as const } : {}),
+      },
       {
         onError: (err) => {
           // Nothing said or typed is lost: it goes back in the box.
@@ -2118,7 +2205,6 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
       },
     );
   }
-  const fillers = spoken.trim() ? fillerCount(spoken) : null;
   /** EC-11.15: the network is back — what could not go, goes. */
   function sendUnsent() {
     const item = unsent.current;
@@ -2720,6 +2806,32 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     ⚑ Flag
                   </Button>
                 )}
+                {!data.in_closing && data.open_turn_id && questionId && (
+                  // 2026-10-22: save it to practise again — the library.
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-pressed={starred.has(questionId)}
+                    disabled={star.isPending}
+                    onClick={() => {
+                      if (!data.open_turn_id) return;
+                      star.mutate(
+                        { turnId: data.open_turn_id, on: !starred.has(questionId) },
+                        {
+                          onSuccess: (result) =>
+                            setStarred((current) => {
+                              const next = new Set(current);
+                              if (result.starred) next.add(result.question_turn_id);
+                              else next.delete(result.question_turn_id);
+                              return next;
+                            }),
+                        },
+                      );
+                    }}
+                  >
+                    {starred.has(questionId) ? "★ Saved" : "☆ Save question"}
+                  </Button>
+                )}
                 <span className="ml-auto hidden text-2xs text-ink-faint xl:inline">
                   Ctrl / ⌘ + Enter
                 </span>
@@ -2747,10 +2859,19 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     ? micNote
                   : keepNote
                     ? keepNote
-                  : fillers && fillers.total > 0
-                    ? `You said ${fillers.total} filler word${fillers.total === 1 ? "" : "s"} (${fillers.top.join(", ")}) — worth noticing, not a mark.`
                     : "There is no score on this screen — the notes come at the end."}
               </p>
+              {coachNote && (
+                // 2026-10-22: how the last answer was SAID, once it crossed a
+                // line (`delivery.py`) — one short note, never a verdict, and
+                // gone after a few seconds so it does not hang over the next.
+                <p
+                  className="mt-2 rounded-lg border border-line bg-surface-sunken px-3 py-2 text-xs text-ink-soft"
+                  role="status"
+                >
+                  {coachNote}
+                </p>
+              )}
               {repeated && (
                 // §7: verbatim — the words that were asked, nearest the box.
                 <p

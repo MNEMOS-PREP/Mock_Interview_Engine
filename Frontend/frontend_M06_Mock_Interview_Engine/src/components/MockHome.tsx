@@ -499,6 +499,13 @@ export function MockHome() {
             {pauses === 1 ? "One pause" : `${pauses} pauses`} of up to 5 minutes · ending early still
             gives you notes
           </p>
+          <Link
+            to="/mock/library"
+            className="ml-auto inline-flex items-center gap-1.5 text-xs font-medium text-brand hover:underline"
+          >
+            <Icon name="star" size={13} />
+            Your question library
+          </Link>
         </div>
 
         {unfinished && (

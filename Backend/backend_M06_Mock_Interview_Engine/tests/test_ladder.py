@@ -43,6 +43,8 @@ def test_a_held_answer_climbs_one_rung():
 
 
 def test_a_failed_justification_is_the_graceful_exit():
+    """A verdict of band and justification only — what every verdict was
+    before strategist-5 — keeps the policy it was written for."""
     out = decide(
         ladder(2), v(band="below", justification="failed"), config=CFG, has_own_rung=own_to(5)
     )
@@ -50,6 +52,26 @@ def test_a_failed_justification_is_the_graceful_exit():
     assert out.move.graceful is True
     assert out.break_depth == 2
     assert out.success is False
+
+
+def test_a_wrong_answer_is_challenged_once_then_it_is_the_graceful_exit():
+    """2026-10-22. Until then a failed justification moved straight on — and
+    one judged "partial" went a rung DEEPER, as if it had been right. A wrong
+    answer is now pointed at once, with a chance to reconsider; still wrong
+    after that, the question is left, and the break recorded."""
+    wrong = v(band="below", justification="failed", category="incorrect", severity="material")
+    first = decide(ladder(2), wrong, config=CFG, has_own_rung=own_to(5))
+    assert first.move.kind == "challenge"
+    assert first.move.tone == "challenge"
+    assert first.success is False and first.break_depth is None
+    challenged = ladder(2, moves=["rung", "rung", "challenge"])
+    challenged.challenges = 1
+    second = decide(challenged, wrong, config=CFG, has_own_rung=own_to(5))
+    assert second.move.kind == "move_on"
+    assert second.move.graceful is True
+    assert second.break_depth == 2
+    assert second.success is False
+    assert second.left == "gap:misunderstanding"
 
 
 def test_two_clears_at_depth_four_is_the_ceiling():
@@ -111,14 +133,47 @@ def test_asking_for_the_answer_gets_a_hint_while_hints_last():
 
 
 def test_missing_key_points_do_not_force_a_deeper_probe():
-    """Revision 1's `if rubric_gaps: return "deepen"` drilled past the break."""
-    out = decide(
+    """Revision 1's `if rubric_gaps: return "deepen"` drilled past the break.
+    Since 2026-10-22 a right-but-incomplete answer gets ONE question about the
+    area it missed, at the same depth — never a rung deeper on it."""
+    wrong = decide(
         ladder(2),
         v(band="below", justification="failed", key_points_missing=["kp1"]),
         config=CFG,
         has_own_rung=own_to(5),
     )
-    assert out.move.kind == "move_on"
+    assert wrong.move.kind == "move_on"
+    wrong_now = decide(
+        ladder(2),
+        v(
+            band="below",
+            justification="failed",
+            category="incorrect",
+            key_points_missing=["kp1"],
+        ),
+        config=CFG,
+        has_own_rung=own_to(5),
+    )
+    assert wrong_now.move.kind != "rung"
+    from backend_M06_Mock_Interview_Engine.ladder import Context
+
+    incomplete = decide(
+        ladder(2),
+        v(category="correct_incomplete", key_points_missing=["kp1"]),
+        config=CFG,
+        has_own_rung=own_to(5),
+        ctx=Context(key_points={"kp1": "Names the load factor."}),
+    )
+    assert incomplete.move.kind == "probe_missing"
+    assert incomplete.move.depth is None
+    asked_once = decide(
+        ladder(2, moves=["probe_missing"]),
+        v(category="correct_incomplete", key_points_missing=["kp1"]),
+        config=CFG,
+        has_own_rung=own_to(5),
+        ctx=Context(key_points={"kp1": "Names the load factor."}),
+    )
+    assert asked_once.move.kind != "probe_missing"
 
 
 def test_a_rule_verdict_deepens_once_then_moves_on():

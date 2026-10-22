@@ -43,7 +43,7 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from .contracts import OCCUPYING_STATUSES, SessionStatus
+from .contracts import OCCUPYING_STATUSES, SessionKind, SessionStatus
 from .models import Checkpoint, InterviewSession, SessionEvent, TurnRecord
 from .state import SessionState, apply, fold
 
@@ -434,13 +434,29 @@ def create_session(
     track: str | None = None,
     include_resume: bool = False,
     resume_id: uuid.UUID | None = None,
+    revisit: list[dict] | None = None,
 ) -> tuple[InterviewSession, SessionState]:
     """A new session in `planned`. Refused while one is live or paused (EC-6.13).
 
     A `planned` session is superseded rather than blocking: a student who
     closed the tab on the plan preview has not started an interview.
+
+    So is a live DRILL (2026-10-22): two minutes, unscored, and started from
+    the resume page — a student who left one and pressed "Practise defending
+    this" again was refused for half an hour (the sweeper's grace for an
+    interview), and M01 told them the engine "did not accept the drill". A
+    drill left behind is ended, as `superseded`; a live interview still blocks.
     """
     live = occupying_session(db, candidate_id)
+    if live is not None and live.kind == SessionKind.drill.value:
+        record(
+            db,
+            live,
+            "session.ended",
+            step="end",
+            payload={"reason": "superseded"},
+        )
+        live = occupying_session(db, candidate_id)
     if live is not None:
         raise LiveSessionExists(live.id, load_state(db, live.id).status.value)
 
@@ -484,6 +500,7 @@ def create_session(
             "track": track,
             "include_resume": include_resume,
             "resume_id": str(resume_id) if resume_id else None,
+            "revisit": list(revisit or []),
         },
     )
     return row, created.state

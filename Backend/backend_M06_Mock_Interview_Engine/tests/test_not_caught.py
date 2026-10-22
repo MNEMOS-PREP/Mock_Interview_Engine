@@ -15,7 +15,7 @@ import uuid
 from backend_M06_Mock_Interview_Engine import store
 from backend_M06_Mock_Interview_Engine.personas import persona
 
-from .stubs import BankQuestions, StubLLM, verdict
+from .stubs import BankQuestions, StubLLM, close, scored_rows, verdict
 from .test_engine import make
 
 UNSURE = {"mean_confidence": 0.22, "unsure": [[0, 9]], "model": "whisper-large-v3-turbo"}
@@ -61,7 +61,10 @@ def test_it_asks_once_a_question_then_judges_what_it_heard(db):
     answer(engine, row, "mumble hash mumble", asr=UNSURE)
     state = answer(engine, row, "mumble again", asr=UNSURE)
     assert state.transcript[-1].probe_move != "didnt_catch"
-    assert queued(db, row) == 1, "the second is judged"
+    close(engine, row)
+    rows = scored_rows(db, row.id)
+    assert len(rows) == 1, "the second is judged"
+    assert rows[0].payload["answer_text"] == "mumble again", "the first, never made out, is not"
 
 
 def test_a_confident_or_typed_answer_is_judged_as_ever(db):
@@ -69,7 +72,8 @@ def test_a_confident_or_typed_answer_is_judged_as_ever(db):
         engine, row = live(db)
         state = answer(engine, row, "It hashes the key to a bucket.", asr=asr)
         assert state.transcript[-1].probe_move != "didnt_catch"
-        assert queued(db, row) == 1
+        close(engine, row)
+        assert len(scored_rows(db, row.id)) == 1
 
 
 def test_the_route_takes_the_recognisers_note(client, as_student):

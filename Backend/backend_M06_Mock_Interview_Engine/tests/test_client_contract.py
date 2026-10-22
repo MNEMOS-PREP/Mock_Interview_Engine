@@ -42,6 +42,27 @@ SERVICE_ONLY: dict[tuple[str, str], str] = {
 _CALL = re.compile(r"api\.(get|post|put|del|delete|patch)<[^>]*>\(\s*[`\"](/v1/[^`\"]*)")
 _VERB = {"del": "DELETE"}
 _FETCH = re.compile(r"fetch\(\s*[`\"](/v1/[^`\"]*)")
+_METHOD = re.compile(r"method:\s*[`\"'](\w+)[`\"']")
+
+
+def _arguments(text: str, start: int) -> str:
+    """A call's argument text, from just inside its `(` to the matching `)`."""
+    depth = 1
+    for i in range(start, len(text)):
+        depth += {"(": 1, ")": -1}.get(text[i], 0)
+        if depth == 0:
+            return text[start:i]
+    return text[start:]
+
+
+def _fetches(text: str) -> set[tuple[str, str]]:
+    """A raw `fetch` is a GET unless its options name a method — the room's
+    keepalive end on leaving a drill is a POST (2026-10-22)."""
+    calls: set[tuple[str, str]] = set()
+    for match in _FETCH.finditer(text):
+        method = _METHOD.search(_arguments(text, match.start() + len("fetch(")))
+        calls.add((method.group(1).upper() if method else "GET", _shape(match.group(1))))
+    return calls
 
 
 def _shape(path: str) -> str:
@@ -57,7 +78,7 @@ def frontend_calls() -> set[tuple[str, str]]:
     for source in FRONTEND.rglob("*.ts*"):
         text = source.read_text(encoding="utf-8")
         calls |= {(_VERB.get(m, m.upper()), _shape(p)) for m, p in _CALL.findall(text)}
-        calls |= {("GET", _shape(p)) for p in _FETCH.findall(text)}
+        calls |= _fetches(text)
     return calls
 
 

@@ -173,7 +173,7 @@ def test_a_step_that_keeps_crashing_ends_the_session_honestly(db, monkeypatch):
 
     engine, row, clock, llm = degraded(db)
     llm.up = True
-    say(engine, row, ANSWER)  # one answer queued for M13 before anything fails
+    say(engine, row, ANSWER)  # answered before anything fails
     open_turn = engine.state(row.id).open_turn_id
 
     def crash(*_a, **_k):
@@ -186,8 +186,11 @@ def test_a_step_that_keeps_crashing_ends_the_session_honestly(db, monkeypatch):
 
     assert state.status is SessionStatus.aborted and state.end_reason == "system_failure"
     assert state.transcript[-1].text == degrade.APOLOGY
+    # Nothing is ever sent to be scored: the question still open when it failed
+    # never closed (2026-10-22: owed per question), and anything that had
+    # closed before it is void.
     queued = db.exec(select(EvaluationOutbox).where(EvaluationOutbox.session_id == row.id)).all()
-    assert queued and all(r.state == outbox.VOID for r in queued)
+    assert all(r.state == outbox.VOID for r in queued)
 
     built = report.build(state, store.events_for(db, row.id), clock())
     assert "on us" in built.framing
@@ -246,8 +249,9 @@ def test_m13s_words_reach_the_notes_and_its_numbers_do_not(db):
     m13.evaluate = scored
     row = session(engine, minutes=45)
     say(engine, row, ANSWER)
-    engine.deliver(row.id)
+    # Owed when the question closes (2026-10-22) — here, at the end.
     engine.end(row.id, "ended_by_student")
+    engine.deliver(row.id)
 
     built = report.build(engine.state(row.id), store.events_for(db, row.id), engine.clock())
     noted = [f for q in built.questions for f in q.feedback]

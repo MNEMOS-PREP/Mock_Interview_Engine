@@ -9,6 +9,47 @@ from backend_M06_Mock_Interview_Engine.adapters.fixtures import LocalQuestions
 from backend_M06_Mock_Interview_Engine.llm import LLMResult
 
 
+def answer(engine, row, text: str):
+    """Answer the open question, as the suite's `say` helpers do.
+
+    Since 2026-10-22 a give-up at a question's opening is met with ONE
+    simpler question before the interviewer moves on (`ladder.decide`,
+    case K). The tests that answer "I do not know." are about what happens
+    after the move on — budgets, pacing, re-plans, retries — so this gives up
+    on the simpler question too, and they still get there in one call. The
+    simpler question itself is tested where it is the subject
+    (`test_controller.py`, `test_answer_types.py`)."""
+    from backend_M06_Mock_Interview_Engine.contracts import SessionStatus
+
+    state = engine.answer(row.id, engine.state(row.id).open_turn_id, text)
+    last = next((t for t in reversed(state.transcript) if t.role == "interviewer"), None)
+    if (
+        last is not None
+        and last.probe_move == "simplify"
+        and state.open_turn_id is not None
+        and state.status is SessionStatus.live
+    ):
+        state = engine.answer(row.id, state.open_turn_id, text)
+    return state
+
+
+def close(engine, row):
+    """End the session, closing the open question: since 2026-10-22 its
+    evaluation is owed when the question closes, not when an answer lands."""
+    return engine.end(row.id, "ended_by_student")
+
+
+def scored_rows(db, session_id) -> list:
+    """What this session queued for M13 — one row per closed question."""
+    from sqlmodel import select
+
+    from backend_M06_Mock_Interview_Engine.models import EvaluationOutbox
+
+    return list(
+        db.exec(select(EvaluationOutbox).where(EvaluationOutbox.session_id == session_id)).all()
+    )
+
+
 def verdict(**overrides) -> dict[str, Any]:
     base = {
         "band": "at",
@@ -56,7 +97,22 @@ class StubLLM:
     def available(self) -> bool:
         return True
 
+    #: What the question-split job is told (`decompose.py`): by default, ask
+    #: every question whole — set `split` to a split's data to test one.
+    split: dict[str, Any] | None = None
+
     def structured(self, *, job, system, user, schema) -> LLMResult:
+        if job == "question_split":
+            # Its own channel: a split is not a verdict, and must not eat one
+            # of the verdicts a test scripted for its answers.
+            self.split_calls = [*getattr(self, "split_calls", []), {"user": user}]
+            data = self.split or {
+                "split": False,
+                "primary": "",
+                "primary_key_point_ids": [],
+                "parts": [],
+            }
+            return LLMResult(ok=True, data=dict(data), job=job, tier="extraction", model="stub")
         self.structured_calls.append({"job": job, "system": system, "user": user, "schema": schema})
         if self.fail_structured:
             return LLMResult(ok=False, reason=self.fail_structured, job=job, model="stub")

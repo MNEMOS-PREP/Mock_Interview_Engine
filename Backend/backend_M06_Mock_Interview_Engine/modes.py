@@ -6,11 +6,12 @@ check inside `hint_offer`. Three copies of one table is how a fourth mode
 ships with hints in the button and none in the engine. This is the table,
 once; everything else asks it.
 
-**Modes are configs, not offsets on θ.** M05's `SelectionRequest` has no
-difficulty field and M06 must not shift the provisional θ to fake one, so the
-four modes differ in MECHANICS: who asks, whether hints exist, how the clock is
-enforced, how many evaluators score the answer. `difficulty_offset` is carried
-so the day M05 accepts it is one line, and is sent nowhere until then.
+**Modes are configs, not offsets on θ.** M06 must not shift the provisional θ
+to fake a difficulty, so the four modes differ in MECHANICS: who asks, whether
+hints exist, how the clock is enforced, how many evaluators score the answer.
+Since 2026-10-22 M05 accepts a target offset (`difficulty_shift`), and a mode's
+`difficulty_offset` is sent as it: it moves where M05 pitches the next
+question, never the estimate.
 
 **What a mode may never change** is the standard (AC-6.17): the payload M13
 scores and the prompt the strategist judges. The one difference that reaches
@@ -64,8 +65,8 @@ class ModeConfig:
     #: FR-6.20 — off everywhere until M13 serves a `push_back` rubric.
     steelman_enabled: bool = False
     steelman_rate: float = 0.0
-    #: §6.1: sent only once M05 accepts `difficulty_offset`. Carried so that
-    #: day is one line, and read by nothing until then.
+    #: §6.1: where M05 pitches every question in this mode, in logits — sent
+    #: as `difficulty_shift` since M05 accepted it (2026-10-22).
     difficulty_offset: float = 0.0
 
     def persona_for(self, kind: SegmentKind | str = "default") -> str:

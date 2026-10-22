@@ -20,7 +20,7 @@ from backend_M06_Mock_Interview_Engine.llm import NullLLM
 from backend_M06_Mock_Interview_Engine.models import EvaluationOutbox
 from backend_M06_Mock_Interview_Engine.state import InvalidTransition
 
-from .stubs import BankQuestions, NoClaims, StubLLM, verdict
+from .stubs import BankQuestions, NoClaims, StubLLM, close, verdict
 
 
 def make(db, llm=None, **upstreams) -> Engine:
@@ -128,6 +128,7 @@ def test_the_answer_after_a_hint_carries_the_level_to_m13(db):
     engine.hint(row.id)
     state = engine.state(row.id)
     engine.answer(row.id, state.open_turn_id, "Buckets, and a bounded load factor.")
+    close(engine, row)
 
     queued = db.exec(select(EvaluationOutbox).where(EvaluationOutbox.session_id == row.id)).all()
     assert [r.payload["hint_level_used"] for r in queued] == [1]

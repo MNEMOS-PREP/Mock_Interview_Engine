@@ -23,7 +23,7 @@ from backend_M06_Mock_Interview_Engine.models import EvaluationOutbox
 from backend_M06_Mock_Interview_Engine.state import InvalidTransition
 
 from .conftest import student
-from .stubs import BankQuestions, NoClaims, StubLLM, verdict
+from .stubs import BankQuestions, NoClaims, StubLLM, answer, verdict
 
 FAIL = verdict(band="below", justification="failed")
 
@@ -46,8 +46,7 @@ def live(engine: Engine, mode="practice"):
 
 
 def say(engine: Engine, row, text: str):
-    state = engine.state(row.id)
-    return engine.answer(row.id, state.open_turn_id, text)
+    return answer(engine, row, text)
 
 
 def evaluations(db) -> int:
@@ -146,7 +145,10 @@ def test_the_notes_show_both_attempts_and_say_which_counted(db):
     built = report.build(engine.state(row.id), store.events_for(db, row.id), utcnow())
     first = built.questions[0]
     assert first.retried is True
-    assert [e.retry for e in first.exchanges if e.role == "candidate"] == [False, True]
+    # The first attempt is "no idea", twice since 2026-10-22 (the simpler
+    # question in between); the retry is the last answer, marked as one.
+    retries = [e.retry for e in first.exchanges if e.role == "candidate"]
+    assert retries[-1] is True and not any(retries[:-1])
     assert any("first attempt is the one that was scored" in n for n in built.notes)
 
 
@@ -165,6 +167,14 @@ def test_the_stage_is_told_a_retry_is_on_offer(client, candidate_id, upstreams):
     after = client.post(
         f"/v1/interviews/{created['id']}/answer",
         json={"question_turn_id": session["open_turn_id"], "text": "no idea"},
+        headers=headers,
+    ).json()
+    # 2026-10-22: a give-up first gets one simpler question; giving up on that
+    # too is the break the retry is offered after.
+    assert after["retry_offered"] is False and after["open_turn_id"]
+    after = client.post(
+        f"/v1/interviews/{created['id']}/answer",
+        json={"question_turn_id": after["open_turn_id"], "text": "no idea"},
         headers=headers,
     ).json()
     assert after["retry_offered"] is True

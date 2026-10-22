@@ -22,9 +22,10 @@ from backend_M06_Mock_Interview_Engine.clarify import (
     unsure_term,
 )
 from backend_M06_Mock_Interview_Engine.items import Item, KeyPoint, from_dict
+from backend_M06_Mock_Interview_Engine.models import ArtifactOutbox
 from backend_M06_Mock_Interview_Engine.personas import persona
 
-from .stubs import BankQuestions, StubLLM, verdict
+from .stubs import BankQuestions, StubLLM, close, scored_rows, verdict
 from .test_engine import make
 
 ITEM = Item(
@@ -153,12 +154,16 @@ def test_did_you_say_then_the_reply_is_judged_with_the_answer(db):
     assert queued(db, row) == 0, "the answer asked about owes M13 nothing yet"
     state = engine.answer(row.id, state.open_turn_id, f"{term}, yes.")
     assert asked(state)[-1].probe_move != "clarify_term", "asked once a question"
-    assert queued(db, row) == 1
-    reply = [t for t in state.transcript if t.role == "candidate"][-1]
-    request = outbox.evaluation_request(state, reply, "n1")
-    assert request["answer_text"] == f"{said}\n{term}, yes."
-    assert request["uncitable"] == at(said, heard)
-    assert outbox.artifact_request(state, reply)["content"] == request["answer_text"]
+    # Owed when the question closes (2026-10-22): one evaluation, the answer
+    # and the clarification together, the unsure word still unquotable.
+    close(engine, row)
+    rows = scored_rows(db, row.id)
+    assert len(rows) == 1
+    request = rows[0].payload
+    assert request["answer_text"] == f"{said}{outbox.ANSWER_GAP}{term}, yes."
+    assert request["uncitable"] == [list(r) for r in at(said, heard)]
+    artifact = db.get(ArtifactOutbox, rows[0].turn_id)
+    assert artifact.payload["content"] == request["answer_text"]
 
 
 def test_never_more_than_three_a_session(db):
@@ -192,7 +197,10 @@ def test_a_question_spoken_over_from_its_start_is_put_again(db):
     assert queued(db, row) == 0, "what they said answered something else"
     state = engine.answer(row.id, state.open_turn_id, HELD)
     assert asked(state)[-1].probe_move != "reoffer", "put again once"
-    assert queued(db, row) == 1
+    close(engine, row)
+    rows = scored_rows(db, row.id)
+    assert len(rows) == 1
+    assert rows[0].payload["answer_text"] == HELD, "an answer to a question never heard is out"
 
 
 def test_a_question_heard_before_they_spoke_is_judged_as_ever(db):
@@ -202,7 +210,8 @@ def test_a_question_heard_before_they_spoke_is_judged_as_ever(db):
     engine.heard(row.id, line.turn_id, len(line.parts) - 1 if line.parts else 0, 0.95)
     state = engine.answer(row.id, line.turn_id, HELD)
     assert asked(state)[-1].probe_move != "reoffer"
-    assert queued(db, row) == 1
+    close(engine, row)
+    assert len(scored_rows(db, row.id)) == 1
 
 
 def test_the_persona_cards_carry_the_aside_for_a_line_spoken_over():

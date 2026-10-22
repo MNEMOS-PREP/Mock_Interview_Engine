@@ -101,9 +101,17 @@ ENSEMBLE_BY_MODE = _ENSEMBLE_BY_MODE
 
 #: Spec §6.3. Exactly these keys reach M13 — asserted by AC-6.2, because what
 #: is ABSENT is the blind-scoring property: no interviewer text, no probe
-#: intent, no steelman flag, no verdict, no other turn. `candidate_id` is the
-#: one identity field, because M13 needs it to address the observation and
-#: strips it before its own evaluator projection.
+#: intent, no steelman flag, no verdict, no other question's turn.
+#: `candidate_id` is the one identity field, because M13 needs it to address
+#: the observation and strips it before its own evaluator projection.
+#:
+#: 2026-10-22: one evaluation per QUESTION, not per answer. `answer_text` is
+#: every answer the student gave to the question, in order — still none of
+#: the interviewer's words, which now include doubt ("I'm not sure that's
+#: right") that would anchor the scorer on the live read. Help is counted, not
+#: shown: `prompts_used` is the corrective prompts a corrected answer needed,
+#: priced with M13's published hint credit. `key_point_ids` is what the
+#: question actually asked, for one asked a part at a time.
 EVALUATION_KEYS = frozenset(
     {
         "turn_id",
@@ -117,6 +125,121 @@ EVALUATION_KEYS = frozenset(
         "ensemble",
     }
 )
+#: Keys sent only when they say something (`thread_request`).
+OPTIONAL_EVALUATION_KEYS = frozenset({"uncitable", "prompts_used", "key_point_ids"})
+
+#: Between two answers to one question, in the scored text. Whitespace, so
+#: nothing in the text the student did not say can be quoted as evidence.
+ANSWER_GAP = "\n\n"
+#: M13's `uncitable` limit — ranges past it are merged, never dropped.
+MAX_UNCITABLE = 40
+#: Moves after which the answer they followed is not part of what is scored:
+#: words nobody could make out, and an answer to a question never heard.
+UNSCORED_AFTER = frozenset({"didnt_catch", "reoffer"})
+#: The interviewer's help toward a correction (`ladder.ASSISTING`, without
+#: the hint, which M13 already prices from `hint_level_used`).
+CORRECTIVE = frozenset({"challenge", "simplify", "probe_missing", "probe_specifics", "confront"})
+
+
+def thread_of(state: SessionState, question_turn_id: uuid.UUID) -> tuple[Any, list, list]:
+    """(the question turn, its interviewer turns, its candidate turns) — from
+    the question up to the next new question, in order."""
+    turns = state.transcript
+    start = next((i for i, t in enumerate(turns) if t.turn_id == question_turn_id), None)
+    if start is None:
+        return None, [], []
+    question = turns[start]
+    asked, answered = [question], []
+    for turn in turns[start + 1 :]:
+        if turn.role == "interviewer":
+            if turn.probe_move is None and turn.question_source is not None:
+                break  # the next question — or the same one, retried
+            asked.append(turn)
+        elif turn.role == "candidate":
+            answered.append(turn)
+    return question, asked, answered
+
+
+def _merge(ranges: list[tuple[int, int]], limit: int) -> list[tuple[int, int]]:
+    out: list[list[int]] = []
+    for a, b in sorted(ranges):
+        if out and a <= out[-1][1] + 1:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    while len(out) > limit:
+        # Merge the closest pair: what nobody may quote stays unquotable.
+        gaps = [out[i + 1][0] - out[i][1] for i in range(len(out) - 1)]
+        i = gaps.index(min(gaps))
+        out[i][1] = out[i + 1][1]
+        del out[i + 1]
+    return [(a, b) for a, b in out]
+
+
+def thread_text(state: SessionState, question_turn_id: uuid.UUID) -> tuple[str, list, Any]:
+    """(what M13 scores, the ranges in it nobody may quote, the first answer).
+
+    The student's answers to one question, in order — and only theirs. An
+    answer the interviewer could not make out, or gave before hearing the
+    question, is left out: it was asked about, not judged."""
+    _question, asked, answered = thread_of(state, question_turn_id)
+    after: dict[int, str | None] = {}
+    for turn in answered:
+        nxt = next((t for t in asked if t.turn_index > turn.turn_index), None)
+        after[turn.turn_index] = nxt.probe_move if nxt is not None else None
+    kept = [t for t in answered if after.get(t.turn_index) not in UNSCORED_AFTER and t.text.strip()]
+    pieces: list[str] = []
+    uncitable: list[tuple[int, int]] = []
+    at = 0
+    for turn in kept:
+        if pieces:
+            at += len(ANSWER_GAP)
+        pieces.append(turn.text)
+        uncitable += [(at + int(a), at + int(b)) for a, b in (turn.unsure or [])]
+        at += len(turn.text)
+    return ANSWER_GAP.join(pieces), _merge(uncitable, MAX_UNCITABLE), (kept[0] if kept else None)
+
+
+def prompts_before_correction(asked: list, decisions: list[dict]) -> int:
+    """The interviewer's corrective prompts a corrected answer needed — zero
+    when nothing was corrected with help."""
+    if not any(d.get("corrected") == "prompted" for d in decisions):
+        return 0
+    return sum(1 for t in asked if t.probe_move in CORRECTIVE)
+
+
+def thread_request(
+    state: SessionState,
+    question_turn_id: uuid.UUID,
+    ensemble: str,
+    *,
+    decisions: list[dict] | None = None,
+    key_point_ids: list[str] | None = None,
+) -> dict | None:
+    """One question's evaluation request — None when it has no answer to score."""
+    _question, asked, answered = thread_of(state, question_turn_id)
+    text, uncitable, first = thread_text(state, question_turn_id)
+    if first is None:
+        return None
+    request = {
+        "turn_id": str(first.turn_id),
+        "session_id": str(state.session_id),
+        "candidate_id": str(state.candidate_id),
+        "question_id": str(first.question_id) if first.question_id else None,
+        "answer_text": text,
+        "hint_level_used": max((t.hint_level_used for t in answered), default=0),
+        "consent_id": str(state.flags.consent_id) if state.flags.consent_id else None,
+        "round_type": first.rubric_round_type,
+        "ensemble": ensemble,
+    }
+    if uncitable:
+        request["uncitable"] = [list(r) for r in uncitable]
+    prompts = prompts_before_correction(asked, decisions or [])
+    if prompts:
+        request["prompts_used"] = prompts
+    if key_point_ids:
+        request["key_point_ids"] = list(key_point_ids)
+    return request
 
 
 def evaluation_request(state: SessionState, turn, ensemble: str) -> dict:
@@ -213,6 +336,59 @@ def enqueue_artifact(db: Session, state: SessionState, turn) -> ArtifactOutbox |
         turn_id=turn.turn_id,
         session_id=state.session_id,
         payload=artifact_request(state, turn),
+    )
+    db.add(row)
+    return row
+
+
+def enqueue_thread(
+    db: Session,
+    state: SessionState,
+    question_turn_id: uuid.UUID,
+    item: Item | None,
+    *,
+    decisions: list[dict] | None = None,
+    key_point_ids: list[str] | None = None,
+) -> EvaluationOutbox | None:
+    """One question's evaluation and the artifact it cites, written once.
+
+    Keyed by the first answer's turn, so closing the same question twice
+    writes nothing the second time, and the notes and M13's evidence page
+    find it where they always have."""
+    request = thread_request(
+        state,
+        question_turn_id,
+        ENSEMBLE_BY_MODE.get(state.mode, "n3_het_v1"),
+        decisions=decisions,
+        key_point_ids=key_point_ids,
+    )
+    if request is None:
+        return None
+    first = state.turn(uuid.UUID(request["turn_id"]))
+    if first is None or scoreable(state, first, item) is not None:
+        return None
+    turn_id = first.turn_id
+    if db.get(ArtifactOutbox, turn_id) is None:
+        db.add(
+            ArtifactOutbox(
+                id=turn_id,
+                turn_id=turn_id,
+                session_id=state.session_id,
+                payload={
+                    "candidate_id": str(state.candidate_id),
+                    "session_id": str(state.session_id),
+                    "turn_id": str(turn_id),
+                    "artifact_type": "transcript",
+                    # M13 quotes offsets into exactly what it scored.
+                    "content": request["answer_text"],
+                },
+            )
+        )
+    existing = db.get(EvaluationOutbox, turn_id)
+    if existing is not None:
+        return existing
+    row = EvaluationOutbox(
+        id=turn_id, turn_id=turn_id, session_id=state.session_id, payload=request
     )
     db.add(row)
     return row

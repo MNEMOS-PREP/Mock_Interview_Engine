@@ -32,6 +32,7 @@ from .stubs import (
     DownQuestions,
     NoClaims,
     StubLLM,
+    answer,
     drill_body,
     verdict,
 )
@@ -75,7 +76,7 @@ def mock(engine: Engine, minutes=10, candidate=None, include_resume=True):
 def say(engine: Engine, row, text: str):
     state = engine.state(row.id)
     assert state.open_turn_id is not None, "nothing is open"
-    return engine.answer(row.id, state.open_turn_id, text)
+    return answer(engine, row, text)
 
 
 def interviewer_lines(state):
@@ -259,7 +260,7 @@ def test_model_calls_are_recorded_for_the_trace(db):
     jobs = sorted(c.job for c in calls)
     assert jobs == ["interviewer_phrasing", "probe_strategist"]
     strategist = next(c for c in calls if c.job == "probe_strategist")
-    assert strategist.prompt_version == "strategist-4"
+    assert strategist.prompt_version == "strategist-5"
     assert strategist.reasoning_tokens == 20
     assert strategist.cached_tokens is None
 
@@ -363,11 +364,17 @@ def test_a_step_that_crashed_after_the_answer_is_finished_by_the_next_request(db
     state = engine.state(row.id)
     assert state.open_turn_id is None and state.transcript[-1].role == "candidate"
 
+    def said(state) -> int:
+        return sum(1 for t in state.transcript if t.role == "interviewer")
+
+    # The step owed for that answer happens once, whatever it is — since
+    # 2026-10-22 an "I don't know" at a question's opening is answered with a
+    # simpler question rather than the next one.
     state = engine.start(row.id)
     assert state.open_turn_id is not None
-    assert state.questions_asked == 2
+    assert said(state) == 2
     engine.start(row.id)
-    assert engine.state(row.id).questions_asked == 2
+    assert said(engine.state(row.id)) == 2
 
 
 def test_a_decision_already_on_the_log_is_followed_not_remade(db, monkeypatch):
@@ -728,7 +735,9 @@ def test_the_project_segment_asks_about_the_students_own_resume(db):
     # a resume mid-session cannot change the question.
     assert state.plan.claims[0]["text"].startswith("Built a crop-disease classifier")
 
-    state = say(engine, row, "I do not know.")
+    # An answer the stub model judges failed: one step ends each question,
+    # which is the arithmetic this test is about.
+    state = say(engine, row, "It overwrites the old value.")
     asked = state.transcript[-1]
     assert state.current_segment == 1
     assert asked.question_source == "m01_probe"
@@ -737,7 +746,7 @@ def test_the_project_segment_asks_about_the_students_own_resume(db):
     # Nothing scoreable: no rubric, so no evaluation is owed for the answer.
     assert asked.rubric_round_type is None
 
-    state = say(engine, row, "I do not know.")
+    state = say(engine, row, "It overwrites the old value.")
 
     # The warm-up's bank question IS owed an evaluation; the claim probe is
     # not, because M13 resolves a package from M05 and a probe is not a bank

@@ -57,6 +57,7 @@ select = ["E", "F", "I", "B", "UP"]
 "**/access.py" = ["B008"]
 # Prompts are prose. Wrapping them changes the text the model reads.
 "**/agents/*.py" = ["E501"]
+"**/decompose.py" = ["E501"]
 # Operator scripts print wide tables; nothing reads them as code.
 "tools/*.py" = ["E501"]
 
