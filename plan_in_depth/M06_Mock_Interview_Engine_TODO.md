@@ -1,6 +1,6 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 87%** — 20 of 26 functional requirements met, 5 partially. **Days 1–15 of 15 are done — the build order is complete**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since day 15 **the build order is finished and what is left is named**: what waits on another module, what waits on a person (human evaluation, round 1, prepared), and what M06 still owes itself. Since day 14 **the full chain runs live with M04's guard on** — five real services, the real model, a student's answers reaching M13 and moving M04's skill graph — and a scripted student drives twenty sessions across the four modes on every run of the suite. Since day 13 **every route has a screen** — or a named caller — and a gate fails the build the day one does not; the setup offers the four modes and honours a job description handed over, the preview says who runs each part, and §7's last three routes exist. Since day 12 **a session degrades instead of breaking**: a failing model is noticed turn by turn, the session wraps up early and then stops asking it, and if everything fails the student gets an apology and an honest record rather than a spinner. The notes now carry M13's own words about each answer — never its numbers. Since day 11 **a session survives the student leaving**: the clock stops while their stage is gone, they come back to "we were on question 2 of Data structures", silence gets a prompt rather than a stare, and the spec's five chaos scenarios pass with nothing done twice. Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
+> **Completion: 87%** — 20 of 26 functional requirements met, 5 partially. **Days 1–15 of 15 are done — the build order is complete**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since 2026-10-23 **the interviewer judges an answer before it speaks**: a wrong answer is challenged in the student's own words, difficulty moves per topic and only for the interview, a question that asks two things is asked one at a time, every decision says why, and the notes quote what was said ([the report](M06_OVERHAUL.md)). Since day 15 **the build order is finished and what is left is named**: what waits on another module, what waits on a person (human evaluation, round 1, prepared), and what M06 still owes itself. Since day 14 **the full chain runs live with M04's guard on** — five real services, the real model, a student's answers reaching M13 and moving M04's skill graph — and a scripted student drives twenty sessions across the four modes on every run of the suite. Since day 13 **every route has a screen** — or a named caller — and a gate fails the build the day one does not; the setup offers the four modes and honours a job description handed over, the preview says who runs each part, and §7's last three routes exist. Since day 12 **a session degrades instead of breaking**: a failing model is noticed turn by turn, the session wraps up early and then stops asking it, and if everything fails the student gets an apology and an honest record rather than a spinner. The notes now carry M13's own words about each answer — never its numbers. Since day 11 **a session survives the student leaving**: the clock stops while their stage is gone, they come back to "we were on question 2 of Data structures", silence gets a prompt rather than a stare, and the spec's five chaos scenarios pass with nothing done twice. Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
 >
 > Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), segments with a persona each (FR-6.3), the probe ladder and break depths (FR-6.5, 6.6), hints at a published price (FR-6.7), modes as configs (FR-6.8), pause (FR-6.12), reconnect and resume (FR-6.13), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), fixed context (FR-6.16), a report for every session (FR-6.18), re-planning (FR-6.4), Final Boss (FR-6.9), pacing and the reserved closing (FR-6.17), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
@@ -44,9 +44,9 @@ _Nothing scouted for this module yet._
 | | |
 |---|---|
 | Status | **Days 1–15 of 15 done — the build order is complete.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **570**, no socket opened, no API key (counted 2026-10-22) |
-| Release gates (`-m gate`) | **81** |
-| Route decorators | **42** on `/v1`, plus `/health` and `/status` |
+| Backend tests passing | **704**, no socket opened, no API key (counted 2026-10-23) |
+| Release gates (`-m gate`) | **82** |
+| Route decorators | **45** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
 | Frontend | five screens on `:5206`; **mounted in Platform_Shell** on `:5173` at `/mock`, with `interviews`/`drills`/`agents` in its proxy table |
 | Live chain | **2026-10-02**: M02 → M06 → M05 → M13 → M04, M04's guard on — 4 artifacts, 4 evaluations, 3 ledger rows delivered; hashing, time complexity and hashing internals moved to `emerging`; anonymous and cross-student reads 403, theta without the service secret 401 |
@@ -1085,6 +1085,65 @@ The user sat interviews and listed what felt wrong. Each item, as fixed:
 - ✅ The notes call a resume question and a backup question what they are
   (`e8b02aa`).
 
+### 2026-10-22/23 — the realism overhaul: the user's 19-section brief
+
+The interviewer judges an answer before it speaks, and says what it decided.
+The full report — root causes, fixes, the evidence behind each design choice,
+and the brief's acceptance criteria one by one — is
+[M06_OVERHAUL.md](M06_OVERHAUL.md). M06 `8108fa9`; M13 `f673f90`; M05 `bb4b3fe`;
+M01 `f8ad4e8`.
+
+- ✅ **A wrong answer is challenged, not followed deeper.** The strategist
+  (`strategist-5`) says what an answer is — eleven categories, a severity,
+  and the student's own words as evidence — and `ladder.decide` picks the move
+  from that in an explicit order, with a reason on every decision
+  (`probe.decided`, the trace). The interviewer only phrases it (`react()`),
+  in the move's tone: a challenge may doubt and may not praise.
+- ✅ **Difficulty per topic, for this interview only** (`difficulty.py`): a
+  level per concept from its last two answers, drifting back to 0. It sets
+  how deep, from which angle, and where M05 pitches the next question on that
+  topic — never θ, never kept.
+- ✅ **One thing at a time** (`decompose.py`): a stem that asks several things
+  is split once, cached, and asked as a question and its follow-ups.
+- ✅ **One evaluation per question**, of the student's words only, the pushes
+  it needed priced like hints (M13 `prompts_used`), against the key points
+  actually asked (`key_point_ids`).
+- ✅ **Notes from what was said**: quotes and why, corrections, the claim
+  check, a study list, the last attempt compared. The summary is built from
+  the questions, so the two cannot disagree.
+- ✅ **A question library** (`/mock/library`): starred and flagged, kept
+  apart; every attempt kept; chosen questions practised again.
+- ✅ **A resume interview** (track `resume`), **filler notes** (`delivery.py`),
+  and **a drill that ends** (`/end` twice is fine, a live drill gives way to a
+  new session, M01 explains M06's 409).
+- ✅ **Found by running it live, and fixed** — each with a regression test:
+  - "Focus: Hashing" asked "tell me about a time…", then drifted: the round
+    was planned under every track and asked under the first alphabetically,
+    and M05 treated the focus as a preference. Now: the tracks that hold it,
+    and M05's `only_concepts`, never relaxed.
+  - A redirect after a clarify repeated the clarify.
+  - The notes gave an answer to another question a misconception, and a
+    non-resume line "the number, the baseline and how you measured it".
+    Findings now come only from judged answers; the resume wording only from
+    resume lines.
+  - With the model down, every question read "Answered well". Now "Not
+    judged". The rule fallback hears "I'm not sure, I don't know this one" and
+    leaves "I don't know the figure, but…" to the model.
+  - "Walk me through this project" was asked about two resume lines with
+    nothing to say which. A question that does not name its line now reads
+    the line out.
+  - Second round, with the model and the pages: a correction after a
+    pushback relabelled "corrected yourself" by the next right answer, and a
+    settled contradiction counted the same way; a vague answer given a
+    "misconception"; the last answer of every part never reaching its topic
+    (the new part was recorded before the decision); a claim's id as a topic
+    name in the summary; "practise <resume line> again" planning an empty
+    interview; the same point listed twice. All fixed, each with a test.
+- ⬜ **Still thin, and not M06's to fix:** no bank item has authored
+  follow-ups, and 12 items are reviewed, all DSA (§7).
+- ⬜ **The 429 policy** (2026-10-17 below) is still the user's call; the live
+  runs used one key.
+
 ### 2026-10-22 — what the demo can claim: follow-ups, adaptivity, scoring
 
 An audit for the demo reference (`Final_Year_Project/demo_interview.md`,
@@ -1092,27 +1151,34 @@ untracked), against M06 `9769401`, M05 `7634858` and M13 `77ead37`. No code
 changed. The engine does what it was designed to; what it has to work with is
 thinner than the pitch.
 
-- ⬜ **Follow-ups on bank questions are generic.** No M05 item has
+- 🟡 **Follow-ups on bank questions are generic.** No M05 item has
   `follow_ups` (12 reviewed, 292 drafts), so every rung is
   `phrasebook.GENERIC_RUNGS` reworded around the student's words, and
   `Persona.max_generic_rungs` caps them: 1 interviewer asks none, 33 ask one,
   6 ask two. The "probe until it breaks, up to depth 5" ladder runs only on
-  M01's drills and resume probes. The fix is M05's data (§7).
-- ⬜ **The next question adapts to the answer on DSA only.** θ is observed only
+  M01's drills and resume probes. The fix is M05's data (§7). _2026-10-23:
+  the interviewer now decides what to ask from what the answer was — a
+  challenge, a simpler question, a request for specifics, the next part —
+  and angles a deeper one by the topic's level; the content of a deeper
+  question is still generic until M05 authors follow-ups._
+- 🟡 **The next question adapts to the answer on DSA only.** θ is observed only
   for `m05_bank` items (`_record_decision`), and only 12 items are reviewed —
   11 `dsa_verbal`, 1 shared with `dbms_verbal`. On every other track the next
   question follows coverage, history and position in the round, not how the
   last answer went. It is per concept too: M05 penalises repeating a concept,
   so one answer mostly moves later questions on the same concept. The fix is
-  reviewing drafts (M05's FR-5.6 queue).
-- ⬜ **Notes show unreviewed key points as the answer.** For a drafted item,
+  reviewing drafts (M05's FR-5.6 queue). _2026-10-23: on every track, the
+  next question on a topic is pitched by that topic's level in this
+  interview (M05 `difficulty_offset`); θ still moves on reviewed items only._
+- ✅ **Notes show unreviewed key points as the answer.** For a drafted item,
   "what a strong answer covers" (`report.py`) lists key points nobody has
   checked. Label them as unreviewed, or hide them for `m05_draft` — the user's
-  call.
-- ⬜ **The checklist under a strong answer can be wrong** — M13's, not M06's
+  call. _2026-10-23 (`8108fa9`): labelled — "a newly written practice question
+  nobody has reviewed yet", its strong answer "not yet reviewed by a person"._
+- ✅ **The checklist under a strong answer can be wrong** — M13's, not M06's
   (§7). When the evaluators list nothing missing, M13 fills the list from its
   word-overlap measure, which marked a correct paraphrase of the hashing item
-  as missing all three key points.
+  as missing all three key points. _Fixed in M13, 2026-10-23 (`f673f90`)._
 - ⬜ **The README is stale.** It says "days 1–3" and 147 tests; today it is
   570 tests, 81 gates and 42 routes.
 
@@ -1415,7 +1481,10 @@ the other module's TODO once raised; tick it here when it has been. **Day 15 (20
 | M05 | author `follow_ups` (depth 1–3) for bank items, the 12 reviewed first, and have the drafter write them — none has any, so every probe on a bank question is generic and most interviewers stop after one | ⬜ raised in M05's TODO, 2026-10-22 |
 | M05 | review about ten drafted items per track — only DSA has reviewed items, so only DSA answers are scored or move θ | ⬜ raised in M05's TODO, 2026-10-22 |
 | M05 | `hint_ladder`s for the reviewed items — 1 of 12 has one, so Hint is empty on 11 DSA questions | ⬜ raised in M05's TODO, 2026-10-22 |
-| M13 | don't refill an empty `missing_key_points` from the word-overlap measure (`service.py` ~L209): a correct paraphrase was told it missed every key point | ⬜ raised in M13's TODO, 2026-10-22 |
+| M13 | don't refill an empty `missing_key_points` from the word-overlap measure (`service.py` ~L209): a correct paraphrase was told it missed every key point | ✅ landed (`f673f90`) |
+| M13 | take `prompts_used` (pushes priced like hints) and `key_point_ids` (only what was asked) | ✅ landed (`f673f90`) |
+| M05 | pitch by topic (`difficulty_offset`, `difficulty_shift`) and hold a focus (`only_concepts`, never relaxed) | ✅ landed (`bb4b3fe`) |
+| M01 | say a drill is "in progress" when M06 refuses it, and link it | ✅ landed (`f8ad4e8`) |
 | Platform_Shell | add `interviews`/`drills`/`agents` to the proxy table and mount `m06Routes` | ✅ landed (`bbd4f69`); on GitHub (MNEMOS-PREP/Platform_Shell, private) since 2026-09-23 |
 | Platform | `modules_meta` M06 → built; `Platform_Shell` journey card | ⬜ (on ship) |
 
