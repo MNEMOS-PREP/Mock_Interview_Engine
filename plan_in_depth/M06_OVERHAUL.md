@@ -93,7 +93,7 @@ Every one has a regression test; those found live (11–23) were also shown to f
 - **§3 Difficulty.** Each topic has a level from −2 to +2, moved by the last two answers on that topic and drifting back toward 0. It sets how deep the follow-ups may go, their angle (harder: edge cases, failure, scale, trade-offs; easier: diagnostic), and where M05 pitches the next question on that topic (0.5 logit per level). It never changes θ, and dies with the session.
 - **§5 One thing at a time.** A stem that asks several things is split once (rules, then a validated model split), cached, and asked as a primary question with the rest as follow-ups. Each part's key points are scoped, so the student is never marked down for a part not yet asked.
 - **§6 Notes.** Per question: what held, what went wrong (their quote and why), unsupported claims, contradictions, a correction (by themselves or after a push), a misconception named, a study list, how it went in plain words, and the comparison with their last attempt. The session summary is built from those, so the two cannot disagree.
-- **§7 Delivery.** Fillers, repeats and restarts are counted, and pace is measured when the room gives timing. There is one short note per answer at most, with a cooldown, given live only in practice and mock; the report summarises it and says what was not measured. Since 2026-10-23 the room sends timing for spoken answers, and marks an answer the microphone cut off.
+- **§7 Delivery.** Fillers, repeats and restarts are counted, and pace is measured when the room gives timing. There is one short note per answer at most, with a cooldown, given live only in practice and mock; the report summarises it and says what was not measured. Since 2026-10-23 the room sends timing for spoken answers, and marks an answer the microphone cut off. And M11 keeps the "um"s and "uh"s Whisper used to drop, so the note can name them (below).
 - **§9–§10, §14 Library and memory.** Questions can be starred during an interview or in the notes. The interview flags the ones worth another go (a misconception that stood, a claim not backed, a skip), independently of stars. Every attempt is kept. `/mock/library` filters by mark and topic, and builds a practice session of the chosen questions asked as they were. The notes compare the last two attempts.
 - **§11, §13 Scoring.** M13 is sent the whole thread of the student's own words, never the interviewer's. `prompts_used` counts the pushes before a correction and costs credit like a hint at M13's published factors. `key_point_ids` scopes the key points to what was actually asked.
 - **§15 Reliability.**
@@ -191,7 +191,7 @@ Three rounds, on the real services (M01, M04, M05, M06, M13) and the real Groq m
 | One question at a time | Students answered half of a two-part stem | Double-barrelled questions lower answer quality [11]; least-to-most decomposition [12] | One cached model call per new stem (5 s timeout; the whole stem on failure) | `test_reactions.py` |
 | Score the whole question once, blind to the interviewer, assistance priced in | Follow-up answers scored as failed full answers | Per-question anchored rating drives interview reliability [13, 14]; assistance received is evidence about proficiency [15] | Scores land when a question closes, not after each answer | M13 `test_threads.py`, `test_outbox.py` |
 | Feedback that quotes the answer and says what to study | Generic notes; "missing" points the student had said | Effective feedback is specific, task-level and forward-looking [16, 17]; claims grounded in quoted evidence [18] | Fewer notes when the evidence is thin | `test_report_notes.py` |
-| Filler notes above conversational norms, one at a time, honest about limits | Any filler count above zero was shown | About six disfluencies per 100 words is normal conversation [19]; fillers do communicative work [20]; ASR models omit many fillers [21, 22] | Fillers the recogniser dropped are not seen; thresholds are settings | `test_delivery.py` |
+| Filler notes above conversational norms, one at a time, honest about limits | Any filler count above zero was shown | About six disfluencies per 100 words is normal conversation [19]; fillers do communicative work [20]; ASR models omit many fillers [21, 22] | About one vocal filler in three is still missed; thresholds are settings | `test_delivery.py`; Voice_Engine `research/fillers` |
 | Structured memory keyed by student and question, not vector search | Nothing remembered between sessions | Retrieval practice and spacing improve retention [23, 24]; agent memory retrieves by recency, importance and relevance [25], and here importance is explicit (star, flag) | Exact questions only; no "questions like this one" | `test_library.py` |
 | A focus is a hard constraint | "Focus: Hashing" drifted after one question | Content constraints in constrained adaptive testing are hard, not weights [26] | A focus round ends early when the bank is thin (hashing has 6 items) | M05 `test_selection.py`, `test_planner.py`, `test_answer_types.py` |
 | A drill is disposable; closing is idempotent | A closed drill blocked the next | Idempotent operations; leases that expire | A left drill ends; its progress is not resumable | `test_lifecycle.py`, M01 `test_api.py` |
@@ -208,14 +208,14 @@ Nothing heavier was used where a simpler rule did the job: no vector store, no l
   - The strategist (gpt-oss-20b) can mislabel a category.
   - M13 runs at the "dev" grade: gpt-oss-120b three times, lexical key-point matching, no NLI model.
 - **Delivery is partly blind.**
-  - Whisper and the browser recogniser drop most "um"s and "uh"s.
+  - Whisper now keeps about two in three "um"s and "uh"s: M11's prompt is written the way people talk. On the question alone it kept none of 53; it now keeps 65 of 97 and invents none (Voice_Engine `research/fillers`, 2026-10-23). The browser's own recogniser, used only when M11 is down, still drops them.
   - Typed answers have no pace.
   - A cut-off is detected only from the browser recogniser's microphone or network errors; M11-side detection is not wired.
 - **Rate limits.**
   - Groq allows 8K tokens per minute per model.
   - A student answering quickly can hit a 429, and the authored lines take over.
   - Whether to retry a 429 on the second key is still the open policy decision (see the TODO, 2026-10-17). These runs used one key.
-- **Navigation.** The library has no link in Platform_Shell's nav, because the shell is on its unmerged `feat/gd-entry` branch. It is reachable from the mock home page.
+- **Navigation — fixed 2026-10-23.** The library is in the shell's menu under Progress (Platform_Shell `main` 00b5f15, and `feat/gd-entry` 389f7c5). The menu now lights the most specific item, so "Mock interview" no longer lights on the library too.
 - **Resume interviews** ask only about claims M01 wrote probes for.
 
 ## 8. Configuration and migration
