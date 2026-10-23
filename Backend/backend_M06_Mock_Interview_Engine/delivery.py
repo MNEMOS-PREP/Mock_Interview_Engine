@@ -10,9 +10,11 @@ and never more than one note per answer, with a cooldown between notes.
 * Lexical fillers ("basically", "actually", "literally", "you know", "I mean",
   "kind of", "sort of", and "like" where it is a filler, not a verb): yes,
   from the transcript.
-* Vocal fillers ("um", "uh", "er"): counted when they are in the text — but
-  Whisper, which writes down spoken answers (M11), usually leaves them out,
-  so they are UNDER-counted for speech and never claimed as measured.
+* Vocal fillers ("um", "uh", "er"): counted from the text. Whisper writes
+  speech down clean unless its prompt is written the way people talk, so
+  M11's is (2026-10-23, Voice_Engine `research/fillers`): it keeps about two
+  in three and invents none — still under-counted, never over-counted. Before
+  that it kept none, and they were never named.
 * Repeated words ("the the") and restarts ("sorry", "let me rephrase", "no
   wait"): from the text, outside the stretches the recogniser was unsure of —
   a doubled word inside a garbled stretch is the recogniser's, not theirs.
@@ -157,7 +159,12 @@ def note(delivery: Delivery) -> str | None:
         return None
     if delivery.filler_count >= FILLER_MIN and delivery.filler_rate >= FILLER_RATE:
         top = delivery.top
-        if top is not None and top[1] >= NAME_AT and top[0] != "um/uh":
+        if top is not None and top[1] >= NAME_AT and top[0] == "um/uh":
+            return (
+                f"Quick note: {top[1]} “um”s and “uh”s in that answer. "
+                "A short silent pause does the same job."
+            )
+        if top is not None and top[1] >= NAME_AT:
             return (
                 f"Quick note: you said “{top[0]}” {top[1]} times in that answer. "
                 "Try a short pause instead."
@@ -191,17 +198,17 @@ def summarise(deliveries: list[Delivery]) -> list[str]:
         totals.update(d.fillers)
     words = sum(d.words for d in counted)
     rate = 100.0 * sum(totals.values()) / words if words else 0.0
-    habitual = [(w, n) for w, n in totals.most_common(3) if n >= NAME_AT and w != "um/uh"]
+    habitual = [(w, n) for w, n in totals.most_common(3) if n >= NAME_AT]
     piled = [d for d in counted if note(d) and d.filler_count >= FILLER_MIN]
     if rate >= FILLER_RATE and habitual:
-        named = ", ".join(f"“{w}” ×{n}" for w, n in habitual)
+        named = ", ".join(f"{_said(w)} ×{n}" for w, n in habitual)
         out.append(f"Fillers came up often ({named}). A short pause does the same job.")
     elif rate >= FILLER_RATE:
         out.append("Fillers came up often across your answers.")
     elif piled:
         # Fine on average, but an answer where they piled up is still worth
         # knowing about — an average is how one bad answer disappears.
-        named = ", ".join(f"“{w}” ×{n}" for w, n in habitual) or "fillers"
+        named = ", ".join(f"{_said(w)} ×{n}" for w, n in habitual) or "fillers"
         count = len(piled)
         out.append(
             f"Fillers were fine overall, but in {count} answer{'s' if count != 1 else ''} they "
@@ -217,10 +224,16 @@ def summarise(deliveries: list[Delivery]) -> list[str]:
         out.append("Some answers were fast; slowing a little makes them easier to follow.")
     if any(d.spoken for d in counted):
         out.append(
-            "Measured from what the recogniser wrote down, which usually leaves out “um” and "
-            "“uh” — so those are under-counted, and tone or confidence are not measured at all."
+            "Measured from what the recogniser wrote down. It keeps most “um”s and “uh”s — "
+            "about two in three — so those are a little under-counted; tone and confidence "
+            "are not measured at all."
         )
     return out
+
+
+def _said(filler: str) -> str:
+    """A filler as a note quotes it — the vocal ones together."""
+    return "“um”/“uh”" if filler == "um/uh" else f"“{filler}”"
 
 
 __all__ = [

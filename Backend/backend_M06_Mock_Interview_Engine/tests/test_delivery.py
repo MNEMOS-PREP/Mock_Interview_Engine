@@ -116,3 +116,23 @@ def test_the_room_hears_the_note_and_the_cooldown_holds(db):
     assert [bool(e.payload["note"]) for e in noted] == [True, False]
     shown = public_event(noted[0])
     assert set(shown["data"]) == {"for", "note"}, "the counts stay in the log"
+
+
+#: A spoken answer as M11 writes it down since 2026-10-23, its fillers kept.
+VOCAL = (
+    "Um, so a hash map, uh, takes the key and, um, runs it through a hash function, uh, "
+    "which gives an index into an array, and, um, you go straight to that bucket instead "
+    "of, uh, searching the whole thing, so lookup is, um, constant time on average."
+)
+
+
+def test_um_and_uh_said_often_are_named_now_the_recogniser_keeps_them():
+    """Whisper wrote none of them down, so they were never named; M11's prompt
+    now keeps about two in three, inventing none (Voice_Engine research/fillers)."""
+    said = delivery.analyse(VOCAL, spoken=True)
+    assert said.fillers["um/uh"] == 7
+    line = delivery.note(said)
+    assert line and "7 “um”s and “uh”s" in line
+    lines = delivery.summarise([said, delivery.analyse(VOCAL, spoken=True)])
+    assert any("“um”/“uh” ×14" in line for line in lines)
+    assert any("two in three" in line for line in lines)
