@@ -44,7 +44,7 @@ _Nothing scouted for this module yet._
 | | |
 |---|---|
 | Status | **Days 1–15 of 15 done — the build order is complete.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **704**, no socket opened, no API key (counted 2026-10-23) |
+| Backend tests passing | **705**, no socket opened, no API key (counted 2026-10-23) |
 | Release gates (`-m gate`) | **82** |
 | Route decorators | **45** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
@@ -1139,6 +1139,14 @@ M01 `f8ad4e8`.
     (the new part was recorded before the decision); a claim's id as a topic
     name in the summary; "practise <resume line> again" planning an empty
     interview; the same point listed twice. All fixed, each with a test.
+- ✅ **"Um" and "uh" are counted** (`11ec08c`; M11 `7043463`): Whisper had
+  dropped every one, and now keeps about two in three because M11's prompt
+  is written the way people talk. Nothing is invented. The delivery note
+  names them when they dominate an answer, and the summary says how much is
+  measured.
+- ✅ **The library is in the shell's menu** under Progress (Platform_Shell
+  `main` 00b5f15, `feat/gd-entry` 389f7c5). The menu lights the most specific
+  item, so "Mock interview" no longer lights on the library.
 - ⬜ **Still thin, and not M06's to fix:** no bank item has authored
   follow-ups, and 12 items are reviewed, all DSA (§7).
 - ⬜ **The 429 policy** (2026-10-17 below) is still the user's call; the live
