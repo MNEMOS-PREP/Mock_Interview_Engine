@@ -44,8 +44,8 @@ _Nothing scouted for this module yet._
 | | |
 |---|---|
 | Status | **Days 1–15 of 15 done — the build order is complete.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **748**, no socket opened, no API key (counted 2026-10-24) |
-| Frontend tests passing | **30** (`npm test`: vitest + Testing Library on jsdom, since 2026-10-24) |
+| Backend tests passing | **750**, no socket opened, no API key (counted 2026-10-24) |
+| Frontend tests passing | **31** (`npm test`: vitest + Testing Library on jsdom, since 2026-10-24) |
 | Release gates (`-m gate`) | **82** |
 | Route decorators | **45** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
@@ -1118,10 +1118,13 @@ security review — is [M06_NOTES.md](M06_NOTES.md). Platform_Core `5682d0d`
   every model job down; a `not_judged` answer sent to the writer; background
   calls on the hot-path pool; fenced JSON refused; one quote under every gap.
 - ✅ **Frontend tests exist**: vitest 4.1.12 (3.2.x carried critical
-  advisories), Testing Library, jsdom — 30 tests of the states and rules.
-- ⬜ **"Incorrect" beside a full ✓ rubric** — a story that covered every
-  point, then a wrong idea in a follow-up. The user agreed (2026-10-24) to a
-  label like "Incorrect in a follow-up"; next.
+  advisories), Testing Library, jsdom — 31 tests of the states and rules.
+- ✅ **"Incorrect in a follow-up"** — the user's call, 2026-10-24. A story
+  that covered every point, then a wrong idea that stood in a follow-up, read
+  "Incorrect" beside a full ✓ rubric. When the opening answer held, the label
+  and detail now say the follow-up is where it went wrong; the status, the
+  colour, the counts and "work on first" stay incorrect (`report._incorrect`).
+  Live: session C, Q1.
 - ⬜ **Rotate the NVIDIA key** — pasted in a chat; the user's to do.
 - ⬜ **NIM's free tier throttles** at about ten calls in two minutes, so a
   cohort's notes would mostly come from Groq: pace a queue or pay for NIM.

@@ -19,7 +19,7 @@
 | §3 Provider abstraction kept | ✅ | a `writing` tier in `ai_core.models`; M06 names the tier, never the model |
 | §3 Schema validation; malformed, failing, slow and rate-limited output | ✅ | strict schema + `notes_writer.check`; fallback; per-run circuit breaker; live 403 and 429 |
 | §4 Bug and regression audit | ✅ | 12 defects fixed (§3 below); each has a regression test that fails with the bug put back |
-| §6 Tests, lint, types, build | ✅ | M06 748, frontend 30 (new runner), Platform_Core 166 + 6, shell green; ruff, `tsc`, `vite build` clean |
+| §6 Tests, lint, types, build | ✅ | M06 750, frontend 31 (new runner), Platform_Core 166 + 6, shell green; ruff, `tsc`, `vite build` clean |
 
 ## 1. Root causes: why a correct, a vague and a wrong answer looked alike
 
@@ -154,8 +154,8 @@ Ordered by how directly a student would see them.
 
 | Suite | Result |
 |---|---|
-| M06 backend | **748 passed** (new: status 14, writer 19, routing 10); ruff clean |
-| M06 frontend | **30 passed** (`npm test`, new); `tsc` clean; `vite build` ok |
+| M06 backend | **750 passed** (new: status 16, writer 19, routing 10); ruff clean |
+| M06 frontend | **31 passed** (`npm test`, new); `tsc` clean; `vite build` ok |
 | Platform_Core | Python **166 passed** (incl. version parity, 4 new); TS typecheck + 6 tests |
 | Platform_Shell | `npm test` passed; `tsc` clean; `vite build` ok |
 
@@ -166,7 +166,10 @@ Ordered by how directly a student would see them.
    - M06's pin moved from v0.12.0 to v0.40.0. The suite was re-run against ai-core installed from the tag itself, not the local source;
    - the three M06 TODO copies synced.
 2. **Rotate the NVIDIA key** (§6).
-3. **A judgement call for you.** An answer whose story covered every key point, but where a wrong idea stood in a follow-up, reads "Incorrect" with a full ✓ rubric. Live session C, Q1 is an example. The write-up explains it, but a label like "Incorrect in a follow-up" may read better.
+3. **Done, on the user's call:** an answer whose opening held but whose follow-up left a wrong idea standing now reads **"Incorrect in a follow-up"**, with the detail "Your first answer held up, but a follow-up did not." It was "Incorrect" beside a full ✓ rubric (live session C, Q1).
+   - The status is still incorrect, so the colour, the counts and "work on first" do not change.
+   - Tests: `test_report_status.py` (2), `SessionNotes.test.tsx` (1).
+   - Live: session C's Q1 carries the label, and only its write-up was rewritten.
 4. **NIM's free tier throttled at about 10 calls in 2 minutes.** For a cohort ending interviews together, most notes would come from Groq. Pace a queue, or move to a paid NIM endpoint.
 5. **Quality of the write-ups is checked, not yet rated by people.** A round like `M06_HUMAN_EVAL_ROUND1.md` on the notes is the next measure.
 6. **Not checked:** dark mode on the notes page. The standalone M06 page has no theme switch for the headless check, so it should be looked at in the shell.

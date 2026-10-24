@@ -114,6 +114,23 @@ def test_a_point_reached_once_stays_reached_when_a_follow_up_misses_it(db):
     assert not any(reached in line for line in q.study), q.study
 
 
+def test_a_wrong_idea_in_a_follow_up_says_where_it_came(db):
+    """Session C, Q1 (the user's call, 2026-10-24): an opening that held, a
+    follow-up whose wrong idea stood. Still incorrect — the colour, counts and
+    focus are the status's — but labelled for where the error came."""
+    held = verdict(category="partial", severity="minor", key_points_missing=["kp2"])
+    q = first(db, held, WRONG, WRONG, answers=["Linear.", "O(n squared) now.", "Still."])
+    assert q.status == "incorrect"
+    assert q.status_label == "Incorrect in a follow-up"
+    assert q.status_detail.startswith("Your first answer held up, but a follow-up did not.")
+    assert "counts a single loop as nested" in q.status_detail
+
+
+def test_a_wrong_opening_is_plainly_incorrect(db):
+    q = first(db, WRONG, WRONG, answers=["O(n squared).", "Still O(n squared)."])
+    assert (q.status, q.status_label) == ("incorrect", "Incorrect")
+
+
 def test_a_correction_after_a_push_says_so(db):
     q = first(db, WRONG, RIGHT, RIGHT, answers=["O(n squared).", "Linear, sorry.", "One pass."])
     assert q.status in ("correct", "partial")

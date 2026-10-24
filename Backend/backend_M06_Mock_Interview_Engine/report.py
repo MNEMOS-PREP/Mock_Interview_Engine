@@ -462,7 +462,7 @@ def _status(
             if question.misconception
             else "An error in the answer stood after the interviewer pointed it out."
         )
-        return "incorrect", "Incorrect", detail
+        return _incorrect(judged, detail)
     status = _BY_OUTCOME.get(outcome) or (_BY_CATEGORY[judged[-1]] if judged else "not_judged")
     attempts = [c for c in judged if c in ("vague", "partial", "correct_incomplete")]
     if status == "unanswered" and outcome != "avoided" and attempts:
@@ -486,7 +486,29 @@ def _status(
         "not_judged": ("Not judged", "This answer was not judged in detail."),
     }
     label, fallback = labels[status]
+    if status == "incorrect":
+        return _incorrect(judged, _DETAIL.get(outcome, fallback))
     return status, label, _DETAIL.get(outcome, fallback)
+
+
+#: An opening answer that held: what came after it is a follow-up's problem.
+_HELD_FIRST = ("correct", "correct_incomplete", "partial")
+
+
+def _incorrect(judged: list[str], detail: str) -> tuple[str, str, str]:
+    """An incorrect answer, labelled for where the error came (2026-10-24,
+    the user's call). Session C's first question told a story that reached
+    every key point, then a follow-up's wrong idea stood: "Incorrect" beside
+    a rubric of ticks read as a contradiction. It is still incorrect — the
+    colour, the counts and "work on first" do not change — but it says the
+    opening held and the follow-up did not."""
+    if not judged or judged[0] not in _HELD_FIRST:
+        return "incorrect", "Incorrect", detail
+    return (
+        "incorrect",
+        "Incorrect in a follow-up",
+        f"Your first answer held up, but a follow-up did not. {detail}",
+    )
 
 
 def _still_missing(before: list[str] | None, now: list[str]) -> list[str]:

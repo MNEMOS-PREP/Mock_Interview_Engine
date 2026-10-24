@@ -141,6 +141,16 @@ describe("four different answers look different", () => {
     }
   });
 
+  it("says when the error came in a follow-up, still in the incorrect colour", async () => {
+    serve([json(report([question("incorrect", { status_label: "Incorrect in a follow-up" })]))]);
+    show();
+    const article = await screen.findByRole("article", { name: "A question that was incorrect" });
+    expect(within(article).getByText("Incorrect in a follow-up")).toBeTruthy();
+    expect(article.className).toContain("border-l-contested");
+    // Counted as what it is: incorrect.
+    expect(screen.getByRole("img", { name: "1 incorrect" })).toBeTruthy();
+  });
+
   it("shows a wrong answer what went wrong and the right reasoning", async () => {
     serve([json(FOUR)]);
     show();
