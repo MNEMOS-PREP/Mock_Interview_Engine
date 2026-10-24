@@ -100,6 +100,9 @@ class StubLLM:
     #: What the question-split job is told (`decompose.py`): by default, ask
     #: every question whole — set `split` to a split's data to test one.
     split: dict[str, Any] | None = None
+    #: What the notes writer is answered (`notes_writer.py`), by job: a
+    #: write-up's data, or None for a failure. Unscripted jobs fail.
+    notes: dict[str, dict[str, Any] | None] | None = None
 
     def structured(self, *, job, system, user, schema) -> LLMResult:
         if job == "question_split":
@@ -113,6 +116,17 @@ class StubLLM:
                 "parts": [],
             }
             return LLMResult(ok=True, data=dict(data), job=job, tier="extraction", model="stub")
+        if job in ("notes_writeup", "notes_writeup_fallback"):
+            # Its own channel too: a write-up is not a verdict.
+            self.notes_calls = [*getattr(self, "notes_calls", []), {"job": job, "user": user}]
+            scripted = (self.notes or {}).get(job)
+            if scripted is None:
+                return LLMResult(
+                    ok=False, reason="no write-up scripted", job=job, model=f"stub-{job}"
+                )
+            return LLMResult(
+                ok=True, data=dict(scripted), job=job, tier="writing", model=f"stub-{job}"
+            )
         self.structured_calls.append({"job": job, "system": system, "user": user, "schema": schema})
         if self.fail_structured:
             return LLMResult(ok=False, reason=self.fail_structured, job=job, model="stub")

@@ -1,0 +1,1496 @@
+[
+ {
+  "model": "openai/gpt-oss-120b",
+  "case": "live C.Q1 (incorrect)",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 3615,
+  "tokens_in": 1694,
+  "tokens_out": 767,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "Your answer identified the problem and outcome but missed key details on thinking aloud and handling failed hypotheses.",
+   "strengths": [
+    {
+     "point": "Described a concrete problem, context, and teammate",
+     "evidence": "In my third-year project our API kept timing out. I paired with a teammate",
+     "fix": ""
+    },
+    {
+     "point": "Mentioned measurable outcome",
+     "evidence": "the response time fell from about four seconds to under three hundred milliseconds",
+     "fix": ""
+    }
+   ],
+   "gaps": [
+    {
+     "point": "Explains how they narrated each reasoning step and paused for feedback",
+     "evidence": "",
+     "fix": "After stating the symptom, walk through each hypothesis aloud, e.g., \"I think the query is slow because it lacks an index,\" and explicitly ask your teammate for their view before moving on."
+    },
+    {
+     "point": "Shows they used active listening (e.g., paraphrasing, confirming) to keep the dialogue on track",
+     "evidence": "",
+     "fix": "Demonstrate active listening by paraphrasing your teammate’s suggestion (\"So you’re saying the index might be missing?\"), confirming understanding, and inviting them to add details."
+    },
+    {
+     "point": "Mentions how to handle a scenario where the cheaper guess fails to improve performance",
+     "evidence": "",
+     "fix": "Explain a fallback plan: if the first hypothesis doesn’t work, move to the next most plausible one, keep documenting results, and reassess the evidence before concluding."
+    }
+   ],
+   "misconception": "Testing the cheaper guess first guarantees you’ll find the true cause.",
+   "correction": "Testing a cheaper hypothesis first helps reduce risk and keep the conversation focused, but it does not guarantee the root cause; you must be prepared to iterate through multiple hypotheses and adjust the plan if the first test fails.",
+   "model_answer": "In a recent project my API was timing out, so I paired with a teammate and started by stating the symptom and walking through the call stack aloud, proposing hypotheses like missing indexes or inefficient joins. After each hypothesis I asked for their input, paraphrased their feedback, and documented the test in a shared doc before moving on. When a hypothesis failed we recorded the result and tried the next most likely cause, ultimately adding the missing index and cutting response time from four seconds to 300 ms.",
+   "next_steps": [
+    "Practice narrating each reasoning step aloud and pausing for teammate input.",
+    "Incorporate explicit paraphrasing to show active listening.",
+    "Develop a clear fallback strategy for when an initial hypothesis doesn’t work."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "openai/gpt-oss-120b",
+  "case": "live C.Q2 (correct)",
+  "status": "correct",
+  "mode": "json_schema",
+  "latency_ms": 1608,
+  "tokens_in": 1334,
+  "tokens_out": 420,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You correctly explained both chaining and open addressing and identified their collision costs.",
+   "strengths": [
+    {
+     "point": "Describes chaining as a secondary structure per bucket",
+     "evidence": "with chaining, each bucket holds a list and both entries go in it",
+     "fix": ""
+    },
+    {
+     "point": "Describes open addressing or probing as the alternative family",
+     "evidence": "with open addressing you probe for the next free slot",
+     "fix": ""
+    },
+    {
+     "point": "Names a cost — traversal, clustering, or deletion needing tombstones",
+     "evidence": "Either way a crowded table costs you longer probes",
+     "fix": ""
+    }
+   ],
+   "gaps": [],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "A hash map handles collisions either by chaining—storing multiple entries in a secondary structure like a linked list or tree for each bucket—or by open addressing—probing to find another empty slot using linear, quadratic, or double hashing. The cost is that lookups may need to traverse the chain (O(k) where k is the bucket size) or perform multiple probes, which can lead to clustering and higher latency, especially at high load factors.",
+   "next_steps": [],
+   "model": ""
+  }
+ },
+ {
+  "model": "minimaxai/minimax-m3.1-flash",
+  "case": "live C.Q1 (incorrect)",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 23168,
+  "tokens_in": 1571,
+  "tokens_out": 861,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "Your example had a real problem and a measured result, but your repeated answer treated the cheaper guess as a way to settle disagreement rather than a hypothesis that can fail.",
+   "strengths": [
+    {
+     "point": "You described a concrete technical problem in a real context.",
+     "evidence": "In my third-year project our API kept timing out.",
+     "fix": ""
+    },
+    {
+     "point": "You named a teammate and described a concrete collaboration technique.",
+     "evidence": "I paired with a teammate and we each said out loud what we expected the slow query to do",
+     "fix": ""
+    },
+    {
+     "point": "You gave a measurable outcome for the debugging work.",
+     "evidence": "the response time fell from about four seconds to under three hundred milliseconds",
+     "fix": ""
+    }
+   ],
+   "gaps": [
+    {
+     "point": "You did not explain why documenting hypotheses and testing one at a time isolates the root cause.",
+     "evidence": "we tested the cheaper guess first so nobody had to win the argument",
+     "fix": "Explain the mechanism: each hypothesis is written down with the expected result, only one change is applied at a time, and the measured response to that change tells you whether the hypothesis is supported or eliminated. Because only one variable moves, you can attribute the improvement to that change instead of guessing."
+    },
+    {
+     "point": "You did not say what you would do when the cheaper guess fails to improve performance.",
+     "evidence": "we tested the cheaper guess first so nobody had to win the argument",
+     "fix": "Say that you would record the result, treat that hypothesis as eliminated, and move to the next hypothesis in the list, using the failed test to narrow the search rather than as a verdict on who was right."
+    },
+    {
+     "point": "You did not connect the cheaper-first ordering to finding the true cause.",
+     "evidence": "we tested the cheaper guess first so nobody had to win the argument",
+     "fix": "State that ordering by cost only decides what to try first; it says nothing about correctness. The root cause is confirmed by a test that reproduces the symptom and shows the change removes it."
+    }
+   ],
+   "misconception": "Your answer presents the cheaper guess as the thing that resolves disagreement, which implies that trying the cheaper option is enough to find the true cause. Cost only affects the order of investigation; it does not make a hypothesis correct.",
+   "correction": "The right reasoning is that sequential, documented testing isolates the cause because one variable changes per test and each result eliminates or supports a specific hypothesis. If the cheaper guess fails, you record that outcome, discard it, and continue with the next hypothesis; you never treat the cheaper guess as a guarantee of the root cause.",
+   "model_answer": "In my third-year project our API kept timing out, and I paired with a teammate to debug it. We each stated our expectation about the slow query out loud, wrote our hypotheses in a shared doc, and applied one change at a time so the result of each test told us which hypothesis to keep or drop. When we disagreed, I asked my teammate to explain their reasoning first and paraphrased it back to confirm I had understood, which kept the discussion on evidence rather than on who was right. If the cheaper guess failed to improve the response time, we logged that result, marked the hypothesis as eliminated, and moved to the next one; the missing index was confirmed when the response time fell from about four seconds to under three hundred milliseconds.",
+   "next_steps": [
+    "Prepare a one-sentence explanation of why one-change-at-a-time testing attributes cause: only one variable moves, so the measured result identifies which hypothesis is supported.",
+    "Rehearse the follow-up answer for a failed hypothesis: record the result, eliminate the hypothesis, and continue with the next one.",
+    "Add one active-listening sentence to your story, such as paraphrasing your teammate's reasoning before testing it, so the answer shows how the conversation stayed productive."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "openai/gpt-oss-120b",
+  "case": "live C.Q3 (vague)",
+  "status": "vague",
+  "mode": "json_schema",
+  "latency_ms": 2556,
+  "tokens_in": 1295,
+  "tokens_out": 857,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You mentioned hashing but didn’t explain how it gives O(1) lookup or the required conditions.",
+   "strengths": [
+    {
+     "point": "Mentioned hashing and a good hash function",
+     "evidence": "It uses hashing and a good hash function, which makes it efficient and fast.",
+     "fix": ""
+    }
+   ],
+   "gaps": [
+    {
+     "point": "Did not state that the key is hashed to a bucket index rather than scanned",
+     "evidence": "It uses hashing and a good hash function, which makes it efficient and fast.",
+     "fix": "Explain that the hash value is used to compute a bucket index, allowing direct access to the slot instead of scanning all entries."
+    },
+    {
+     "point": "Did not name uniform distribution or a bounded load factor as a condition",
+     "evidence": "It uses hashing and a good hash function, which makes it efficient and fast.",
+     "fix": "Add that the hash function must distribute keys roughly uniformly and the table must keep its load factor bounded (e.g., by resizing when a threshold is crossed)."
+    },
+    {
+     "point": "Did not mention that heavy collisions degrade performance to O(n) in the worst case",
+     "evidence": "It uses hashing and a good hash function, which makes it efficient and fast.",
+     "fix": "State that if many keys collide into the same bucket, lookup can degrade to linear time O(n)."
+    }
+   ],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "A hash map computes the hash of the key and maps it to a bucket index, so lookup goes directly to that slot instead of scanning all entries, giving O(1) average time. This holds only if the hash function distributes keys uniformly and the table maintains a bounded load factor, typically by resizing and rehashing when the load exceeds a threshold. If the distribution is poor or the load factor grows too high, many keys collide and lookup can degrade toward O(n) in the worst case.",
+   "next_steps": [
+    "Study how a hash value is transformed into a bucket index (modulo table size or similar).",
+    "Learn about load factor, resizing policies, and why uniform distribution is required.",
+    "Understand collision handling (chaining or open addressing) and its impact on worst‑case complexity."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "case": "live C.Q1 (incorrect)",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 34112,
+  "tokens_in": 1456,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting value: line 1 column 1 (char 0)"
+  ],
+  "raw": ""
+ },
+ {
+  "model": "minimaxai/minimax-m3.1-flash",
+  "case": "live C.Q2 (correct)",
+  "status": "correct",
+  "mode": "json_schema",
+  "latency_ms": 16396,
+  "tokens_in": 1222,
+  "tokens_out": 419,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "After the push-back, you correctly described chaining and open addressing and named the cost of crowded buckets.",
+   "strengths": [
+    {
+     "point": "You corrected your initial overwriting claim and explained that chaining keeps a secondary structure per bucket.",
+     "evidence": "With chaining, each bucket holds a list and both entries go in it",
+     "fix": ""
+    },
+    {
+     "point": "You described the probing alternative used by open addressing.",
+     "evidence": "with open addressing you probe for the next free slot",
+     "fix": ""
+    },
+    {
+     "point": "You named concrete costs of collisions and of a crowded table.",
+     "evidence": "Either way a crowded table costs you longer probes.",
+     "fix": ""
+    },
+    {
+     "point": "You compared the two families on memory, cache behaviour, clustering, and load factor.",
+     "evidence": "Chaining degrades gracefully but uses extra pointers; open addressing is cache friendly but clusters, so it needs a lower load factor before resizing.",
+     "fix": ""
+    }
+   ],
+   "gaps": [],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "A hash map handles collisions in one of two families. With chaining, each bucket holds a secondary structure such as a linked list, or a tree once it grows, so a collision costs a traversal of that bucket. With open addressing, the map probes for another free slot, linearly or with a second hash, which avoids per-bucket allocation but suffers clustering and makes deletion awkward, usually requiring tombstones. In both cases the cost is that lookups degrade as collisions accumulate, so the table is resized or rehashed when the load factor gets too high.",
+   "next_steps": [
+    "State the deletion cost explicitly: in open addressing, removing an entry leaves a tombstone so later probe sequences are not cut short."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "case": "live C.Q1 (incorrect)",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 42351,
+  "tokens_in": 1456,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting property name enclosed in double quotes: line 2 column 2 (char 3)"
+  ],
+  "raw": "{\n {\"headline\": \"You described a real problem and outcome but misunderstood how systematic hypothesis testing isolates the root cause.\",\n  \"strengths\": [\n    {\n      \"point\": \"You gave a concrete technical problem and identified the teammate you worked with.\",\n      \"evidence\": \"In my third-year project our API kept timing out. I paired with a teammate\"\n   \n   \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n"
+ },
+ {
+  "model": "openai/gpt-oss-120b",
+  "case": "live C.Q4 (incorrect)",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 2011,
+  "tokens_in": 1504,
+  "tokens_out": 686,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "Your answer missed explaining collisions, performance degradation, and production symptoms of using string length as a hash.",
+   "strengths": [],
+   "gaps": [
+    {
+     "point": "Explain that the output range (string length) is tiny and causes heavy collisions.",
+     "evidence": "",
+     "fix": "State that many different strings share the same length, so they map to the same bucket, creating long collision chains."
+    },
+    {
+     "point": "Describe how look‑up and insertion degrade toward linear time.",
+     "evidence": "",
+     "fix": "Show that with long chains the cost becomes O(n/k) per operation, effectively O(n) when k (number of distinct lengths) is small."
+    },
+    {
+     "point": "Name observable production symptoms or denial‑of‑service risk.",
+     "evidence": "",
+     "fix": "Mention latency that grows with data size, hot buckets, high CPU in comparisons, and the ability for an attacker to force worst‑case behavior."
+    }
+   ],
+   "misconception": "The main trade‑off is extra memory against time, and it breaks down when the input is adversarial or very skewed.",
+   "correction": "Using string length as a hash yields a very small and often skewed range, causing most keys to collide in a few buckets; this turns hash‑table operations from O(1) to O(n) and shows up as increasing latency, hot buckets, and a denial‑of‑service surface in production.",
+   "model_answer": "Because string length has a tiny range, many different keys map to the same bucket, producing long collision chains and turning hash‑table operations from constant‑time to linear‑time. In production you would notice latency that grows with the number of entries, hot buckets in profiling, and high CPU spent on key comparisons, and an attacker could exploit this to cause a denial‑of‑service.",
+   "next_steps": [
+    "Review how hash functions distribute keys and why a large output space matters.",
+    "Practice explaining the impact of collisions on hash‑table performance.",
+    "Learn to identify performance symptoms (latency spikes, hot buckets) in monitoring tools."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "minimaxai/minimax-m3.1-flash",
+  "case": "live C.Q3 (vague)",
+  "status": "vague",
+  "mode": "json_schema",
+  "latency_ms": 10792,
+  "tokens_in": 1182,
+  "tokens_out": 522,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You named hashing and a good hash function but never explained how lookup avoids scanning or what conditions keep it O(1).",
+   "strengths": [],
+   "gaps": [
+    {
+     "point": "You did not explain that the hash value selects a bucket index directly, so lookup goes straight to one slot instead of scanning the table.",
+     "evidence": "It uses hashing and a good hash function, which makes it efficient and fast.",
+     "fix": "Walk through the steps: compute the hash of the key, map that hash to a bucket index, go straight to that bucket, and check the entries stored there for a key match."
+    },
+    {
+     "point": "You did not state the conditions that make average-case lookup O(1): roughly uniform key distribution and a bounded load factor.",
+     "evidence": "It uses hashing and a good hash function",
+     "fix": "Say that a good hash function spreads keys roughly uniformly across buckets, and that the load factor (entries divided by buckets) is kept bounded, usually by resizing and rehashing when it exceeds a threshold."
+    },
+    {
+     "point": "You did not mention the worst case when many keys collide into the same bucket.",
+     "evidence": "which makes it efficient and fast",
+     "fix": "Explain that if keys pile into a few buckets, lookup must examine many entries in a bucket, so the worst case degrades to O(n)."
+    }
+   ],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "A hash function maps the key to a value that is converted into a bucket index, so lookup goes straight to that bucket instead of scanning every entry. That is O(1) on average when the hash function distributes keys roughly uniformly and the load factor stays bounded, usually by resizing and rehashing once it passes a threshold. If keys collide heavily into a few buckets, lookup must check many entries in a bucket and the worst case degrades to O(n).",
+   "next_steps": [
+    "Practise saying the lookup path out loud in one sentence: hash the key, compute the bucket index, go to that bucket, compare keys within it.",
+    "Add the two conditions to every hash map answer: uniform distribution and a bounded load factor maintained by resizing.",
+    "Finish with the failure mode: heavy collisions put many keys in one bucket, so lookup degrades to O(n) in the worst case."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "openai/gpt-oss-120b",
+  "case": "live E.Q2 (partial)",
+  "status": "partial",
+  "mode": "json_schema",
+  "latency_ms": 1745,
+  "tokens_in": 1022,
+  "tokens_out": 536,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You correctly identified the refund flow but omitted key details about the integration test suite.",
+   "strengths": [
+    {
+     "point": "identified test scenario",
+     "evidence": "I tested the refund flow end to end against a test database.",
+     "fix": ""
+    }
+   ],
+   "gaps": [
+    {
+     "point": "other scenarios covered",
+     "evidence": "",
+     "fix": "Explain additional integration scenarios you exercised, such as successful payment, failed payment, partial refunds, and concurrency edge‑cases."
+    },
+    {
+     "point": "purpose of the tests",
+     "evidence": "",
+     "fix": "State why each scenario was needed – e.g., to verify end‑to‑end transaction integrity, compliance with financial regulations, and regression protection."
+    },
+    {
+     "point": "pytest fixtures and mocks",
+     "evidence": "",
+     "fix": "Describe the fixture hierarchy you built (database setup, service client, config) and any mocks or stubs used for external services like the card processor."
+    },
+    {
+     "point": "test data management and cleanup",
+     "evidence": "",
+     "fix": "Detail how you generated deterministic test data, isolated it per test (e.g., using transactions or temporary tables), and ensured cleanup after each run."
+    }
+   ],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "I wrote a suite of pytest integration tests for the payments service that exercised the full refund flow, successful payment, failed payment, and partial‑refund scenarios. Each test used fixtures to spin up a fresh test database, configure the service, and mock the external card‑processor API, ensuring deterministic responses. Test data was created in a transaction that was rolled back after each test to keep the database clean, and the tests were needed to guarantee end‑to‑end correctness and prevent regressions in financial logic.",
+   "next_steps": [
+    "List all major payment scenarios you covered beyond refunds.",
+    "Explain the business or compliance reasons each scenario is important.",
+    "Describe the fixture hierarchy you built in pytest."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "minimaxai/minimax-m3.1-flash",
+  "case": "live C.Q4 (incorrect)",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 16185,
+  "tokens_in": 1374,
+  "tokens_out": 702,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You identified that adversarial or skewed inputs cause problems, but you never explained that hashing by string length forces keys into a tiny range of buckets, so collisions and long chains are the actual failure mode.",
+   "strengths": [],
+   "gaps": [
+    {
+     "point": "You did not explain that the output range is small so keys collide heavily.",
+     "evidence": "it breaks down when the input is adversarial or very skewed",
+     "fix": "State that the hash value is just the string length, so it can only take a small number of distinct values. Many different strings of the same length therefore land in the same bucket, and the map degenerates into a few long chains."
+    },
+    {
+     "point": "You did not state that performance degrades toward linear.",
+     "evidence": "The main trade-off is extra memory against time",
+     "fix": "Explain that with k buckets and n keys, each bucket holds roughly n/k keys, so a lookup compares against many entries in its chain. As n grows with k fixed, lookups move from expected O(1) toward O(n)."
+    },
+    {
+     "point": "You did not name an observable symptom or the denial-of-service angle.",
+     "evidence": "it breaks down when the input is adversarial or very skewed",
+     "fix": "Name what an on-call engineer would see: lookup latency growing with data volume instead of staying flat, hot buckets, and CPU spent on string comparisons rather than hashing. Also note that an attacker who controls key lengths can deliberately force the worst case, making this a denial-of-service surface."
+    }
+   ],
+   "misconception": "You treated the problem as a generic memory-versus-time trade-off rather than a hash-quality failure. Hashing by string length does not mainly cost memory; it produces a tiny output range, so distinct keys collide and the map's operations degrade.",
+   "correction": "Because the hash is the string length, all keys of the same length share a bucket. With a small number of buckets and long chains, insertion and lookup become O(n/k), approaching linear as the dataset grows. In production this shows up as latency that scales with data volume, hot buckets, and CPU spent on comparisons, and an attacker who chooses key lengths can force that worst case as a denial-of-service vector.",
+   "model_answer": "Hashing by string length gives you a tiny output range, so nearly every key collides into a handful of buckets and the map degenerates into a few long chains. Lookups then compare against many entries in a chain, degrading from O(1) toward O(n/k) and effectively linear as data grows. In production you would notice latency that scales with data volume instead of staying flat, hot buckets, and CPU spent on comparisons rather than hashing. It is also a denial-of-service surface, because an attacker who controls key lengths can force the worst case.",
+   "next_steps": [
+    "Rewrite the answer in three steps: (1) the hash output is the string length, so the range is tiny; (2) same-length keys collide into the same bucket, forming long chains and pushing lookups toward O(n); (3) the production signals are…"
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "case": "live C.Q2 (correct)",
+  "status": "correct",
+  "mode": "json_schema",
+  "latency_ms": 36034,
+  "tokens_in": 1100,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting value: line 1 column 1 (char 0)"
+  ],
+  "raw": ""
+ },
+ {
+  "model": "openai/gpt-oss-120b",
+  "case": "live E.Q3 (vague)",
+  "status": "vague",
+  "mode": "json_schema",
+  "latency_ms": 1797,
+  "tokens_in": 1048,
+  "tokens_out": 526,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You mentioned batching the files but didn’t explain the processing pipeline.",
+   "strengths": [],
+   "gaps": [
+    {
+     "point": "Mentioned \"About ten thousand files\" without context",
+     "evidence": "About ten thousand files, run in batches overnight.",
+     "fix": "State the total number of submissions, the source (e.g., student uploads), and why they needed processing (e.g., compilation, testing, grading)."
+    },
+    {
+     "point": "Used the term \"run in batches overnight\" without describing the mechanism",
+     "evidence": "About ten thousand files, run in batches overnight.",
+     "fix": "Explain how you scheduled the batch (e.g., cron job, task queue), how files were grouped, and how you ensured reliability (e.g., retries, logging)."
+    },
+    {
+     "point": "Did not describe the per‑file steps performed",
+     "evidence": "I don't know.",
+     "fix": "Outline each step: ingest the file, validate format, compile/run tests, collect results, store outcomes in a database, and generate reports."
+    }
+   ],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "I wrote a nightly batch job that pulled all 10,000 submission files from the storage bucket, validated each file’s format, compiled the code, ran the automated test suite, recorded the pass/fail results in our grading database, and then generated a summary report for the instructors. The job was orchestrated with a cron‑triggered script that queued files in batches of 500, used a worker pool to process them in parallel, and logged any failures for later review.",
+   "next_steps": [
+    "Create a flow diagram of the end‑to‑end processing pipeline.",
+    "Practice describing each stage (ingest, validation, compilation, testing, storage, reporting) in one sentence.",
+    "Explain how you scheduled and monitored the nightly batch (e.g., cron, task queue, error handling)."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "minimaxai/minimax-m3.1-flash",
+  "case": "live E.Q2 (partial)",
+  "status": "partial",
+  "mode": "json_schema",
+  "latency_ms": 12324,
+  "tokens_in": 912,
+  "tokens_out": 549,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You identified the refund flow as the scenario you tested, but you could not explain the pytest fixtures, mocks, or test-data management behind it.",
+   "strengths": [
+    {
+     "point": "You named a concrete integration scenario rather than describing the tests generically.",
+     "evidence": "I tested the refund flow end to end against a test database.",
+     "fix": ""
+    }
+   ],
+   "gaps": [
+    {
+     "point": "You did not explain how the pytest fixtures and mocks were set up for the end-to-end refund test.",
+     "evidence": "I don't know.",
+     "fix": "Describe the fixture that prepared the test database and payment state, and explain which external dependency you mocked and what behaviour the mock controlled."
+    },
+    {
+     "point": "You did not describe your approach to managing test data and cleaning it up between tests.",
+     "evidence": "I don't know.",
+     "fix": "Explain how you created the refund and payment records each test needed, and how you rolled back or deleted that data so tests stayed isolated and repeatable."
+    },
+    {
+     "point": "You did not say why the integration tests were needed in the first place.",
+     "evidence": "I tested the refund flow end to end against a test database.",
+     "fix": "State the risk the tests addressed, for example that unit tests could not verify the refund flow worked correctly across the database and service boundaries."
+    }
+   ],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "I wrote pytest integration tests that exercised the refund flow end to end against a test database, covering scenarios such as a successful refund, a refund for an amount that exceeded the captured payment, and a refund request for a payment that did not exist. These tests were needed because the refund path spans the payments service and the database, so unit tests alone could not confirm that the records were updated correctly and that invalid requests were rejected. I used pytest fixtures to create the test database state and the payment records each test required, and mocked the external payment provider so the tests did not depend on a live gateway. Each test cleaned up its own data through fixture teardown or a database rollback, which kept the tests isolated and repeatable.",
+   "next_steps": [
+    "Prepare a two-minute walkthrough of one refund integration test: the fixture setup, the mocked dependency, the assertions, and the teardown.",
+    "For every integration test you mention, be ready to name the scenario, the boundary it crosses, and the failure it is designed to catch."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "openai/gpt-oss-120b",
+  "case": "live E.Q4 (partial)",
+  "status": "partial",
+  "mode": "json_schema",
+  "latency_ms": 2048,
+  "tokens_in": 1168,
+  "tokens_out": 468,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You correctly highlighted your backend work but failed to reconcile your leadership claim and detail architectural decisions.",
+   "strengths": [
+    {
+     "point": "You contributed the majority of backend code",
+     "evidence": "I wrote most of the backend myself.",
+     "fix": ""
+    }
+   ],
+   "gaps": [
+    {
+     "point": "Inconsistent claim about team involvement",
+     "evidence": "Actually I built the whole thing on my own, nobody else worked on it.",
+     "fix": "Explain how you coordinated the four‑person team (e.g., assigning tasks, code reviews, integrating their work) while personally implementing most of the backend."
+    },
+    {
+     "point": "Missing architectural or data‑flow details",
+     "evidence": "I don't know.",
+     "fix": "Describe the patterns you used (e.g., microservices, event‑driven architecture, CQRS) and how they supported scaling for three canteens and enabled team collaboration."
+    }
+   ],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "I led a four‑person team where I designed the overall architecture, assigned each member a bounded context (menu service, order service, payment gateway, reporting), and implemented the core backend APIs. I chose a microservice pattern with a message queue to decouple order processing across the three canteens, which allowed us to scale horizontally and keep latency low, while the rest of the team contributed the peripheral services and integration tests.",
+   "next_steps": [
+    "Prepare a concise story that aligns your leadership claim with concrete team actions.",
+    "Study common backend architectural patterns (microservices, event‑driven, CQRS) and be ready to explain why you chose one.",
+    "Practice quantifying impact (e.g., wait‑time reduction) and linking it to the technical decisions you made."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "minimaxai/minimax-m3.1-flash",
+  "case": "live E.Q3 (vague)",
+  "status": "vague",
+  "mode": "json_schema",
+  "latency_ms": 10657,
+  "tokens_in": 937,
+  "tokens_out": 481,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You named the scale and the schedule but never explained what your system actually did with each submission.",
+   "strengths": [],
+   "gaps": [
+    {
+     "point": "You did not describe the processing steps your system performed on each submission file.",
+     "evidence": "About ten thousand files, run in batches overnight.",
+     "fix": "Walk through the pipeline for one file in order: how it was received or picked up, how it was parsed or extracted, how it was checked or scored, where the result was stored, and how failures were handled."
+    },
+    {
+     "point": "You did not explain how the nightly batch was orchestrated.",
+     "evidence": "run in batches overnight",
+     "fix": "Explain what triggered the run, how the 10,000 files were divided into batches, how progress and errors were tracked, and how you verified the run completed correctly."
+    },
+    {
+     "point": "You could not state the first action your code took on a submission file.",
+     "evidence": "I don't know.",
+     "fix": "Prepare a one-sentence answer naming the first concrete operation, for example reading the file and extracting the source code, and then continue step by step from there."
+    }
+   ],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "A strong answer would describe the per-file pipeline and the batch orchestration in concrete terms: how each submission was picked up, what was extracted or parsed from it, how it was checked or scored, where the outcome was written, and how errors were recorded. It would then explain how the 10,000 files were split into batches, what triggered the overnight run, and how you monitored and verified completion. Since the specific tooling is not known here, the key is to name the actual steps your system performed rather than only the volume and the schedule.",
+   "next_steps": [
+    "Write down the exact sequence of operations your code performed on a single submission file, from input to stored result.",
+    "Prepare a short description of how the overnight job was scheduled, split into batches, and monitored for failures.",
+    "Rehearse the answer as a two-part walkthrough: one file end to end, then the batch orchestration."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "case": "live C.Q3 (vague)",
+  "status": "vague",
+  "mode": "json_schema",
+  "latency_ms": 27518,
+  "tokens_in": 1063,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting value: line 1 column 1 (char 0)"
+  ],
+  "raw": ""
+ },
+ {
+  "model": "openai/gpt-oss-120b",
+  "case": "live E.Q5 (incorrect)",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 2046,
+  "tokens_in": 1198,
+  "tokens_out": 729,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You correctly identified batching and Redis caching, but failed to demonstrate how you actually measured p95 latency",
+   "strengths": [
+    {
+     "point": "identified batching into a single join",
+     "evidence": "batched those into one join",
+     "fix": ""
+    },
+    {
+     "point": "added Redis caching in front of the endpoint",
+     "evidence": "put Redis in front of it with a five minute TTL",
+     "fix": ""
+    }
+   ],
+   "gaps": [
+    {
+     "point": "no concrete latency measurement methodology",
+     "evidence": "I read p95 off the APM dashboard for a week before and a week after: about 800 milliseconds down to 200",
+     "fix": "Explain the exact steps you took to collect raw request timings (e.g., instrumented the endpoint with APM, exported metrics), how you calculated the 95th percentile (e.g., using the APM’s percentile function over a defined time window and sufficient sample size), and how you validated that the before/after samples were comparable"
+    },
+    {
+     "point": "did not describe tooling for verification",
+     "evidence": "",
+     "fix": "Mention the specific tool (e.g., Datadog, New Relic, Prometheus) and any queries or dashboards you built to extract the p95 values"
+    }
+   ],
+   "misconception": "No latency measurement",
+   "correction": "A proper answer must show that you collected raw latency data from the service, computed the 95th percentile using a reliable metric system, and compared statistically similar traffic periods before and after the change to prove the reduction",
+   "model_answer": "I instrumented the account‑summary endpoint with our APM (Datadog) to emit a latency metric for every request. Using Datadog’s query language I calculated the 95th percentile over a 24‑hour window, ensuring at least 10 000 samples for statistical confidence. I captured this metric for a full week before adding Redis, then repeated the same query after deploying the cache with the same traffic pattern, and observed the p95 drop from ~800 ms to ~200 ms.",
+   "next_steps": [
+    "Set up automated collection of request latency metrics for the endpoint",
+    "Learn how to query your APM for percentile calculations and verify sample size",
+    "Document the before/after measurement process, including traffic normalization"
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "minimaxai/minimax-m3.1-flash",
+  "case": "live E.Q4 (partial)",
+  "status": "partial",
+  "mode": "json_schema",
+  "latency_ms": 17695,
+  "tokens_in": 1052,
+  "tokens_out": 661,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You established that you wrote most of the backend, but you did not reconcile the team leadership claim with your solo-build statement or explain the architectural decisions behind the system.",
+   "strengths": [
+    {
+     "point": "You clarified that the project had a four-person group and that you personally wrote most of the backend.",
+     "evidence": "four of us were in the project group, but I wrote most of the backend myself.",
+     "fix": ""
+    }
+   ],
+   "gaps": [
+    {
+     "point": "You did not explain how your resume claim of leading a four-person team fits with your initial statement that nobody else worked on it.",
+     "evidence": "Actually I built the whole thing on my own, nobody else worked on it.",
+     "fix": "State clearly that you led a four-person team while personally owning most of the backend development, and describe what leadership meant in practice, such as task assignment, code review, architecture decisions, or coordinating releases."
+    },
+    {
+     "point": "You could not name the architectural patterns or data-flow decisions that made the ordering system work across three canteens.",
+     "evidence": "I don't know.",
+     "fix": "Prepare two or three concrete examples, such as a shared ordering service with per-canteen configuration, a queue or event-driven flow for order placement, and how you separated menu, inventory, and order-processing responsibilities. Explain how each choice supported the three-canteen load and made it possible for a small team to contribute."
+    },
+    {
+     "point": "You did not connect the system design to the measurable outcome on your resume.",
+     "evidence": "",
+     "fix": "Explain how the architecture and team coordination contributed to the 40% reduction in average order wait time, and state the baseline and how the wait time was measured."
+    }
+   ],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "I led a four-person team that built the ordering system used by three campus canteens, while personally writing most of the backend. My leadership involved splitting work by module, reviewing code, and coordinating the integration of each canteen's configuration into one shared ordering flow. Architecturally, I used a shared ordering service with per-canteen configuration and a queue-based flow for order processing, which let the team work in parallel and supported the three-canteen load. These decisions, together with the team's coordination, contributed to a 40% reduction in average order wait time, measured against the previous ordering process.",
+   "next_steps": [
+    "Rewrite your answer so it opens with the reconciled version: you led a four-person team and personally owned most of the backend, rather than saying you built it alone.",
+    "Prepare two or three named architectural decisions and, for each one, explain the problem it solved and how it supported three canteens.",
+    "Rehearse the leadership portion with concrete actions you took, such as assigning modules, reviewing pull requests, or coordinating integration work."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "openai/gpt-oss-120b",
+  "case": "written correct",
+  "status": "correct",
+  "mode": "json_schema",
+  "latency_ms": 1551,
+  "tokens_in": 1159,
+  "tokens_out": 362,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You correctly explained hashing to a bucket and the uniform distribution/load‑factor requirement.",
+   "strengths": [
+    {
+     "point": "Hashes key to a bucket index",
+     "evidence": "The key goes through a hash function that maps it to a bucket index, so you jump straight to that slot instead of scanning",
+     "fix": ""
+    },
+    {
+     "point": "Uniform distribution / bounded load factor needed",
+     "evidence": "It only stays O(1) on average if the hash spreads keys evenly and the table is resized to keep the load factor bounded",
+     "fix": ""
+    },
+    {
+     "point": "Worst case degrades to O(n) with many collisions",
+     "evidence": "if all keys land in one bucket, lookup becomes linear",
+     "fix": ""
+    }
+   ],
+   "gaps": [],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "A hash map computes a hash of the key and uses it to index directly into a bucket, giving constant‑time lookup on average. This holds only if the hash function distributes keys uniformly and the table maintains a bounded load factor (typically by resizing). If the distribution is poor or the load factor grows too large, many keys collide and lookup can degrade toward O(n).",
+   "next_steps": [],
+   "model": ""
+  }
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "case": "live C.Q2 (correct)",
+  "status": "correct",
+  "mode": "json_schema",
+  "latency_ms": 73327,
+  "tokens_in": 1100,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting property name enclosed in double quotes: line 2 column 1 (char 2)"
+  ],
+  "raw": "{\n{ \"headline\": \"You correctly described both chaining and open addressing, and identified the performance costs of each.\", \"strengths\": [ { \"point\": \"Describes chaining as a secondary structure per bucket.\", \"evidence\": \"With chaining, each bucket holds a list and both entries go in it\" \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n"
+ },
+ {
+  "model": "minimaxai/minimax-m3.1-flash",
+  "case": "live E.Q5 (incorrect)",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 14968,
+  "tokens_in": 1085,
+  "tokens_out": 716,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You described the caching and batching changes, but you never explained how you measured and verified the p95 latency numbers.",
+   "strengths": [
+    {
+     "point": "You identified the N+1 query problem and fixed it by batching the per-transaction queries into a single join.",
+     "evidence": "I batched those into one join",
+     "fix": ""
+    },
+    {
+     "point": "You added Redis caching with a five-minute TTL in front of the endpoint.",
+     "evidence": "put Redis in front of it with a five minute TTL",
+     "fix": ""
+    }
+   ],
+   "gaps": [
+    {
+     "point": "You did not answer the question about the exact steps and tooling used to collect, calculate, and verify p95 latency before and after the change.",
+     "evidence": "A write to the account invalidated its cache entry, so a stale read could only happen inside the TTL for a read racing a write; we accepted that for a summary screen.",
+     "fix": "Describe the measurement pipeline end to end: which APM tool captured the request timings, which endpoint or route filter you applied, the time window and traffic conditions, how the tool computed the 95th percentile, and how you compared the before and after numbers."
+    },
+    {
+     "point": "You did not explain how you confirmed the reported 800 ms and 200 ms figures were comparable p95 values rather than averages or isolated observations.",
+     "evidence": "about 800 milliseconds down to 200",
+     "fix": "State that you read the p95 metric from the same APM dashboard and the same endpoint view before and after, over equivalent one-week windows, and note any baseline checks such as error rate, throughput, or cache hit rate that stayed comparable."
+    }
+   ],
+   "misconception": "You treated the follow-up about measurement as a question about cache consistency, so the answer drifted to write invalidation and TTL races instead of latency measurement.",
+   "correction": "The interviewer asked how you collected, calculated, and verified p95 latency; your answer about write invalidation does not address that. A correct answer names the APM tool, the metric definition used, the endpoint and time window sampled, the before and after baseline, and how you verified the two numbers came from the same measurement method.",
+   "model_answer": "I used the APM dashboard to measure the account summary endpoint, filtering to that route and reading the p95 latency metric over a one-week window before the change and a one-week window after. The baseline was about 800 ms p95, driven by one query per transaction row; after batching those into a single join and adding Redis with a five-minute TTL, p95 was about 200 ms. I verified the comparison by checking the same metric and route view in both periods and confirming error rate and throughput were comparable, so the improvement was not an artefact of different traffic or a different percentile calculation.",
+   "next_steps": [
+    "Prepare a measurement story for every latency claim: tool, metric definition, endpoint filter, sampling window, baseline, result, and the sanity checks you ran.",
+    "When asked about measurement, answer with the measurement pipeline first; do not substitute a related topic such as cache consistency.",
+    "Be ready to state the percentile explicitly and distinguish p95 from average latency, since the interviewer asked how you calculated it."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "case": "live C.Q4 (incorrect)",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 28767,
+  "tokens_in": 1256,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting value: line 1 column 1 (char 0)"
+  ],
+  "raw": ""
+ },
+ {
+  "model": "openai/gpt-oss-120b",
+  "case": "written surface",
+  "status": "vague",
+  "mode": "json_schema",
+  "latency_ms": 2526,
+  "tokens_in": 1090,
+  "tokens_out": 769,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You mentioned hashing and chaining but didn’t explain how they give O(1) average lookup.",
+   "strengths": [
+    {
+     "point": "Identified that a good hash function and chaining are used",
+     "evidence": "It uses hashing with buckets and a good hash function, and collisions are handled by chaining",
+     "fix": ""
+    }
+   ],
+   "gaps": [
+    {
+     "point": "Did not state that the key is hashed to a bucket index rather than scanned",
+     "evidence": "hashing with buckets",
+     "fix": "Explain that the hash function maps the key directly to an array index (bucket), so you can jump straight to the relevant slot instead of scanning all entries."
+    },
+    {
+     "point": "Did not mention the need for a uniform distribution or bounded load factor",
+     "evidence": "good hash function",
+     "fix": "Add that the hash function must distribute keys roughly uniformly and that the table’s load factor must stay below a threshold (e.g., by resizing) to keep buckets small."
+    },
+    {
+     "point": "Did not note that heavy collisions degrade performance to O(n) in the worst case",
+     "evidence": "",
+     "fix": "State that if many keys hash to the same bucket, lookup can become linear in the number of colliding keys, i.e., O(n)."
+    }
+   ],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "A hash map computes a hash of the key and uses it to index directly into an array of buckets, so lookup jumps straight to the relevant bucket instead of scanning all entries. This is O(1) on average only if the hash function distributes keys uniformly and the table maintains a bounded load factor (typically by resizing when a threshold is crossed). If the distribution is poor or the load factor grows too high, many keys collide and the worst‑case lookup degrades toward O(n).",
+   "next_steps": [
+    "Practice describing the hashing‑to‑bucket mechanism in one sentence.",
+    "Learn how load factor and resizing keep the average bucket size constant.",
+    "Be ready to mention the worst‑case linear behavior when collisions are excessive."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "minimaxai/minimax-m3.1-flash",
+  "case": "written correct",
+  "status": "correct",
+  "mode": "json_schema",
+  "latency_ms": 7617,
+  "tokens_in": 1048,
+  "tokens_out": 374,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You correctly explained why hash map lookup is O(1) on average and identified the conditions that keep it that way.",
+   "strengths": [
+    {
+     "point": "You described hashing to a bucket index rather than scanning for the key.",
+     "evidence": "The key goes through a hash function that maps it to a bucket index, so you jump straight to that slot instead of scanning",
+     "fix": ""
+    },
+    {
+     "point": "You named both conditions for the average-case guarantee: even key distribution and a bounded load factor maintained by resizing.",
+     "evidence": "if the hash spreads keys evenly and the table is resized to keep the load factor bounded",
+     "fix": ""
+    },
+    {
+     "point": "You correctly identified the worst case when many keys collide.",
+     "evidence": "if all keys land in one bucket, lookup becomes linear",
+     "fix": ""
+    }
+   ],
+   "gaps": [],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "A hash map hashes the key to compute a bucket index, so lookup goes directly to that slot instead of scanning all entries, which is constant work. This holds on average when the hash function spreads keys roughly uniformly and the load factor stays bounded, usually by resizing and rehashing when it exceeds a threshold. If keys pile into one or a few buckets, lookup degrades toward O(n) in the worst case.",
+   "next_steps": [
+    "Be ready to state the load factor threshold explicitly, for example that resizing typically happens when the load factor exceeds a constant such as 0.75, and explain that rehashing redistributes entries into a larger table."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "minimaxai/minimax-m3.1-flash",
+  "case": "written surface",
+  "status": "vague",
+  "mode": "json_schema",
+  "latency_ms": 10229,
+  "tokens_in": 979,
+  "tokens_out": 444,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You named hashing, buckets, and chaining, but never explained how a lookup avoids scanning or what conditions keep it O(1).",
+   "strengths": [],
+   "gaps": [
+    {
+     "point": "You did not explain that the key is hashed to a bucket index rather than scanned for.",
+     "evidence": "It uses hashing with buckets and a good hash function",
+     "fix": "Say that the hash function computes an index directly, so lookup jumps straight to one bucket instead of checking keys one by one."
+    },
+    {
+     "point": "You did not state the conditions that make average-case lookup O(1).",
+     "evidence": "a good hash function",
+     "fix": "Name the two conditions explicitly: the hash function spreads keys roughly uniformly across buckets, and the load factor stays bounded, usually by resizing and rehashing when it passes a threshold."
+    },
+    {
+     "point": "You did not mention that heavy collisions degrade lookup to O(n) in the worst case.",
+     "evidence": "collisions are handled by chaining, so lookup is O(1) on average",
+     "fix": "Explain that with chaining, each bucket holds a list, so if many keys land in the same bucket, lookup must walk that list and the worst case becomes O(n)."
+    }
+   ],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "The key is hashed to a bucket index, so a lookup goes straight to that bucket instead of scanning the whole table. This is O(1) on average when the hash function distributes keys roughly uniformly and the load factor stays bounded, usually by resizing and rehashing once it passes a threshold. If keys collide heavily and pile into a few buckets, chaining makes lookup walk long lists, so the worst case degrades to O(n).",
+   "next_steps": [
+    "Rewrite your answer in three sentences: one on hashing to a bucket index, one on uniform distribution and a bounded load factor, and one on O(n) worst case under heavy collisions."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "openai/gpt-oss-120b",
+  "case": "written wrong",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 2635,
+  "tokens_in": 1141,
+  "tokens_out": 722,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "Your answer incorrectly treats a hash map as a sorted structure.",
+   "strengths": [],
+   "gaps": [
+    {
+     "point": "Assumes keys are sorted for O(1) lookup",
+     "evidence": "the keys are kept sorted, so you binary search straight to the one you want",
+     "fix": "Explain that a hash map uses a hash function to map each key directly to a bucket index, not sorting."
+    },
+    {
+     "point": "Missing condition of uniform hash distribution and bounded load factor",
+     "evidence": "",
+     "fix": "State that average O(1) requires the hash function to distribute keys uniformly and the table to maintain a low load factor (e.g., ≤0.75) via resizing."
+    },
+    {
+     "point": "Missing worst‑case O(n) degradation when many keys collide",
+     "evidence": "",
+     "fix": "Mention that if many keys hash to the same bucket, lookup can degrade to O(n) in the worst case."
+    }
+   ],
+   "misconception": "You said the keys are kept sorted, so you binary search straight to the one you want.",
+   "correction": "A hash map achieves average‑case O(1) lookup because the hash function computes a bucket index, allowing direct access; this holds only if the hash function distributes keys uniformly and the load factor stays bounded, otherwise collisions can cause O(n) worst‑case performance.",
+   "model_answer": "A hash map hashes each key to a bucket index, so lookup goes directly to that bucket without scanning. This gives average O(1) time when the hash function distributes keys uniformly and the table’s load factor is kept low (typically by resizing). If the hash function is poor or the load factor grows, many keys collide and lookup can degrade toward O(n).",
+   "next_steps": [
+    "Study how hash functions map keys to bucket indices.",
+    "Learn why uniform distribution and a bounded load factor are required for constant‑time average performance.",
+    "Understand how collisions are handled and why they can lead to O(n) worst‑case lookup."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "openai/gpt-oss-120b",
+  "case": "written blank",
+  "status": "unanswered",
+  "mode": "json_schema",
+  "latency_ms": 1665,
+  "tokens_in": 1070,
+  "tokens_out": 492,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You did not provide an answer, so you missed explaining hashing, uniform distribution, and load factor requirements.",
+   "strengths": [],
+   "gaps": [
+    {
+     "point": "State that the key is hashed to a bucket index rather than scanned for.",
+     "evidence": "",
+     "fix": "Explain that a hash function maps each key to a specific bucket, allowing direct access without linear search."
+    },
+    {
+     "point": "Name uniform distribution or a bounded load factor as a condition.",
+     "evidence": "",
+     "fix": "Mention that the hash function must distribute keys evenly across buckets and that the table’s load factor should stay below a threshold (e.g., 0.75) via resizing."
+    },
+    {
+     "point": "Say the worst case degrades to O(n) when keys collide heavily.",
+     "evidence": "",
+     "fix": "Note that if many keys hash to the same bucket, lookup becomes linear in the number of colliding keys, i.e., O(n)."
+    }
+   ],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "A hash map computes a hash of the key and uses it to index directly into a bucket, so lookup touches only that bucket instead of scanning all entries, giving O(1) average time. This holds when the hash function spreads keys uniformly and the table maintains a bounded load factor (typically by resizing when it exceeds a threshold). If the distribution is poor or the load factor grows too high, many keys collide and lookup can degrade to O(n) in the worst case.",
+   "next_steps": [
+    "Learn how hashing maps keys to bucket indices.",
+    "Study the importance of uniform hash distribution and load factor limits.",
+    "Understand how collisions affect performance and cause worst‑case O(n) behavior."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "case": "live E.Q2 (partial)",
+  "status": "partial",
+  "mode": "json_schema",
+  "latency_ms": 46508,
+  "tokens_in": 777,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting value: line 1 column 1 (char 0)"
+  ],
+  "raw": ""
+ },
+ {
+  "model": "minimaxai/minimax-m3.1-flash",
+  "case": "written wrong",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 11793,
+  "tokens_in": 1030,
+  "tokens_out": 574,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You described a sorted array with binary search, not a hash map, so the O(1) lookup reasoning was based on the wrong data structure.",
+   "strengths": [],
+   "gaps": [
+    {
+     "point": "You said lookup is O(1) because the keys are kept sorted, so you binary search straight to the one you want.",
+     "evidence": "the keys are kept sorted, so you binary search straight to the one you want",
+     "fix": "Replace the sorting and binary search idea with hashing: the hash function computes an index into an array of buckets, and you inspect only that bucket rather than scanning all keys."
+    },
+    {
+     "point": "You did not state the conditions under which average-case O(1) lookup holds.",
+     "evidence": "",
+     "fix": "Name both conditions explicitly: the hash function spreads keys roughly uniformly across buckets, and the load factor stays bounded, usually by resizing and rehashing when it exceeds a threshold."
+    },
+    {
+     "point": "You did not mention the worst case when many keys collide.",
+     "evidence": "",
+     "fix": "Explain that if many keys hash to the same bucket, lookup must examine all of them in that bucket, so the worst case degrades to O(n)."
+    }
+   ],
+   "misconception": "You believe a hash map keeps its keys sorted and that lookup works by binary search.",
+   "correction": "A hash map does not maintain any sorted order of keys. It uses a hash function to map each key directly to a bucket index, so lookup goes straight to one bucket instead of scanning or binary searching. That is O(1) on average only when the hash function distributes keys roughly uniformly and the load factor is kept bounded; otherwise heavy collisions pile keys into a few buckets and lookup degrades toward O(n) in the worst case.",
+   "model_answer": "A hash map hashes the key to compute a bucket index, so lookup goes directly to one slot or bucket instead of scanning the keys. That is O(1) on average when the hash function distributes keys roughly uniformly and the load factor stays bounded, typically by resizing and rehashing past a threshold. If keys collide heavily into a few buckets, lookup must check all entries in those buckets and the worst case becomes O(n).",
+   "next_steps": [
+    "Redraw the lookup path: key -> hash function -> bucket index -> compare keys within that bucket.",
+    "State the two preconditions for average-case O(1): roughly uniform hashing and a bounded load factor maintained by resizing.",
+    "Contrast the worst case: heavy collisions in one bucket force a scan of that bucket, giving O(n)."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "case": "live C.Q3 (vague)",
+  "status": "vague",
+  "mode": "json_schema",
+  "latency_ms": 59723,
+  "tokens_in": 1063,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting property name enclosed in double quotes: line 2 column 2 (char 3)"
+  ],
+  "raw": "{\n {\"headline\": \"You named hashing and a good hash function but did not explain how they yield O(1) lookup or the required conditions.\",\n  \"strengths\": [],\n  \"gaps\": [\n    {\n      \"point\": \"You said the hash map uses hashing and a good hash function to be efficient and fast, but you did not describe the steps from hash computation to bucket indexing, nor the conditions that keep lookup constant time.\",\n      \"evidence\": \"It uses hashing and a good hash function, which makes it efficient and fast.\",\n      \"fix\": \"Explain that the key is hashed to a bucket index so the map goes directly to a slo"
+ },
+ {
+  "model": "minimaxai/minimax-m3.1-flash",
+  "case": "written blank",
+  "status": "unanswered",
+  "mode": "json_schema",
+  "latency_ms": 9854,
+  "tokens_in": 959,
+  "tokens_out": 478,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You did not answer the question, so the mechanism behind average-case O(1) hash-map lookup and its conditions were not established.",
+   "strengths": [],
+   "gaps": [
+    {
+     "point": "Explain that the key is hashed to a bucket index rather than scanned for.",
+     "evidence": "I'm not sure, I don't know this one.",
+     "fix": "Describe the lookup path: compute the hash of the key, use it to select a bucket directly, then check the entries in that bucket instead of scanning every key in the map."
+    },
+    {
+     "point": "Name uniform distribution or a bounded load factor as a condition for O(1) average-case lookup.",
+     "evidence": "I'm not sure, I don't know this one.",
+     "fix": "State that the hash function must spread keys roughly uniformly across buckets and that the load factor must stay bounded, typically by resizing and rehashing when it exceeds a threshold."
+    },
+    {
+     "point": "Say the worst case degrades to O(n) when keys collide heavily.",
+     "evidence": "I'm not sure, I don't know this one.",
+     "fix": "Explain that if many keys hash to the same bucket, lookup must examine many entries in that bucket, so the worst case becomes O(n)."
+    }
+   ],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "A hash map hashes the key to compute a bucket index, so lookup goes directly to that bucket instead of scanning all stored keys, which gives O(1) average-case lookup. This holds when the hash function distributes keys roughly uniformly and the load factor stays bounded, usually by resizing and rehashing once it passes a threshold. If keys collide heavily and pile into a few buckets, lookup degrades toward O(n) in the worst case.",
+   "next_steps": [
+    "Write out the three-step lookup path: hash the key, compute the bucket index, check only that bucket.",
+    "Pair the O(1) claim with its two conditions: roughly uniform hashing and a bounded load factor maintained by resizing.",
+    "Add the counterpoint: heavy collisions put many keys in one bucket, making the worst case O(n)."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "case": "live E.Q3 (vague)",
+  "status": "vague",
+  "mode": "json_schema",
+  "latency_ms": 36833,
+  "tokens_in": 816,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting value: line 1 column 1 (char 0)"
+  ],
+  "raw": ""
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "case": "live C.Q4 (incorrect)",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 51707,
+  "tokens_in": 1256,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting property name enclosed in double quotes: line 2 column 1 (char 2)"
+  ],
+  "raw": "{\n{ \"headline\": \"You described a memory–time trade‑off and adversarial input but never explained that string length has a tiny output range, causing massive collisions that turn hash‑table operations into linear scans.\", \"strengths\": [], \"gaps\": [ { \"point\": \"Did not explain that the hash function’s output range (string length) is tiny, so nearly every key collides into a few buckets.\", \"evidence\": \"The main trade-off is extra memory against time, and it breaks down when the input is adversarial or very skewed.\", \"fix\": \"Explain that length values are bounded (e.g., 0–100 for typical strings),"
+ },
+ {
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "case": "live E.Q4 (partial)",
+  "status": "partial",
+  "mode": "json_schema",
+  "latency_ms": 28855,
+  "tokens_in": 924,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting value: line 1 column 1 (char 0)"
+  ],
+  "raw": ""
+ },
+ {
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "case": "live E.Q5 (incorrect)",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 32015,
+  "tokens_in": 974,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting value: line 1 column 1 (char 0)"
+  ],
+  "raw": ""
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "case": "live E.Q2 (partial)",
+  "status": "partial",
+  "mode": "json_schema",
+  "latency_ms": 58372,
+  "tokens_in": 777,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting property name enclosed in double quotes: line 2 column 1 (char 2)"
+  ],
+  "raw": "{\n{ \"headline\": \"You described the refund flow but could not explain the pytest fixtures, mocks, or test data cleanup.\", \"strengths\": [ { \"point\": \"You identified the refund flow as an end‑to‑end scenario tested against a test database.\", \"evidence\": \"I tested the refund flow end to end against a test database.\" \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n "
+ },
+ {
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "case": "written correct",
+  "status": "correct",
+  "mode": "json_schema",
+  "latency_ms": 53147,
+  "tokens_in": 918,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting value: line 1 column 1 (char 0)"
+  ],
+  "raw": ""
+ },
+ {
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "case": "written surface",
+  "status": "vague",
+  "error": "RemoteDisconnected: Remote end closed connection without response",
+  "latency_ms": 21384
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "case": "live E.Q3 (vague)",
+  "status": "vague",
+  "error": "RemoteDisconnected: Remote end closed connection without response",
+  "latency_ms": 59706
+ },
+ {
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "case": "written wrong",
+  "status": "incorrect",
+  "error": "URLError: <urlopen error [Errno 11001] getaddrinfo failed>",
+  "latency_ms": 203
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "case": "live E.Q4 (partial)",
+  "status": "partial",
+  "error": "URLError: <urlopen error [Errno 11001] getaddrinfo failed>",
+  "latency_ms": 432
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "case": "live E.Q5 (incorrect)",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 23254,
+  "tokens_in": 974,
+  "tokens_out": 891,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You answered a different question — about cache consistency — instead of explaining how you measured and verified p95 latency.",
+   "strengths": [
+    {
+     "point": "Batched per-transaction queries into a single join",
+     "evidence": "batched those into one join",
+     "fix": ""
+    },
+    {
+     "point": "Added Redis caching with a five-minute TTL",
+     "evidence": "put Redis in front of it with a five minute TTL",
+     "fix": ""
+    }
+   ],
+   "gaps": [
+    {
+     "point": "Did not describe steps, tooling, or verification for collecting and calculating p95 latency",
+     "evidence": "A write to the account invalidated its cache entry, so a stale read could only happen inside the TTL for a read racing a write; we accepted that for a summary screen.",
+     "fix": "Explain the APM tool used (e.g., Datadog, New Relic), the exact time windows before/after deploy, how you filtered requests to the account summary endpoint, how p95 was computed (percentile aggregation method), and how you validated the change (e.g., statistical significance, outlier exclusion, comparison across multiple deployments)."
+    }
+   ],
+   "misconception": "You treated a question about latency measurement methodology as a question about cache consistency guarantees.",
+   "correction": "The interviewer asked for the concrete measurement process: tooling, query filters, time ranges, percentile calculation, and verification steps. Answering about cache invalidation does not address that. A strong answer names the APM system, shows the dashboard query or API call used, defines the pre/post windows tied to deploy markers, and explains how you confirmed the p95 shift was real and not noise.",
+   "model_answer": "I used Datadog APM to query the p95 latency of the account-summary endpoint. I filtered by service name, endpoint path, and deploy version tags. For the baseline I pulled one week of data before the caching deploy; for the test I pulled one week after, excluding the first 12 hours for warm-up. Datadog computes p95 via t-digest approximation on the agent side. I verified the drop by comparing the two distributions in a notebook, checking that the 95th percentile moved from ~800 ms to ~200 ms with non-overlapping confidence intervals, and confirmed no other changes shipped in the same window.",
+   "next_steps": [
+    "Practice describing your observability stack and the exact queries you run to extract percentiles.",
+    "Prepare a one-paragraph script for each resume metric: tool, filter, window, calculation, validation.",
+    "Rehearse distinguishing 'what I built' from 'how I measured it' — they are separate questions."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "case": "written blank",
+  "status": "unanswered",
+  "mode": "json_schema",
+  "latency_ms": 41271,
+  "tokens_in": 830,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting value: line 1 column 1 (char 0)"
+  ],
+  "raw": ""
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "case": "written correct",
+  "status": "correct",
+  "mode": "json_schema",
+  "latency_ms": 33453,
+  "tokens_in": 918,
+  "tokens_out": 991,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You correctly explained that hashing to a bucket index gives O(1) average lookup, and identified the uniform distribution and bounded load factor as the necessary conditions.",
+   "strengths": [
+    {
+     "point": "You stated that the key is hashed to a bucket index, allowing a direct jump instead of scanning.",
+     "evidence": "The key goes through a hash function that maps it to a bucket index, so you jump straight to that slot instead of scanning",
+     "fix": ""
+    },
+    {
+     "point": "You named even key spread and a bounded load factor (via resizing) as the conditions that keep the average case O(1).",
+     "evidence": "It only stays O(1) on average if the hash spreads keys evenly and the table is resized to keep the load factor bounded",
+     "fix": ""
+    },
+    {
+     "point": "You noted that heavy collisions degrade lookup to linear time.",
+     "evidence": "if all keys land in one bucket, lookup becomes linear",
+     "fix": ""
+    }
+   ],
+   "gaps": [],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "A hash map computes a bucket index from the key, so lookup goes straight to one slot instead of scanning all entries. This stays O(1) on average when the hash function distributes keys roughly uniformly and the load factor is kept bounded by resizing. If either condition fails, keys concentrate in a few buckets and lookup degrades toward O(n).",
+   "next_steps": [],
+   "model": ""
+  }
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "case": "written surface",
+  "status": "vague",
+  "mode": "json_schema",
+  "latency_ms": 56665,
+  "tokens_in": 849,
+  "tokens_out": 3000,
+  "parsed": false,
+  "shown": false,
+  "problems": [
+   "unparseable: Expecting property name enclosed in double quotes: line 2 column 2 (char 3)"
+  ],
+  "raw": "{\n {\"headline\": \"You named hashing, buckets, and chaining but did not explain why lookup is constant time or what conditions keep it that way.\",\n  \"strengths\": [],\n  \"gaps\": [\n    {\n      \"point\": \"hashing with buckets\",\n      \"evidence\": \"hashing with buckets\",\n      \"fix\": \"Explain that the key is hashed to a bucket index, allowing direct access instead of scanning.\"\n    },\n    {\n      \"point\": \"good hash function\",\n      \"evidence\": \"good hash function\",\n      \"fix\": \"State that the hash function must distribute keys uniformly across buckets, and the load factor must stay bounded (e.g., by "
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "case": "written wrong",
+  "status": "incorrect",
+  "mode": "json_schema",
+  "latency_ms": 14694,
+  "tokens_in": 903,
+  "tokens_out": 709,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You described a sorted array with binary search, not a hash map.",
+   "strengths": [],
+   "gaps": [
+    {
+     "point": "keys are kept sorted, so you binary search straight to the one you want",
+     "evidence": "keys are kept sorted, so you binary search straight to the one you want",
+     "fix": "Explain that a hash map applies a hash function to the key to compute a bucket index, then looks only in that bucket."
+    }
+   ],
+   "misconception": "A hash map keeps its keys sorted so you can binary-search to the target in O(1).",
+   "correction": "Hash maps do not store keys in sorted order. They pass the key through a hash function to get a bucket index, then examine only that bucket. Average O(1) lookup requires the hash function to distribute keys roughly uniformly and the load factor to stay bounded (usually by resizing). When those conditions fail, many keys land in the same bucket and lookup degrades toward O(n).",
+   "model_answer": "A hash map hashes the key to a bucket index, so you jump directly to a small bucket instead of scanning. That stays O(1) on average when the hash function spreads keys uniformly and the load factor is kept low by resizing. If the hash function clusters keys or the table gets too full, buckets grow and lookup slips toward O(n).",
+   "next_steps": [
+    "Contrast hash-map lookup (hash → bucket → scan bucket) with binary search on a sorted array.",
+    "Practice stating the two conditions for average O(1): uniform hashing and bounded load factor.",
+    "Explain how resizing and rehashing maintain the load-factor bound."
+   ],
+   "model": ""
+  }
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "case": "written blank",
+  "status": "unanswered",
+  "mode": "json_schema",
+  "latency_ms": 16194,
+  "tokens_in": 830,
+  "tokens_out": 765,
+  "parsed": true,
+  "shown": true,
+  "problems": [],
+  "writeup": {
+   "headline": "You did not answer the question about why hash map average-case lookup is O(1).",
+   "strengths": [],
+   "gaps": [
+    {
+     "point": "Explains that the key is hashed to a bucket index instead of being scanned for.",
+     "evidence": "",
+     "fix": "Describe how a hash function maps a key directly to an array index, allowing constant-time access to the bucket."
+    },
+    {
+     "point": "Names uniform distribution or a bounded load factor as a condition for O(1) average case.",
+     "evidence": "",
+     "fix": "State that the hash function must spread keys roughly uniformly and that the table must resize (rehash) to keep the load factor below a constant threshold."
+    },
+    {
+     "point": "Mentions that heavy collisions degrade lookup to O(n) in the worst case.",
+     "evidence": "",
+     "fix": "Explain that if many keys fall into the same bucket, the bucket becomes a list (or tree) and lookup time grows linearly with the number of colliding keys."
+    }
+   ],
+   "misconception": "",
+   "correction": "",
+   "model_answer": "A hash map computes a hash of the key to directly index a bucket, so lookup avoids scanning all entries. This O(1) average case holds when the hash function distributes keys uniformly across buckets and the load factor is kept bounded, typically by resizing the table when it exceeds a threshold. If the hash function is poor or the table becomes too full, many keys collide in the same bucket and lookup degrades to O(n) in the worst case.",
+   "next_steps": [
+    "Study how a hash function maps keys to array indices and why that gives constant-time access.",
+    "Learn the definition of load factor and how dynamic resizing keeps it bounded.",
+    "Review collision‑resolution strategies (chaining, open addressing) and how they affect worst‑case performance."
+   ],
+   "model": ""
+  }
+ }
+]

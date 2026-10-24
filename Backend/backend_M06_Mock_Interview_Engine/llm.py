@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -54,9 +55,18 @@ JOB_DECOMPOSE = "question_split"
 #: EC-6.6. The guard tier is a classifier, not a conversation: it takes the
 #: text as the user message and answers with a probability (`classify`).
 JOB_GUARD = "input_guard"
+#: 2026-10-24: each answer explained after the session (`notes_writer.py`) —
+#: long, structured, read by the student, and off every request path, so it
+#: takes the platform's writing tier; if that fails, the generation tier.
+JOB_NOTES = "notes_writeup"
+JOB_NOTES_FALLBACK = "notes_writeup_fallback"
 
 #: Model calls run here, so a call can be given up on (`_fetch_within`).
 _CALLS = ThreadPoolExecutor(max_workers=8, thread_name_prefix="m06-llm")
+#: Background jobs' calls run here instead: a write-up holds its thread for
+#: 10–25 s, and eight sessions ending together must not take every thread a
+#: live turn's strategist and guard are waiting on.
+_BACKGROUND_CALLS = ThreadPoolExecutor(max_workers=2, thread_name_prefix="m06-llm-bg")
 
 
 @dataclass(frozen=True)
@@ -68,6 +78,8 @@ class JobSpec:
     max_tokens: int
     timeout_s: float
     temperature: float = 0.3
+    #: Off every request path (`_BACKGROUND_CALLS`).
+    background: bool = False
 
 
 #: Tier per master plan §26.2, mapped onto the tiers `ai_core.models` actually
@@ -117,7 +129,64 @@ JOBS: dict[str, JobSpec] = {
         timeout_s=float(os.getenv("M06_GUARD_TIMEOUT", "1.5")),
         temperature=0.0,
     ),
+    # Off the hot path: the notes are read after the session, so a long
+    # budget costs nobody a wait at a turn.
+    JOB_NOTES: JobSpec(
+        tier="writing",
+        env="M06_MODEL_NOTES",
+        reasoning_effort="low",
+        max_tokens=3000,
+        timeout_s=float(os.getenv("M06_NOTES_TIMEOUT", "90")),
+        temperature=0.2,
+        background=True,
+    ),
+    JOB_NOTES_FALLBACK: JobSpec(
+        tier="generation",
+        env="M06_MODEL_NOTES_FALLBACK",
+        reasoning_effort="low",
+        max_tokens=3000,
+        timeout_s=float(os.getenv("M06_NOTES_TIMEOUT", "90")),
+        temperature=0.2,
+        background=True,
+    ),
 }
+
+
+def route_for(spec: JobSpec) -> Route:
+    """`resolve`, for an ai_core that may predate the job's tier.
+
+    `writing` arrived in ai_core v0.40.0, and before that `resolve` raised
+    KeyError for a tier it lacked — out of `get_llm()`, which resolves every
+    job, so one job's newer tier switched off all of them. A tier the
+    installed ai_core lacks is one unusable job, with the reason; the notes
+    then come from their generation-tier fallback."""
+    try:
+        return resolve(spec.tier, job_env=spec.env)  # type: ignore[arg-type]
+    except KeyError:
+        return Route(
+            tier=spec.tier,
+            model="",
+            unusable=f"the installed ai_core has no {spec.tier!r} tier; upgrade it",
+        )
+
+
+def json_object(content: str) -> Any:
+    """The JSON in a model's answer. A strict-schema answer is the JSON alone;
+    a provider that ignores `response_format` may wrap it in a reasoning block
+    or a code fence, and that is still the answer, not a failure."""
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+    text = re.sub(r"<think>.*?</think>", "", content, flags=re.S).strip()
+    fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.S)
+    if fenced:
+        text = fenced.group(1)
+    else:
+        start, end = text.find("{"), text.rfind("}")
+        if start >= 0 and end > start:
+            text = text[start : end + 1]
+    return json.loads(text)
 
 #: Request fields that are extensions to the base dialect and may be refused.
 OPTIONAL_FIELDS = ("reasoning_effort", "include_reasoning", "stream_options")
@@ -201,11 +270,11 @@ class OpenAICompatLLM:
 
     @property
     def available(self) -> bool:
-        return any(bool(resolve(spec.tier)) for spec in JOBS.values())  # type: ignore[arg-type]
+        return any(bool(route_for(spec)) for spec in JOBS.values())
 
     def _route(self, job: str) -> tuple[JobSpec, Route]:
         spec = JOBS[job]
-        return spec, resolve(spec.tier, job_env=spec.env)  # type: ignore[arg-type]
+        return spec, route_for(spec)
 
     def _key(self, route: Route) -> str:
         assert route.provider is not None
@@ -249,7 +318,7 @@ class OpenAICompatLLM:
                 return None, f"unreadable response: {exc}"
 
     def _fetch_within(
-        self, route: Route, body: dict[str, Any], timeout: float
+        self, route: Route, body: dict[str, Any], timeout: float, *, background: bool = False
     ) -> tuple[dict[str, Any] | None, str | None]:
         """`_fetch`, given up on after `timeout` seconds of wall clock
         (2026-10-11). The socket's timeout bounds each read, not the call: a
@@ -258,7 +327,8 @@ class OpenAICompatLLM:
         does what it does on any failure — the guard fails open, the
         strategist's move comes from the rules — and the late answer is
         dropped when it comes."""
-        future = _CALLS.submit(self._fetch, route, body, timeout)
+        pool = _BACKGROUND_CALLS if background else _CALLS
+        future = pool.submit(self._fetch, route, body, timeout)
         try:
             return future.result(timeout=timeout)
         except FutureTimeout:
@@ -322,7 +392,9 @@ class OpenAICompatLLM:
                 "json_schema": {"name": job, "strict": True, "schema": schema},
             }
         started = time.perf_counter()
-        payload, error = self._fetch_within(route, body, spec.timeout_s)
+        payload, error = self._fetch_within(
+            route, body, spec.timeout_s, background=spec.background
+        )
         if payload is None:
             result.reason = error or "no response"
             result.latency_ms = int((time.perf_counter() - started) * 1000)
@@ -340,7 +412,7 @@ class OpenAICompatLLM:
             )
             return result
         try:
-            parsed = json.loads(content)
+            parsed = json_object(content)
         except json.JSONDecodeError as exc:
             result.reason = f"unparseable JSON: {exc}"
             return result
@@ -445,7 +517,7 @@ def get_llm(*, refresh: bool = False) -> LLM:
         if _llm is not None and not refresh:
             return _llm
         load_keys()
-        usable = [job for job, spec in JOBS.items() if resolve(spec.tier)]  # type: ignore[arg-type]
+        usable = [job for job, spec in JOBS.items() if route_for(spec)]
         if not usable:
             reason = resolve("generation").unusable or "no model configured"
             log.info("M06 language model off: %s", reason)

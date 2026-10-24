@@ -298,3 +298,33 @@ __all__ = [
     "SessionEvent",
     "TurnRecord",
 ]
+
+
+class QuestionWriteup(SQLModel, table=True):
+    """One answer explained after the session (`notes_writer`, 2026-10-24).
+
+    Derived, never the record: the event log is the session, and this is a
+    model's explanation of it, kept so it is written once. `brief_hash` is the
+    hash of what the writer was told — a write-up whose brief no longer
+    matches the question (the judgement changed) is not shown."""
+
+    __tablename__ = "m06_question_writeup"
+    __table_args__ = (
+        UniqueConstraint("session_id", "question_key", name="uq_m06_writeup_question"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    session_id: uuid.UUID = Field(index=True)
+    question_key: str
+    #: `pending` while it is being written · `ready` · `failed` (with `reason`).
+    status: str = "pending"
+    brief_hash: str = ""
+    prompt_version: str = ""
+    model: str = ""
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    #: What its checks fixed or refused, for the trace.
+    problems: list = Field(default_factory=list, sa_column=Column(JSON))
+    reason: str | None = None
+    latency_ms: int = 0
+    attempts: int = 0
+    updated_at: datetime = Field(default_factory=utcnow)

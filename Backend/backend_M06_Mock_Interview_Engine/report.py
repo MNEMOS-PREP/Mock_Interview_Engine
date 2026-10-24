@@ -13,6 +13,7 @@ each question went, where it stopped, and why a turn was not scored.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from datetime import datetime
 
 from pydantic import BaseModel, Field
@@ -100,6 +101,33 @@ class Finding(BaseModel):
     why: str = ""
 
 
+class KeyPointCheck(BaseModel):
+    statement: str
+    covered: bool | None = None
+
+
+class WriteupPoint(BaseModel):
+    point: str
+    #: The student's own words, verbatim — or empty.
+    evidence: str = ""
+    #: For a gap: what to say instead, or what to add.
+    fix: str = ""
+
+
+class Writeup(BaseModel):
+    """One answer explained (`notes_writer`): checked against the status and
+    the student's words before it is ever shown."""
+
+    headline: str
+    strengths: list[WriteupPoint] = Field(default_factory=list)
+    gaps: list[WriteupPoint] = Field(default_factory=list)
+    misconception: str = ""
+    correction: str = ""
+    model_answer: str = ""
+    next_steps: list[str] = Field(default_factory=list)
+    model: str = ""
+
+
 class QuestionReport(BaseModel):
     question: str
     source: str
@@ -181,6 +209,25 @@ class QuestionReport(BaseModel):
     #: For a line of the student's resume: whether they backed it up — what
     #: they showed they understand, against what the line claims.
     claim_check: str | None = None
+    # ── 2026-10-24: one status per question ─────────────────────────────────
+    #: What the answer was, in one word the page is built around (`STATUSES`)
+    #: — derived from the interview's own judgement of the whole thread, so the
+    #: badge, its colour, the words and the summary cannot disagree. A correct,
+    #: a vague and a wrong answer looked alike: the outcome was a grey phrase,
+    #: and the only coloured badge came from M13 on scored questions alone.
+    #: None mid-session (a live verdict, §2.2).
+    status: str | None = None
+    #: The status in a few words, and the one specific thing behind it.
+    status_label: str | None = None
+    status_detail: str | None = None
+    #: How it got there: "after a push", "with 1 hint", "corrected yourself".
+    status_qualifier: str | None = None
+    #: The strong answer's points, each marked covered or not by the
+    #: interview's last judgement (None: no judgement to go on).
+    key_points: list[KeyPointCheck] = Field(default_factory=list)
+    #: The explanation written for this answer after the session
+    #: (`notes_writer`), once it is ready and has passed its checks.
+    writeup: Writeup | None = None
 
 
 class Summary(BaseModel):
@@ -196,6 +243,10 @@ class Summary(BaseModel):
     topics: list[str] = Field(default_factory=list)
     #: How it was said (`delivery.py`): fillers, restarts, pace.
     communication: list[str] = Field(default_factory=list)
+    #: 2026-10-24: how many questions ended each way (`STATUSES` order), and
+    #: the topics to work on first — worst first — from those statuses.
+    status_counts: dict[str, int] = Field(default_factory=dict)
+    focus: list[str] = Field(default_factory=list)
 
 
 class SessionReport(BaseModel):
@@ -219,6 +270,11 @@ class SessionReport(BaseModel):
     notes: list[str]
     #: 2026-10-22: the interview in a few lines, from the questions above.
     summary: Summary = Field(default_factory=Summary)
+    #: 2026-10-24: where each answer's written explanation is (`notes_writer`)
+    #: — `none` (nothing to explain, or mid-session), `pending` (being written:
+    #: ask again), `ready`, or `partial` (some could not be written, and those
+    #: questions show what the interview recorded).
+    writeups: str = "none"
     #: Spec §6.7 tells M06 to say this, "so students don't think Practice mode
     #: inflates their score" — which means it has to be exactly right, not
     #: reassuring. Two facts, and the second one was missing: the STANDARD is
@@ -315,6 +371,151 @@ def _study(question: QuestionReport, missing: list[str], key_points: dict[str, s
     return out
 
 
+#: Every status a question can end with, in the order the page counts them.
+STATUSES = (
+    "correct",
+    "partial",
+    "vague",
+    "incorrect",
+    "unanswered",
+    "unsupported",
+    "not_judged",
+    "not_reached",
+)
+#: Worst first: what a student should work on before anything else.
+FOCUS_ORDER = ("incorrect", "unanswered", "vague", "unsupported", "partial")
+_BY_OUTCOME = {
+    "held": "correct",
+    "ceiling": "correct",
+    "gap:minor": "partial",
+    "gap:detail": "partial",
+    "gap:incomplete": "partial",
+    "gap:advanced": "partial",
+    "gap:surface": "vague",
+    "gap:misunderstanding": "incorrect",
+    "gap:complete": "unanswered",
+    "no_answer": "unanswered",
+    "avoided": "unanswered",
+    "unsupported": "unsupported",
+    "unjudged": "not_judged",
+}
+#: For a question that never closed (the interview ended mid-way): its last
+#: judged answer.
+_BY_CATEGORY = {
+    "correct": "correct",
+    "correct_incomplete": "partial",
+    "partial": "partial",
+    "vague": "vague",
+    "incorrect": "incorrect",
+    "contradiction": "incorrect",
+    "dont_know": "unanswered",
+    "unsupported": "unsupported",
+}
+_DETAIL = {
+    "gap:minor": "A small slip in an otherwise sound answer.",
+    "gap:detail": "You knew the idea, but not the detail behind it.",
+    "gap:incomplete": "Part of a strong answer was there; part was missing.",
+    "gap:advanced": "The basics held; the deeper follow-up did not.",
+    "gap:surface": "You named the right terms without explaining how it works.",
+    "avoided": "You answered a different question from the one asked.",
+    "unsupported": "You claimed it, but did not show how you know.",
+}
+
+
+def _status(
+    question: QuestionReport, categories: list[str], missed: list[str] | None
+) -> tuple[str, str, str]:
+    """(status, label, detail) — the interview's judgement of the whole
+    thread. A wrong idea that stood outranks an "I don't know" after it: a
+    student who answered wrongly did not leave it unanswered."""
+    answered = any(e.role == "candidate" for e in question.exchanges)
+    outcome = question.outcome or ""
+    if not answered:
+        if outcome == "skipped":
+            return "unanswered", "Skipped", "You skipped this one."
+        if outcome == "silence":
+            return "unanswered", "Not answered", "There was no answer, so the interview moved on."
+        return "not_reached", "Not reached", "The interview ended before you answered this."
+    if outcome == "unjudged":
+        return (
+            "not_judged",
+            "Not judged",
+            "The answer checker was unavailable, so this answer was not judged.",
+        )
+    judged = [c for c in categories if c in _BY_CATEGORY]
+    if outcome in ("held", "ceiling"):
+        if judged and judged[-1] == "correct_incomplete" and missed:
+            return (
+                "partial",
+                "Mostly correct",
+                "Right as far as it went, but it left out part of a strong answer.",
+            )
+        if outcome == "ceiling":
+            return "correct", "Correct", "It held through the deepest follow-up."
+        return "correct", "Correct", "What you said held up to the follow-ups."
+    wrong_stood = question.corrected is None and any(
+        c in ("incorrect", "contradiction") for c in judged
+    )
+    if wrong_stood and outcome != "unsupported":
+        detail = (
+            f"A misunderstanding that stood: {question.misconception.rstrip('.')}."
+            if question.misconception
+            else "An error in the answer stood after the interviewer pointed it out."
+        )
+        return "incorrect", "Incorrect", detail
+    status = _BY_OUTCOME.get(outcome) or (_BY_CATEGORY[judged[-1]] if judged else "not_judged")
+    attempts = [c for c in judged if c in ("vague", "partial", "correct_incomplete")]
+    if status == "unanswered" and outcome != "avoided" and attempts:
+        # A give-up after a real attempt: the attempt is what they showed —
+        # "not answered" would hide that they tried (a live run's vague
+        # answer, then "I'm not sure").
+        status = _BY_CATEGORY[attempts[-1]]
+    if status == "unanswered":
+        detail = _DETAIL.get(outcome) or (
+            "You said you did not know this one."
+            if "dont_know" in judged
+            else "There was no real attempt at the question."
+        )
+        return status, "Not answered", detail
+    labels = {
+        "correct": ("Correct", "What you said held up to the follow-ups."),
+        "partial": ("Partly correct", "Part of a strong answer was there; part was missing."),
+        "vague": ("Too vague", _DETAIL["gap:surface"]),
+        "incorrect": ("Incorrect", "An error in the answer stood."),
+        "unsupported": ("Not backed up", _DETAIL["unsupported"]),
+        "not_judged": ("Not judged", "This answer was not judged in detail."),
+    }
+    label, fallback = labels[status]
+    return status, label, _DETAIL.get(outcome, fallback)
+
+
+def _still_missing(before: list[str] | None, now: list[str]) -> list[str]:
+    """What no answer so far has reached: this answer's misses, less any an
+    earlier answer reached."""
+    return now if before is None else [k for k in before if k in now]
+
+
+def _covered(status: str | None, key_point: str, missed: list[str] | None) -> bool | None:
+    """Whether the answers reached one key point — unknown rather than
+    guessed when nothing judged the content."""
+    if status == "unanswered":
+        return False
+    if status in ("not_reached", "not_judged") or missed is None:
+        return None
+    return key_point not in missed
+
+
+def _qualifier(question: QuestionReport) -> str | None:
+    parts = []
+    if question.corrected == "prompted":
+        parts.append("after a push")
+    elif question.corrected == "self":
+        parts.append("corrected yourself")
+    if question.hints_used:
+        parts.append(f"with {question.hints_used} hint{'s' if question.hints_used > 1 else ''}")
+    return " · ".join(parts) or None
+
+
 def _claim_check(question: QuestionReport) -> str | None:
     """A resume line, judged on what the student showed about it: the claim
     is theirs; whether they could stand behind it is what the room heard."""
@@ -337,6 +538,13 @@ def _summary(
     from . import delivery, difficulty  # noqa: PLC0415 — report is imported early by the router
 
     out = Summary(communication=delivery.summarise(deliveries or []))
+    counted = Counter(q.status for q in questions if q.status)
+    out.status_counts = {status: counted[status] for status in STATUSES if counted[status]}
+    rank = {status: i for i, status in enumerate(FOCUS_ORDER)}
+    weakest = sorted((q for q in questions if q.status in rank), key=lambda q: rank[q.status])
+    out.focus = list(
+        dict.fromkeys(f"{_label(q)} — {(q.status_label or '').lower()}" for q in weakest)
+    )
     for q in questions:
         label = _label(q)
         if q.outcome in ("held", "ceiling") or (q.went_well and not q.went_wrong and not q.outcome):
@@ -385,6 +593,11 @@ def build(
     # Per question: its item, and the key points its last judged answer missed.
     items: dict[int, dict] = {}
     missing: dict[int, list[str]] = {}
+    # 2026-10-24: what each answer was, in order — and the missed key points
+    # of the last answer that was judged on its content (an "I don't know"
+    # or a remark lists none, which would read as "covered everything").
+    categories: dict[int, list[str]] = {}
+    judged_missing: dict[int, list[str]] = {}
 
     by_turn: dict[str, QuestionReport] = {}
     deliveries: list = []
@@ -514,8 +727,21 @@ def build(
                 current.misconception = str(p["misconception"])
             if p.get("left"):
                 current.outcome = str(p["left"])
+            # A key point is missed only if EVERY answer in the thread missed
+            # it. Until 2026-10-24 the last answer's list replaced the rest,
+            # so a follow-up on something narrower un-covered what the first
+            # answer had reached: the notes' rubric marked ✕ the very points
+            # "what you got right" quoted the student making (live, session C).
             if p.get("missing") is not None:
-                missing[id(current)] = [str(k) for k in p["missing"]]
+                missing[id(current)] = _still_missing(
+                    missing.get(id(current)), [str(k) for k in p["missing"]]
+                )
+            if p.get("category"):
+                categories.setdefault(id(current), []).append(str(p["category"]))
+                if p["category"] in JUDGED_CATEGORIES and p["category"] != "dont_know":
+                    judged_missing[id(current)] = _still_missing(
+                        judged_missing.get(id(current)), [str(k) for k in p.get("missing") or []]
+                    )
         elif event.kind == "hint.given" and current is not None:
             current.hints_used = int(p.get("level", current.hints_used))
         elif event.kind == "question.skipped" and current is not None:
@@ -556,11 +782,26 @@ def build(
             question.corrected = question.misconception = question.outcome = None
             continue
         question.outcome_words = OUTCOME_WORDS.get(question.outcome or "")
+        missed = judged_missing.get(id(question))
+        question.status, question.status_label, question.status_detail = _status(
+            question, categories.get(id(question), []), missed
+        )
+        question.status_qualifier = _qualifier(question)
         if item.get("reference_answer"):
             question.one_strong_answer = str(item["reference_answer"])
             question.strong_answer_reviewed = question.source != "m05_draft"
         key_points = {kp["id"]: kp["statement"] for kp in item.get("key_points") or []}
-        question.study = _study(question, missing.get(id(question), []), key_points)
+        question.key_points = [
+            KeyPointCheck(statement=statement, covered=_covered(question.status, kp, missed))
+            for kp, statement in key_points.items()
+        ]
+        # Nothing was said, so everything a strong answer covers is what to learn.
+        unmet = (
+            list(key_points)
+            if question.status == "unanswered"
+            else missing.get(id(question), [])
+        )
+        question.study = _study(question, unmet, key_points)
         if question.source == "m01_probe":
             question.claim_check = _claim_check(question)
         if history and question.question_key in history:
@@ -582,7 +823,7 @@ def build(
         notes.append("Some answers are still with the evaluator — check back in a minute.")
     if any(q.scored for q in questions):
         notes.append(
-            "Each answer's band is the share of a strong answer's key points it covered. "
+            "Each answer's status is the interview's judgement of the whole conversation on it. "
             "Numerical scores appear once they are calibrated against human raters."
         )
     replaced = sum(1 for q in questions if q.skipped == "replaced")

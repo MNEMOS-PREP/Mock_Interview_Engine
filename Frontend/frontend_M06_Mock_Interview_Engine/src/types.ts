@@ -334,6 +334,52 @@ export interface QuestionReport {
   flagged?: boolean;
   /** For a resume line: whether they backed it up. */
   claim_check?: string | null;
+  /** 2026-10-24: the one status the page is built around — the interview's
+   *  own judgement of the whole thread (`report._status`). Null mid-session. */
+  status?: AnswerStatus | null;
+  status_label?: string | null;
+  status_detail?: string | null;
+  /** "after a push", "with 1 hint", "corrected yourself". */
+  status_qualifier?: string | null;
+  /** The strong answer's points, each reached or not (null: unknown). */
+  key_points?: KeyPointCheck[];
+  /** The explanation written after the session, once checked. */
+  writeup?: Writeup | null;
+}
+
+export type AnswerStatus =
+  | "correct"
+  | "partial"
+  | "vague"
+  | "incorrect"
+  | "unanswered"
+  | "unsupported"
+  | "not_judged"
+  | "not_reached";
+
+export interface KeyPointCheck {
+  statement: string;
+  covered: boolean | null;
+}
+
+export interface WriteupPoint {
+  point: string;
+  /** The student's own words, verbatim — checked server-side. */
+  evidence: string;
+  fix: string;
+}
+
+/** One answer explained (`notes_writer`): never shown unless it passed its
+ *  checks — the student's own quotes, no praise for a wrong answer. */
+export interface Writeup {
+  headline: string;
+  strengths: WriteupPoint[];
+  gaps: WriteupPoint[];
+  misconception: string;
+  correction: string;
+  model_answer: string;
+  next_steps: string[];
+  model: string;
 }
 
 /** One thing the interview found in an answer, in the student's words. */
@@ -351,6 +397,9 @@ export interface ReportSummary {
   unsupported_claims: string[];
   topics: string[];
   communication: string[];
+  /** 2026-10-24: questions per status, and the topics to work on, worst first. */
+  status_counts?: Partial<Record<AnswerStatus, number>>;
+  focus?: string[];
 }
 
 /** One past attempt at a library question. */
@@ -448,6 +497,8 @@ export interface SessionReport {
   persona_note: string;
   /** 2026-10-22: the interview in a few lines, built from the questions. */
   summary?: ReportSummary;
+  /** 2026-10-24: where the written explanations are — `pending` means ask again. */
+  writeups?: "none" | "pending" | "ready" | "partial";
 }
 
 /** §6.8: what a returning page needs (`GET /resume-state`). A read only —

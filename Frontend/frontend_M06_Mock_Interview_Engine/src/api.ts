@@ -154,11 +154,21 @@ export function useResumeState(id: string | undefined) {
   });
 }
 
+/** How often, and how many times, the notes ask again while each answer's
+ *  explanation is being written (2026-10-24) — a few minutes at most, so a
+ *  writer that never finishes cannot keep the page polling. */
+export const WRITEUP_POLL_MS = 3000;
+export const WRITEUP_POLL_MAX = 60;
+
 export function useReport(id: string | undefined) {
   return useQuery({
     queryKey: m06Keys.report(id ?? "none"),
     queryFn: () => api.get<SessionReport>(`/v1/interviews/${id}/report`),
     enabled: Boolean(id),
+    refetchInterval: (query) =>
+      query.state.data?.writeups === "pending" && query.state.dataUpdateCount < WRITEUP_POLL_MAX
+        ? WRITEUP_POLL_MS
+        : false,
   });
 }
 

@@ -30,7 +30,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, StringConstraints, field_validator
 from sqlmodel import Session, select
 
-from . import degrade, memory, outbox, planner, presence, store
+from . import degrade, memory, notes_writer, outbox, planner, presence, store
 from . import items as items_module
 from . import report as report_module
 from .access import enforce_access, require_candidate
@@ -1361,7 +1361,10 @@ def transcript(session_id: uuid.UUID, db: Session = Depends(get_session)) -> lis
 
 @router.get("/interviews/{session_id}/report", response_model=report_module.SessionReport)
 def session_report(
-    session_id: uuid.UUID, db: Session = Depends(get_session)
+    session_id: uuid.UUID,
+    background: BackgroundTasks,
+    db: Session = Depends(get_session),
+    sessions: Callable[[], Session] = Depends(session_factory),
 ) -> report_module.SessionReport:
     """FR-6.18 — for every session, finished or not (AC-6.1)."""
     _row_or_404(db, session_id)
@@ -1375,6 +1378,15 @@ def session_report(
         history = {k: memory.attempts_for(db, state.candidate_id, k) for k in keys}
         marks = memory.marks(db, state.candidate_id, keys)
         built = report_module.build(state, events, utcnow(), history=history, marks=marks)
+    if state.is_final:
+        # 2026-10-24: each answer explained, written once after the session
+        # (`notes_writer`). What is ready is attached; what is not is written
+        # after this response, and the page asks again.
+        built.writeups = notes_writer.attach(
+            built.questions, notes_writer.load(db, session_id), utcnow()
+        )
+        if built.writeups == "pending":
+            background.add_task(notes_writer.generate, session_id, factory=sessions)
     return built
 
 

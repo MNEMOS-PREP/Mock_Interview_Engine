@@ -45,6 +45,10 @@ export {
 } from "./api";
 export { useInterviewStream } from "./stream";
 export { bandOf, missingStatements, topicName } from "./bands";
+// 2026-10-24: an answer's status — what every page that shows "how did that
+// answer go" shows, so the notes and the shell cannot disagree.
+export { FOCUS_ORDER, STATUS_META, STATUS_ORDER, needsWork, weakest } from "./notes";
+export { StatusBadge, StatusIcon } from "./components/Status";
 export { MockTargetsContext, type MockTarget } from "./targets";
 export { Face } from "./ui/Face";
 export {
@@ -58,6 +62,7 @@ export {
 export type {
   AgentRow,
   AgentsResponse,
+  AnswerStatus,
   CohortStats,
   DependencyRow,
   Exchange,

@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "npm run dev --workspace @ai/m06-mock-interview-engine",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "tsc --noEmit -p tsconfig.base.json"
+    "typecheck": "tsc --noEmit -p tsconfig.base.json",
+    "test": "npm run test --workspaces --if-present"
   },
   "dependencies": {
     "@ai/core": "github:MNEMOS-PREP/Platform_Core#v0.39.0",
@@ -20,11 +21,15 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "29.1.1",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "vite": "^6.0.5",
+    "vitest": "4.1.12"
   }
 }

@@ -10,7 +10,8 @@
   "scripts": {
     "dev": "vite --port 5206",
     "build": "vite build",
-    "preview": "vite preview --port 5206"
+    "preview": "vite preview --port 5206",
+    "test": "vitest run"
   },
   "dependencies": {
     "@ai/core": "github:MNEMOS-PREP/Platform_Core#v0.39.0"

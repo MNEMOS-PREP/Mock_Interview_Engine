@@ -19,8 +19,9 @@ dependencies = [
     # Shared platform foundation. PINNED BY TAG on purpose: tracking main is
     # how you get a surprise breakage on a Tuesday. v0.9.x is where
     # `ai_core.identity` landed, and M06 is written against it from day one
-    # rather than retrofitted (PLATFORM_TODO §1).
-    "ai-core @ git+https://github.com/MNEMOS-PREP/Platform_Core@v0.12.0#subdirectory=python",
+    # rather than retrofitted (PLATFORM_TODO §1). v0.40.0: the `writing` tier
+    # the post-session notes are written on (an older one falls back to Groq).
+    "ai-core @ git+https://github.com/MNEMOS-PREP/Platform_Core@v0.40.0#subdirectory=python",
 ]
 
 [project.optional-dependencies]
@@ -58,6 +59,7 @@ select = ["E", "F", "I", "B", "UP"]
 # Prompts are prose. Wrapping them changes the text the model reads.
 "**/agents/*.py" = ["E501"]
 "**/decompose.py" = ["E501"]
+"**/notes_writer.py" = ["E501"]
 # Operator scripts print wide tables; nothing reads them as code.
 "tools/*.py" = ["E501"]
 

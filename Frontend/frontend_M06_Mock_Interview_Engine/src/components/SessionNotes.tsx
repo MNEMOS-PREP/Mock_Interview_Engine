@@ -30,14 +30,25 @@
  * 2026-10-06 — M11's FR-11.19: a spoken answer the student chose to keep
  * plays back beside its words ("you rarely know how you sound until you hear
  * it"), and every kept answer of the interview can be deleted from here.
+ *
+ * 2026-10-24 — a correct, a vague and a wrong answer looked alike: the band
+ * above existed only for scored questions, the status was a grey phrase, and
+ * every question carried the same green ✓ box. Each question now leads with
+ * its STATUS (`report._status`: the interview's judgement of the whole
+ * thread, eight of them, each a colour AND a shape — `notes.ts`), then the
+ * student's own answer, what held, what was missing or wrong, the correct
+ * idea, the rubric marked point by point, one strong answer and what to
+ * practise. The band survives only as the evaluator's view, flagged when it
+ * disagrees with the status. The explanations are written after the session
+ * (`notes_writer.py`) and checked against the student's words; until they
+ * are ready the page polls and shows what the interview recorded.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
-  ANSWER_BAND_LABEL,
   Card,
   EmptyState,
   ErrorNote,
@@ -46,26 +57,25 @@ import {
   forgetKeptAnswers,
   keptAnswerUrl,
   keptAnswers,
-  type AnswerBand,
   type KeptAnswer,
 } from "@ai/core";
 
-import { useReport, useStar } from "../api";
-import { bandOf, missingStatements, topicName } from "../bands";
+import { WRITEUP_POLL_MAX, m06Keys, useReport, useStar } from "../api";
+import { missingStatements, topicName } from "../bands";
+import {
+  STATUS_META,
+  STATUS_ORDER,
+  bandConflict,
+  correction,
+  firstAnswer,
+  gaps,
+  idealAnswer,
+  needsWork,
+  nextSteps,
+  strengths,
+} from "../notes";
 import type { QuestionReport, ReportSummary, SessionReport } from "../types";
-
-/** The colour is a dot and a tint; the word stays in ink, which passes
- *  contrast in both themes where orange text on white did not. */
-const BAND_STYLE: Record<AnswerBand, string> = {
-  strong: "border-mastery-strong/50 bg-mastery-strong/12",
-  partly: "border-mastery-ok/50 bg-mastery-ok/12",
-  not_yet: "border-mastery-weak/50 bg-mastery-weak/12",
-};
-const BAND_DOT: Record<AnswerBand, string> = {
-  strong: "bg-mastery-strong",
-  partly: "bg-mastery-ok",
-  not_yet: "bg-mastery-weak",
-};
+import { StatusBadge, StatusIcon } from "./Status";
 
 /** The notes as plain text, for the student to send where they choose. */
 function summaryText(data: SessionReport): string {
@@ -74,9 +84,8 @@ function summaryText(data: SessionReport): string {
     "",
   ];
   data.questions.forEach((q, i) => {
-    const band = bandOf(q);
     lines.push(`${i + 1}. ${q.question}`);
-    lines.push(`   ${band ? ANSWER_BAND_LABEL[band] : "Not marked"}${topicName(q) ? ` · ${topicName(q)}` : ""}`);
+    lines.push(`   ${q.status_label ?? "Not marked"}${topicName(q) ? ` · ${topicName(q)}` : ""}`);
   });
   lines.push("", "Practised on AI Interviewer.");
   return lines.join("\n");
@@ -103,7 +112,7 @@ function ShareButton({ data }: { data: SessionReport }) {
       type="button"
       onClick={share}
       className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm text-ink-soft hover:bg-surface-sunken hover:text-ink"
-      title="Copies a short summary: the questions and their bands. Nothing is posted for you."
+      title="Copies a short summary: the questions and how each went. Nothing is posted for you."
     >
       <Icon name="send" size={15} />
       {done ?? "Share a summary"}
@@ -211,129 +220,457 @@ function KeptAnswers({ sessionId, count }: { sessionId: string; count: number })
   );
 }
 
-function depthSentence(question: QuestionReport): string {
-  const unanswered = !question.exchanges.some((e) => e.role === "candidate");
-  if (question.skipped === "replaced" && unanswered) {
-    // The student's choice, and it cost nothing: a different one came instead.
-    return "You skipped this one, and a different question came in its place.";
-  }
-  if (question.skipped === "left" && unanswered) {
-    return "You skipped this one too, so it counts as not answered here. Your skill graph is unchanged.";
-  }
-  if (
-    question.moved_on &&
-    !question.exchanges.some((e) => e.role === "candidate")
-  ) {
-    // Not a break and not a fail: the student chose to leave it.
-    return "We moved on from this one after a pause.";
-  }
-  if (question.break_depth === 0) {
-    return "We stopped at the opening question.";
-  }
-  if (question.break_depth !== null) {
-    return `Your reasoning held for ${question.break_depth} follow-up${
-      question.break_depth === 1 ? "" : "s"
-    }, then reached its edge.`;
-  }
-  if (question.ceiling !== null) {
-    return `You held this to ${question.ceiling} follow-ups, which is as far as it goes.`;
-  }
-  if (question.depth_reached === 0) {
-    return "No follow-ups on this one.";
-  }
-  return `You held this through ${question.depth_reached} follow-up${
-    question.depth_reached === 1 ? "" : "s"
-  }.`;
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mt-4">
+      <h4 className="text-2xs font-semibold uppercase tracking-wide text-ink-faint">{title}</h4>
+      <div className="mt-1.5">{children}</div>
+    </section>
+  );
 }
 
-/** 2026-10-22: what the interview itself found in the answers — the
- *  student's own words, what held, what did not and why, kept until now. */
-function Found({ question }: { question: QuestionReport }) {
-  const wrong = question.went_wrong ?? [];
-  const well = question.went_well ?? [];
-  const unsupported = question.unsupported ?? [];
-  const resumeLine = question.source === "m01_probe";
-  const contradictions = question.contradictions ?? [];
-  const corrected =
-    question.corrected === "self"
-      ? "You caught that one yourself and corrected it."
-      : question.corrected === "prompted"
-        ? "You got there after the interviewer pushed back — that counts, with the help noted."
-        : null;
-  if (
-    !wrong.length &&
-    !well.length &&
-    !unsupported.length &&
-    !contradictions.length &&
-    !question.claim_check &&
-    !corrected &&
-    !question.misconception &&
-    !question.last_time
-  )
-    return null;
+/** "Your words" — the student's own quote under a point, never anyone else's. */
+function Said({ text }: { text?: string }) {
+  if (!text) return null;
+  return <p className="mt-0.5 text-2xs leading-relaxed text-ink-soft">You said “{text}”</p>;
+}
+
+/** The strong answer's points, each reached or not — the rubric with the
+ *  items that applied marked (the Gradescope pattern), in a neutral frame:
+ *  until 2026-10-24 this was a green box of ✓ marks on every question,
+ *  wrong ones included. */
+function KeyPoints({ question }: { question: QuestionReport }) {
+  const points = question.key_points?.length
+    ? question.key_points
+    : question.strong_answer_covers.map((statement) => ({ statement, covered: null }));
+  if (!points.length) return null;
   return (
-    <div className="mt-4 space-y-3 rounded-xl border border-line bg-surface p-4">
-      <p className="text-2xs uppercase tracking-wide text-ink-faint">What the interview found</p>
+    <Section title="What a strong answer covers">
+      <ul className="space-y-1.5">
+        {points.map((point) => (
+          <li key={point.statement} className="flex gap-2 text-sm leading-relaxed text-ink">
+            <span
+              className={
+                point.covered === true
+                  ? "mt-0.5 text-confirmed"
+                  : point.covered === false
+                    ? "mt-0.5 text-contested"
+                    : "mt-0.5 text-ink-faint"
+              }
+            >
+              <StatusIcon icon={point.covered === true ? "check" : point.covered === false ? "cross" : "dash"} />
+            </span>
+            <span>
+              {point.statement}
+              <span className="sr-only">
+                {point.covered === true ? " — you covered this" : point.covered === false ? " — not covered" : ""}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
+/** How the answers went across the interview — a distribution, never a score
+ *  — and the few things to take away first. */
+function Overview({ data }: { data: SessionReport }) {
+  const counts = data.summary?.status_counts ?? {};
+  const shown = STATUS_ORDER.filter((status) => counts[status]);
+  const total = shown.reduce((sum, status) => sum + (counts[status] ?? 0), 0);
+  if (!total) return null;
+  const focus = data.summary?.focus ?? [];
+  const repeated = data.summary?.repeated_misconceptions ?? [];
+  const described = shown
+    .map((status) => `${counts[status]} ${STATUS_META[status].label.toLowerCase()}`)
+    .join(", ");
+  return (
+    <section aria-labelledby="overview-title" className="mt-5 rounded-2xl border border-line bg-surface p-5">
+      <h2 id="overview-title" className="text-sm font-semibold text-ink">
+        How your answers went
+      </h2>
+      <div
+        role="img"
+        aria-label={described}
+        className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-surface-sunken"
+      >
+        {shown.map((status) => (
+          <span
+            key={status}
+            className={STATUS_META[status].bar}
+            style={{ width: `${(100 * (counts[status] ?? 0)) / total}%` }}
+          />
+        ))}
+      </div>
+      <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-ink-soft">
+        {shown.map((status) => (
+          <li key={status} className="inline-flex items-center gap-1.5">
+            <span className={STATUS_META[status].badge.split(" ").find((c) => c.startsWith("text-"))}>
+              <StatusIcon icon={STATUS_META[status].icon} />
+            </span>
+            {counts[status]} {STATUS_META[status].label.toLowerCase()}
+          </li>
+        ))}
+      </ul>
+      {(focus.length > 0 || repeated.length > 0) && (
+        <div className="mt-4 grid gap-4 border-t border-line pt-4 sm:grid-cols-2">
+          {focus.length > 0 && (
+            <div>
+              <h3 className="text-2xs font-semibold uppercase tracking-wide text-ink-faint">Work on first</h3>
+              <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-sm leading-relaxed text-ink">
+                {focus.slice(0, 3).map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ol>
+            </div>
+          )}
+          {repeated.length > 0 && (
+            <div>
+              <h3 className="text-2xs font-semibold uppercase tracking-wide text-ink-faint">
+                Came up more than once
+              </h3>
+              <ul className="mt-1.5 space-y-1 text-sm leading-relaxed text-ink">
+                {repeated.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** The rest of the interview in brief — held, corrected, said, claimed. */
+function More({ summary }: { summary: ReportSummary }) {
+  const blocks: [string, string[]][] = [
+    ["Held up", summary.held],
+    ["Corrected along the way", summary.corrected],
+    ["Claims to back up", summary.unsupported_claims],
+    ["How each topic went", summary.topics],
+    ["How you said it", summary.communication],
+  ];
+  const shown = blocks.filter(([, lines]) => lines.length > 0);
+  if (!shown.length) return null;
+  return (
+    <section className="mt-3 grid gap-3 sm:grid-cols-2" aria-label="More about this interview">
+      {shown.map(([title, lines]) => (
+        <div key={title} className="rounded-xl border border-line bg-surface p-4">
+          <h3 className="text-2xs font-semibold uppercase tracking-wide text-ink-faint">{title}</h3>
+          <ul className="mt-2 space-y-1.5">
+            {lines.map((line) => (
+              <li key={line} className="text-sm leading-relaxed text-ink">
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/** For a resume line: what the interview found about the claim itself. */
+function ClaimFindings({ question }: { question: QuestionReport }) {
+  const unsupported = question.unsupported ?? [];
+  const contradictions = question.contradictions ?? [];
+  if (!question.claim_check && !unsupported.length && !contradictions.length) return null;
+  const resumeLine = question.source === "m01_probe";
+  return (
+    <Section title={resumeLine ? "About this line on your resume" : "Claims in your answer"}>
       {question.claim_check && <p className="text-sm font-medium text-ink">{question.claim_check}</p>}
-      {well.length > 0 && (
-        <div>
-          <p className="text-2xs text-ink-faint">What held</p>
-          <ul className="mt-1 space-y-1 text-sm text-ink">
-            {well.map((point) => (
-              <li key={point} className="flex gap-2">
-                <span aria-hidden className="text-confirmed">✓</span>
-                {point}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {wrong.length > 0 && (
-        <div>
-          <p className="text-2xs text-ink-faint">What didn't hold</p>
-          <ul className="mt-1 space-y-2">
-            {wrong.map((finding) => (
-              <li key={finding.said} className="text-sm leading-relaxed text-ink">
-                <span className="text-ink-soft">You said “{finding.said}”.</span>
-                {finding.why && <span> {finding.why}</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {unsupported.length > 0 && (
-        <div>
-          {/* A resume line is backed by its number; anything else by its reason. */}
-          <p className="text-2xs text-ink-faint">{resumeLine ? "Claimed, not shown" : "Said, not shown"}</p>
-          <ul className="mt-1 space-y-1 text-sm text-ink-soft">
-            {unsupported.map((claim) => (
-              <li key={claim}>
-                “{claim}” —{" "}
-                {resumeLine
-                  ? "be ready with the number, the baseline and how you measured it."
-                  : "say why it holds, not only that it does."}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {unsupported.map((claim) => (
+        <p key={claim} className="mt-1 text-sm leading-relaxed text-ink-soft">
+          “{claim}” —{" "}
+          {resumeLine
+            ? "be ready with the number, the baseline and how you measured it."
+            : "say why it holds, not only that it does."}
+        </p>
+      ))}
       {contradictions.map((pair) => (
-        <p key={`${pair.why}-${pair.said}`} className="text-sm text-ink-soft">
+        <p key={`${pair.why}-${pair.said}`} className="mt-1 text-sm leading-relaxed text-ink-soft">
           Earlier you said “{pair.why}”{pair.said ? `, then “${pair.said}”` : ""} — those don't fit together.
         </p>
       ))}
-      {corrected && <p className="text-sm text-ink-soft">{corrected}</p>}
-      {question.misconception && (
-        <p className="text-sm text-ink-soft">
-          <span className="text-ink-faint">The idea to revisit:</span> {question.misconception}
-        </p>
-      )}
-      {question.last_time && (
-        <p className="rounded-lg bg-surface-sunken px-3 py-2 text-sm text-ink-soft">{question.last_time}</p>
-      )}
-    </div>
+    </Section>
   );
 }
+
+function QuestionCard({
+  question,
+  index,
+  sessionId,
+  kept,
+  writing,
+}: {
+  question: QuestionReport;
+  index: number;
+  sessionId: string;
+  /** Answers with audio kept (FR-11.19), by turn id. */
+  kept: Set<string>;
+  /** The written explanations are still being written. */
+  writing: boolean;
+}) {
+  const meta = question.status ? STATUS_META[question.status] : null;
+  const firstHeard = question.exchanges.find(
+    (exchange) => exchange.role === "candidate" && exchange.turn_id && kept.has(exchange.turn_id),
+  )?.turn_id;
+  const answer = firstAnswer(question);
+  const answers = question.exchanges.filter((exchange) => exchange.role === "candidate").length;
+  const right = strengths(question);
+  const missed = gaps(question);
+  const fixed = correction(question);
+  const ideal = idealAnswer(question);
+  const steps = nextSteps(question);
+  const conflict = bandConflict(question);
+  const correct = question.status === "correct";
+  const headingId = `question-${index + 1}`;
+  const missedTitle = correct
+    ? "To make it even stronger"
+    : question.status === "unanswered"
+      ? "What the question needed"
+      : "What was missing or incorrect";
+  return (
+    <article
+      aria-labelledby={headingId}
+      className={`mt-4 rounded-2xl border border-l-4 border-line bg-surface p-5 ${meta?.accent ?? "border-l-line"}`}
+    >
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+        {question.status && (
+          <StatusBadge
+            status={question.status}
+            label={question.status_label}
+            qualifier={question.status_qualifier}
+          />
+        )}
+        <span className="text-2xs uppercase tracking-wide text-ink-faint">Question {index + 1}</span>
+        {topicName(question) && <span className="text-2xs text-ink-faint">· {topicName(question)}</span>}
+        {question.asked_by && <span className="text-2xs text-ink-faint">· {question.asked_by}</span>}
+        <span className="ml-auto">
+          <SaveToggle sessionId={sessionId} question={question} />
+        </span>
+      </header>
+      <h3 id={headingId} className="mt-2 text-base font-semibold leading-snug text-ink">
+        {question.question}
+      </h3>
+      {(question.writeup?.headline || question.status_detail) && (
+        <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
+          {question.writeup?.headline || question.status_detail}
+        </p>
+      )}
+      {writing && !question.writeup && question.status && question.status !== "not_reached" && (
+        <p className="mt-1 text-2xs text-ink-faint">Writing a detailed explanation of this answer…</p>
+      )}
+      {conflict && (
+        <p role="note" className="mt-2 rounded-lg border border-line bg-surface-sunken px-3 py-2 text-2xs leading-relaxed text-ink-soft">
+          {conflict}
+        </p>
+      )}
+
+      {answer && (
+        <Section title="Your answer">
+          <blockquote className="turn-candidate whitespace-pre-wrap">{answer}</blockquote>
+          {answers > 1 && (
+            <p className="mt-1 text-2xs text-ink-faint">
+              And {answers - 1} more answer{answers > 2 ? "s" : ""} to follow-ups — in the whole exchange below.
+            </p>
+          )}
+        </Section>
+      )}
+
+      {right.length > 0 && (
+        <Section title="What you got right">
+          <ul className="space-y-2">
+            {right.map((point) => (
+              <li key={point.point} className="flex gap-2 text-sm leading-relaxed text-ink">
+                <span className="mt-0.5 text-confirmed">
+                  <StatusIcon icon="check" />
+                </span>
+                <span>
+                  {point.point}
+                  <Said text={point.evidence} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {missed.length > 0 && (
+        <Section title={missedTitle}>
+          <ul className="space-y-2.5">
+            {missed.map((point) => (
+              <li key={point.point} className="flex gap-2 text-sm leading-relaxed text-ink">
+                <span className={correct ? "mt-0.5 text-reported" : "mt-0.5 text-contested"}>
+                  <StatusIcon icon={correct ? "half" : "cross"} />
+                </span>
+                <span>
+                  {point.point}
+                  <Said text={point.evidence} />
+                  {point.fix && <span className="mt-0.5 block text-sm text-ink">→ {point.fix}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {fixed && !correct && (
+        <Section title="The correct idea">
+          {fixed.wrong && (
+            <p className="text-sm leading-relaxed text-ink-soft">
+              <span className="font-medium text-contested">What went wrong: </span>
+              {fixed.wrong}
+            </p>
+          )}
+          {fixed.right && (
+            <p className="mt-1 text-sm leading-relaxed text-ink">
+              <span className="font-medium text-confirmed">The right reasoning: </span>
+              {fixed.right}
+            </p>
+          )}
+        </Section>
+      )}
+
+      <ClaimFindings question={question} />
+      <KeyPoints question={question} />
+
+      {ideal && (
+        <details open={!correct && question.status !== "not_reached"} className="mt-4 rounded-xl bg-surface-sunken p-3">
+          <summary className="cursor-pointer text-2xs font-semibold uppercase tracking-wide text-ink-soft hover:text-ink">
+            {ideal.source === "written" ? "A model answer" : "One strong answer"}
+            {ideal.source === "unreviewed" ? " · not yet reviewed by a person" : ""}
+            {ideal.source === "written" ? " · written for these notes" : ""}
+          </summary>
+          <p className="mt-2 text-sm leading-relaxed text-ink">{ideal.text}</p>
+          <p className="mt-1 text-2xs text-ink-faint">
+            One way to answer it well — a different correct approach is just as good.
+          </p>
+        </details>
+      )}
+
+      {steps.length > 0 && (
+        <Section title="What to practise next">
+          <ul className="space-y-1.5 text-sm text-ink">
+            {steps.map((line) => (
+              <li key={line} className="flex gap-2">
+                <span aria-hidden className="text-ink-faint">→</span>
+                {line}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {question.last_time && (
+        <p className="mt-4 rounded-lg bg-surface-sunken px-3 py-2 text-sm text-ink-soft">{question.last_time}</p>
+      )}
+      {question.hints_used > 0 && (
+        <p className="mt-2 text-2xs text-ink-faint">
+          You took {question.hints_used} hint{question.hints_used === 1 ? "" : "s"} here.
+        </p>
+      )}
+      {!question.scored && question.not_scored_reason && (
+        <p className="mt-2 text-2xs text-ink-faint">{question.not_scored_reason}</p>
+      )}
+
+      {question.feedback.length > 0 && (
+        // M13's words, never its numbers: the display gate holds those until
+        // they agree with human raters.
+        <details className="mt-4">
+          <summary className="cursor-pointer text-2xs font-medium text-ink-soft hover:text-ink">
+            How the evaluator marked it
+          </summary>
+          <div className="mt-3 space-y-4">
+            {question.feedback.map((item) => {
+              const notYet = missingStatements(item.missing, question.strong_answer_covers);
+              return (
+                <div key={item.dimension} className="space-y-2">
+                  <p>
+                    <span className="rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-2xs font-medium text-ink-soft capitalize">
+                      {item.dimension}
+                    </span>
+                  </p>
+                  {item.reasoning && <p className="text-sm leading-relaxed text-ink">{item.reasoning}</p>}
+                  {item.quotes.map((quote) => (
+                    <blockquote
+                      key={quote}
+                      className="border-l-2 border-brand-line pl-3 text-sm leading-relaxed text-ink-soft"
+                    >
+                      “{quote}”
+                    </blockquote>
+                  ))}
+                  {notYet.length > 0 && (
+                    <p className="text-2xs leading-relaxed text-ink-faint">Not covered yet: {notYet.join(" · ")}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
+
+      {(question.concept_id?.startsWith("concept:") ||
+        (question.turn_id && question.feedback.length > 0) ||
+        firstHeard) && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {firstHeard && <HearIt sessionId={sessionId} turnId={firstHeard} label="Hear your answer" />}
+          {/* A topic the bank asks about. A resume line or the opener is not
+              one — a focus on it plans an empty part; star it instead. */}
+          {question.concept_id?.startsWith("concept:") && (
+            <Link
+              to={`/mock?focus=${encodeURIComponent(question.concept_id)}&label=${encodeURIComponent(topicName(question) ?? "")}`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium text-ink hover:border-brand-line hover:text-brand"
+            >
+              <Icon name="refresh" size={13} />
+              Practise {topicName(question)} again
+            </Link>
+          )}
+          {question.turn_id && question.feedback.length > 0 && (
+            <Link
+              to={`/turns/${question.turn_id}`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-ink-soft hover:bg-surface-sunken hover:text-ink"
+            >
+              How this answer was marked →
+            </Link>
+          )}
+        </div>
+      )}
+
+      <details className="mt-4">
+        <summary className="cursor-pointer text-2xs text-ink-faint hover:text-ink-soft">The whole exchange</summary>
+        {(question.how_it_went ?? []).length > 0 && (
+          // Why each follow-up came — the decisions, in plain words.
+          <ol className="mt-3 list-decimal space-y-1 pl-5 text-2xs text-ink-faint">
+            {(question.how_it_went ?? []).map((step, position) => (
+              <li key={`${position}-${step}`}>{step}</li>
+            ))}
+          </ol>
+        )}
+        <div className="mt-3 space-y-3">
+          {question.exchanges.map((exchange, position) => (
+            <div key={`${position}-${exchange.text.slice(0, 12)}`}>
+              <p
+                className={
+                  exchange.role === "candidate" ? "turn-candidate whitespace-pre-wrap" : "whitespace-pre-wrap text-sm text-ink"
+                }
+              >
+                {exchange.text}
+              </p>
+              {exchange.role === "candidate" && exchange.turn_id && kept.has(exchange.turn_id) && (
+                <HearIt sessionId={sessionId} turnId={exchange.turn_id} />
+              )}
+            </div>
+          ))}
+        </div>
+      </details>
+    </article>
+  );
+}
+
+type Shown = "all" | "work" | "correct";
 
 /** The question's star (2026-10-22): saved to practise again. The
  *  interview's own flag is shown beside it and survives an unstar. */
@@ -370,37 +707,6 @@ function SaveToggle({ sessionId, question }: { sessionId: string; question: Ques
   );
 }
 
-/** The interview in a few lines — built from the questions below. */
-function Summary({ summary }: { summary: ReportSummary }) {
-  const blocks: [string, string[]][] = [
-    ["Held up", summary.held],
-    ["Gaps to work on", summary.gaps],
-    ["Corrected along the way", summary.corrected],
-    ["Came up more than once", summary.repeated_misconceptions],
-    ["Claims to back up", summary.unsupported_claims],
-    ["How each topic went", summary.topics],
-    ["How you said it", summary.communication],
-  ];
-  const shown = blocks.filter(([, lines]) => lines.length > 0);
-  if (!shown.length) return null;
-  return (
-    <section className="mt-5 grid gap-3 sm:grid-cols-2" aria-label="The interview in brief">
-      {shown.map(([title, lines]) => (
-        <div key={title} className="rounded-xl border border-line bg-surface p-4">
-          <p className="text-2xs uppercase tracking-wide text-ink-faint">{title}</p>
-          <ul className="mt-2 space-y-1.5">
-            {lines.map((line) => (
-              <li key={line} className="text-sm leading-relaxed text-ink">
-                {line}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </section>
-  );
-}
-
 function Stat({ value, label }: { value: string | number; label: string }) {
   return (
     <div>
@@ -410,208 +716,12 @@ function Stat({ value, label }: { value: string | number; label: string }) {
   );
 }
 
-function QuestionBlock({
-  question,
-  index,
-  sessionId,
-  kept,
-}: {
-  question: QuestionReport;
-  index: number;
-  sessionId: string;
-  /** Answers with audio kept (FR-11.19), by turn id. */
-  kept: Set<string>;
-}) {
-  const firstHeard = question.exchanges.find(
-    (exchange) => exchange.role === "candidate" && exchange.turn_id && kept.has(exchange.turn_id),
-  )?.turn_id;
-  return (
-    <section className="border-b border-line py-6 last:border-0">
-      <p className="flex flex-wrap items-center gap-2 text-2xs text-ink-faint">
-        <span className="uppercase tracking-wide">Question {index + 1}</span>
-        {question.asked_by && <span>· {question.asked_by}</span>}
-        {question.outcome_words && <span>· {question.outcome_words}</span>}
-        <span className="ml-auto">
-          <SaveToggle sessionId={sessionId} question={question} />
-        </span>
-        {bandOf(question) && (
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-semibold text-ink ${BAND_STYLE[bandOf(question)!]}`}
-            title="The share of a strong answer's key points your answer reached"
-          >
-            <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${BAND_DOT[bandOf(question)!]}`} />
-            {ANSWER_BAND_LABEL[bandOf(question)!]}
-          </span>
-        )}
-      </p>
-      <h2 className="mt-1 text-base font-semibold leading-snug text-ink">
-        {question.question}
-      </h2>
-      <p className="mt-2 text-sm text-ink-soft">{depthSentence(question)}</p>
-
-      {question.hints_used > 0 && (
-        <p className="mt-1 text-2xs text-ink-faint">
-          You took {question.hints_used} hint
-          {question.hints_used === 1 ? "" : "s"} here.
-        </p>
-      )}
-
-      <Found question={question} />
-
-      {question.feedback.length > 0 && (
-        // M13's words, never its numbers: the display gate holds those until
-        // they agree with human raters.
-        <div className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-4">
-          <p className="text-2xs uppercase tracking-wide text-ink-faint">
-            What the evaluator noticed
-          </p>
-          {question.feedback.map((item) => {
-            const notYet = missingStatements(item.missing, question.strong_answer_covers);
-            return (
-              <div key={item.dimension} className="space-y-2 pt-1">
-                <p>
-                  <span className="rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-2xs font-medium text-ink-soft capitalize">
-                    {item.dimension}
-                  </span>
-                </p>
-                {item.reasoning && (
-                  <p className="text-sm leading-relaxed text-ink">{item.reasoning}</p>
-                )}
-                {item.quotes.map((quote) => (
-                  <blockquote
-                    key={quote}
-                    className="border-l-2 border-brand-line pl-3 text-sm leading-relaxed text-ink-soft"
-                  >
-                    “{quote}”
-                  </blockquote>
-                ))}
-                {notYet.length > 0 && (
-                  <p className="text-2xs leading-relaxed text-ink-faint">
-                    Not covered yet: {notYet.join(" · ")}
-                  </p>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {!question.scored && question.not_scored_reason && (
-        <p className="mt-2 text-2xs text-ink-faint">
-          {question.not_scored_reason}
-        </p>
-      )}
-
-      {question.strong_answer_covers.length > 0 && (
-        <div className="mt-4 rounded-xl border border-confirmed-line bg-confirmed-soft p-4">
-          <p className="text-2xs uppercase tracking-wide text-ink-faint">
-            What a strong answer covers
-          </p>
-          <ul className="mt-2 space-y-1.5 text-sm text-ink">
-            {question.strong_answer_covers.map((point) => (
-              <li key={point} className="flex gap-2">
-                <span aria-hidden className="text-confirmed">✓</span>
-                {point}
-              </li>
-            ))}
-          </ul>
-          {question.one_strong_answer && (
-            // *A* good answer, not the only one — said so, because a valid
-            // alternative is still right (M13's rule 3).
-            <details className="mt-3">
-              <summary className="cursor-pointer text-2xs font-medium text-ink-soft hover:text-ink">
-                One strong answer
-                {question.strong_answer_reviewed === false ? " (not yet reviewed by a person)" : ""}
-              </summary>
-              <p className="mt-2 text-sm leading-relaxed text-ink">{question.one_strong_answer}</p>
-              <p className="mt-1 text-2xs text-ink-faint">
-                One way to answer it well — a different correct approach is just as good.
-              </p>
-            </details>
-          )}
-        </div>
-      )}
-
-      {(question.study ?? []).length > 0 && (
-        <div className="mt-4">
-          <p className="text-2xs uppercase tracking-wide text-ink-faint">What to practise next</p>
-          <ul className="mt-2 space-y-1.5 text-sm text-ink">
-            {(question.study ?? []).map((line) => (
-              <li key={line} className="flex gap-2">
-                <span aria-hidden className="text-ink-faint">→</span>
-                {line}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {(question.concept_id?.startsWith("concept:") ||
-        (question.turn_id && question.feedback.length > 0) ||
-        firstHeard) && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {firstHeard && <HearIt sessionId={sessionId} turnId={firstHeard} label="Hear your answer" />}
-          {/* A topic the bank asks about. A resume line or the opener is not
-              one — a focus on it plans an empty part; star it instead. */}
-          {question.concept_id?.startsWith("concept:") && (
-            <Link
-              to={`/mock?focus=${encodeURIComponent(question.concept_id)}&label=${encodeURIComponent(topicName(question) ?? "")}`}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium text-ink hover:border-brand-line hover:text-brand"
-            >
-              <Icon name="refresh" size={13} />
-              Practise {topicName(question)} again
-            </Link>
-          )}
-          {question.turn_id && question.feedback.length > 0 && (
-            <Link
-              to={`/turns/${question.turn_id}`}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-ink-soft hover:bg-surface-sunken hover:text-ink"
-            >
-              How this answer was marked →
-            </Link>
-          )}
-        </div>
-      )}
-
-      <details className="mt-4">
-        <summary className="cursor-pointer text-2xs text-ink-faint hover:text-ink-soft">
-          The exchange
-        </summary>
-        {(question.how_it_went ?? []).length > 0 && (
-          // Why each follow-up came — the decisions, in plain words.
-          <ol className="mt-3 list-decimal space-y-1 pl-5 text-2xs text-ink-faint">
-            {(question.how_it_went ?? []).map((step, position) => (
-              <li key={`${position}-${step}`}>{step}</li>
-            ))}
-          </ol>
-        )}
-        <div className="mt-3 space-y-3">
-          {question.exchanges.map((exchange, position) => (
-            <div key={`${position}-${exchange.text.slice(0, 12)}`}>
-              <p
-                className={
-                  exchange.role === "candidate"
-                    ? "turn-candidate whitespace-pre-wrap"
-                    : "whitespace-pre-wrap text-sm text-ink"
-                }
-              >
-                {exchange.text}
-              </p>
-              {exchange.role === "candidate" && exchange.turn_id && kept.has(exchange.turn_id) && (
-                <HearIt sessionId={sessionId} turnId={exchange.turn_id} />
-              )}
-            </div>
-          ))}
-        </div>
-      </details>
-    </section>
-  );
-}
-
 export function SessionNotes({ sessionId }: { sessionId: string }) {
   const report = useReport(sessionId);
+  const client = useQueryClient();
   const keptList = useKept(sessionId);
   const kept = new Set((keptList.data ?? []).map((answer) => answer.turn_id));
+  const [shown, setShown] = useState<Shown>("all");
 
   if (report.isLoading) {
     return (
@@ -624,19 +734,33 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
     return (
       <ErrorNote
         message="Those notes could not be loaded."
-        detail={
-          report.error instanceof Error ? report.error.message : undefined
-        }
+        detail={report.error instanceof Error ? report.error.message : undefined}
         onRetry={() => report.refetch()}
       />
     );
   }
 
   const data = report.data;
-  const followUps = data.questions.reduce((sum, q) => sum + (q.depth_reached ?? 0), 0);
   const hints = data.questions.reduce((sum, q) => sum + (q.hints_used ?? 0), 0);
-  const minutes =
-    data.minutes_used < 1 ? "<1" : String(Math.round(data.minutes_used));
+  const minutes = data.minutes_used < 1 ? "<1" : String(Math.round(data.minutes_used));
+  // The page stops asking after WRITEUP_POLL_MAX polls; past that, "Writing…"
+  // would be a promise nothing is keeping, so it says so and offers a check.
+  // Reading `dataUpdatedAt` is what re-renders the page on every poll: React
+  // Query re-renders only for what a component reads, and an answer identical
+  // to the last (still pending, nothing new written) changes nothing else.
+  const updates = report.dataUpdatedAt
+    ? (client.getQueryState(m06Keys.report(sessionId))?.dataUpdateCount ?? 0)
+    : 0;
+  const stalled = data.writeups === "pending" && updates >= WRITEUP_POLL_MAX;
+  const writing = data.writeups === "pending" && !stalled;
+  const judged = data.questions.some((q) => q.status);
+  const work = data.questions.filter(needsWork).length;
+  const right = data.questions.filter((q) => q.status === "correct").length;
+  const visible = data.questions
+    .map((question, index) => ({ question, index }))
+    .filter(({ question }) =>
+      shown === "all" ? true : shown === "work" ? needsWork(question) : question.status === "correct",
+    );
 
   return (
     <div className="mx-auto max-w-(--container-conversation)">
@@ -648,15 +772,10 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
         <p className="relative inline-flex items-center gap-1.5 rounded-full border border-confirmed-line bg-confirmed-soft px-2.5 py-1 text-2xs font-medium text-confirmed">
           ✓ {data.kind === "drill" ? "Drill complete" : "Session complete"}
         </p>
-        <h1 className="relative mt-3 text-3xl font-semibold tracking-tight text-ink">
-          Your notes
-        </h1>
-        <p className="relative mt-2 text-sm leading-relaxed text-ink-soft">
-          {data.framing}
-        </p>
-        <div className="relative mt-5 grid grid-cols-2 gap-4 border-t border-line pt-5 sm:grid-cols-4">
+        <h1 className="relative mt-3 text-3xl font-semibold tracking-tight text-ink">Your notes</h1>
+        <p className="relative mt-2 text-sm leading-relaxed text-ink-soft">{data.framing}</p>
+        <div className="relative mt-5 grid grid-cols-3 gap-4 border-t border-line pt-5">
           <Stat value={data.questions.length} label={data.questions.length === 1 ? "question" : "questions"} />
-          <Stat value={followUps} label="follow-ups you held" />
           <Stat value={`${minutes}/${data.minutes_planned}`} label="minutes" />
           <Stat value={hints} label={hints === 1 ? "hint taken" : "hints taken"} />
         </div>
@@ -677,7 +796,8 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
         </div>
       </header>
 
-      {data.summary && <Summary summary={data.summary} />}
+      <Overview data={data} />
+      {data.summary && <More summary={data.summary} />}
 
       {data.notes.length > 0 && (
         <ul className="mt-5 space-y-1.5 rounded-lg border border-line bg-surface p-4">
@@ -689,41 +809,86 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
         </ul>
       )}
 
-      <div className="mt-2">
+      <p aria-live="polite" className="mt-4 text-2xs text-ink-faint">
+        {writing
+          ? "Writing a detailed explanation of each answer — they appear here as they are ready."
+          : stalled
+            ? "The detailed explanations are taking longer than usual. Until they arrive, each answer shows what the interview recorded."
+            : data.writeups === "partial"
+              ? "Some answers could not be explained in detail; those show what the interview recorded."
+              : ""}
+        {stalled && (
+          <button
+            type="button"
+            onClick={() => report.refetch()}
+            className="ml-2 font-medium text-brand hover:underline"
+          >
+            Check again
+          </button>
+        )}
+      </p>
+
+      <section aria-labelledby="questions-title" className="mt-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 id="questions-title" className="mr-auto text-sm font-semibold text-ink">
+            Question by question
+          </h2>
+          {judged && data.questions.length > 1 && (
+            <div role="group" aria-label="Show" className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  ["all", `All ${data.questions.length}`],
+                  ["work", `Needs work ${work}`],
+                  ["correct", `Correct ${right}`],
+                ] as [Shown, string][]
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={shown === value}
+                  onClick={() => setShown(value)}
+                  className={`h-8 rounded-lg border px-3 text-xs font-medium ${
+                    shown === value ? "border-brand-line bg-brand-soft text-brand" : "border-line text-ink-soft hover:text-ink"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         {data.questions.length === 0 ? (
           <div className="mt-6">
             <EmptyState title="No questions were asked" icon="clock">
-              Nothing was asked before this session ended, so there is nothing
-              to look back at. Starting another takes a few seconds.
+              Nothing was asked before this session ended, so there is nothing to look back at. Starting
+              another takes a few seconds.
             </EmptyState>
           </div>
+        ) : visible.length === 0 ? (
+          <p className="mt-4 rounded-lg border border-line bg-surface p-4 text-sm text-ink-soft">
+            {shown === "work" ? "Nothing here needs work — every answer held." : "No answer was fully correct this time."}
+          </p>
         ) : (
-          data.questions.map((question, index) => (
-            <QuestionBlock
+          visible.map(({ question, index }) => (
+            <QuestionCard
               key={index}
               question={question}
               index={index}
               sessionId={sessionId}
               kept={kept}
+              writing={writing}
             />
           ))
         )}
-      </div>
+      </section>
 
       {data.plan_changes.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-sm font-semibold text-ink">
-            How the plan changed
-          </h2>
-          <p className="mt-1 text-2xs text-ink-faint">
-            During the session you saw only what changed. This is why.
-          </p>
+          <h2 className="text-sm font-semibold text-ink">How the plan changed</h2>
+          <p className="mt-1 text-2xs text-ink-faint">During the session you saw only what changed. This is why.</p>
           <ul className="mt-3 space-y-2">
             {data.plan_changes.map((change) => (
-              <li
-                key={change}
-                className="text-sm leading-relaxed text-ink-soft"
-              >
+              <li key={change} className="text-sm leading-relaxed text-ink-soft">
                 {change}
               </li>
             ))}
@@ -733,15 +898,10 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
 
       {data.your_questions.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-sm font-semibold text-ink">
-            Your questions for the interviewer
-          </h2>
+          <h2 className="text-sm font-semibold text-ink">Your questions for the interviewer</h2>
           <ul className="mt-3 space-y-2">
             {data.your_questions.map((asked, position) => (
-              <li
-                key={`${position}-${asked.slice(0, 12)}`}
-                className="turn-candidate whitespace-pre-wrap"
-              >
+              <li key={`${position}-${asked.slice(0, 12)}`} className="turn-candidate whitespace-pre-wrap">
                 {asked}
               </li>
             ))}
@@ -751,13 +911,12 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
 
       <footer className="mt-8 space-y-3">
         <Card title="About these notes">
-          <p className="text-sm leading-relaxed text-ink-soft">
-            {data.persona_note}
-          </p>
+          <p className="text-sm leading-relaxed text-ink-soft">{data.persona_note}</p>
           <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-            The band on each answer is the share of a strong answer's key points
-            it reached. The evaluator never sees who you are, and its numbers
-            stay hidden until they agree with human raters.
+            Each answer's status is the interview's judgement of the whole conversation on that question.
+            The detailed explanations are written by a language model after the session and are checked
+            against your own words before they are shown. The evaluator never sees who you are, and its
+            numbers stay hidden until they agree with human raters.
           </p>
           {kept.size > 0 && <KeptAnswers sessionId={sessionId} count={kept.size} />}
         </Card>
