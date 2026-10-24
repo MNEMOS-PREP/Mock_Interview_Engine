@@ -1,6 +1,6 @@
 # M06 — TODO · Mock Interview Engine
 
-> **Completion: 87%** — 20 of 26 functional requirements met, 5 partially. **Days 1–15 of 15 are done — the build order is complete**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since 2026-10-23 **the interviewer judges an answer before it speaks**: a wrong answer is challenged in the student's own words, difficulty moves per topic and only for the interview, a question that asks two things is asked one at a time, every decision says why, and the notes quote what was said ([the report](M06_OVERHAUL.md)). Since day 15 **the build order is finished and what is left is named**: what waits on another module, what waits on a person (human evaluation, round 1, prepared), and what M06 still owes itself. Since day 14 **the full chain runs live with M04's guard on** — five real services, the real model, a student's answers reaching M13 and moving M04's skill graph — and a scripted student drives twenty sessions across the four modes on every run of the suite. Since day 13 **every route has a screen** — or a named caller — and a gate fails the build the day one does not; the setup offers the four modes and honours a job description handed over, the preview says who runs each part, and §7's last three routes exist. Since day 12 **a session degrades instead of breaking**: a failing model is noticed turn by turn, the session wraps up early and then stops asking it, and if everything fails the student gets an apology and an honest record rather than a spinner. The notes now carry M13's own words about each answer — never its numbers. Since day 11 **a session survives the student leaving**: the clock stops while their stage is gone, they come back to "we were on question 2 of Data structures", silence gets a prompt rather than a stare, and the spec's five chaos scenarios pass with nothing done twice. Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
+> **Completion: 87%** — 20 of 26 functional requirements met, 5 partially. **Days 1–15 of 15 are done — the build order is complete**, plus two pieces pulled forward out of days 9 and 11 because they were shipped-today defects rather than missing features (see below). Since 2026-10-24 **the notes say how each answer went**: correct, partly correct, too vague, incorrect or not answered — decided by the interview, never by a model — and each answer is explained in the student's own words, checked before it is shown ([the report](M06_NOTES.md)). Since 2026-10-23 **the interviewer judges an answer before it speaks**: a wrong answer is challenged in the student's own words, difficulty moves per topic and only for the interview, a question that asks two things is asked one at a time, every decision says why, and the notes quote what was said ([the report](M06_OVERHAUL.md)). Since day 15 **the build order is finished and what is left is named**: what waits on another module, what waits on a person (human evaluation, round 1, prepared), and what M06 still owes itself. Since day 14 **the full chain runs live with M04's guard on** — five real services, the real model, a student's answers reaching M13 and moving M04's skill graph — and a scripted student drives twenty sessions across the four modes on every run of the suite. Since day 13 **every route has a screen** — or a named caller — and a gate fails the build the day one does not; the setup offers the four modes and honours a job description handed over, the preview says who runs each part, and §7's last three routes exist. Since day 12 **a session degrades instead of breaking**: a failing model is noticed turn by turn, the session wraps up early and then stops asking it, and if everything fails the student gets an apology and an honest record rather than a spinner. The notes now carry M13's own words about each answer — never its numbers. Since day 11 **a session survives the student leaving**: the clock stops while their stage is gone, they come back to "we were on question 2 of Data structures", silence gets a prompt rather than a stare, and the spec's five chaos scenarios pass with nothing done twice. Since day 10 **a session keeps time like an interviewer**: it narrows at 70%, hands over to the closing at 90%, holds Final Boss to its clock, re-plans at most twice from what it saw, and the closing is where the student asks. Since day 9 **a mock is a panel**: seven personas as data, four modes as one table, and a guard that reads what the student sends as well as what the interviewer says. On 2026-09-20 **the platform's core loop closed for the first time**: a student consents (M04), is asked a question from M05's bank, answers it in M06, M13 scores the answer, and M04's skill graph moves — Hashing and Time Complexity to `emerging`, with the evidence resolving to the student's own sentence. Six backends and the shell, running together, through one origin on `:5173`. Since day 5 the **mock** path runs on M02's real plan rather than a stub: rounds that are named, priced, previewed, droppable, and that end and begin out loud. The **defend drill** path runs whole.
 >
 > Met: plan assembly over M02 (FR-6.1) and its preview (FR-6.2), segments with a persona each (FR-6.3), the probe ladder and break depths (FR-6.5, 6.6), hints at a published price (FR-6.7), modes as configs (FR-6.8), pause (FR-6.12), reconnect and resume (FR-6.13), evaluation off the hot path (FR-6.14), the interviewer's blind view (FR-6.15), fixed context (FR-6.16), a report for every session (FR-6.18), re-planning (FR-6.4), Final Boss (FR-6.9), pacing and the reserved closing (FR-6.17), the drill (FR-6.23), the M02 ledger (FR-6.24), the M05 θ seam (FR-6.25), identity (FR-6.26).
 >
@@ -19,7 +19,7 @@ Task list for taking **M6 — Mock Interview Engine** to 100% of [M06_Mock_Inter
 
 - **Phase:** 1–2 · **Owner:** E2 · **Ports:** API `8106`, web `5206`
 - **Repo:** `Mock_Interview_Engine` — on disk at `projects\Mock_Interview_Engine` (the folder must equal the repo name, or `launch.ps1` skips it)
-- **Platform_Core:** v0.12.0 on the backend (since 2026-10-03), v0.37.0 on the frontend (since 2026-10-14). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
+- **Platform_Core:** v0.40.0 on the backend (since 2026-10-24: the `writing` tier the notes are written on), v0.39.0 on the frontend (since 2026-10-21). The router guard is `ai_core.guard`'s; the two staff routes are `require_role(admin)`; M05 and M04 are asked as a module with `ai_core.service`; who the browser is comes from `@ai/core`'s session
 
 Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked on another module
 
@@ -44,7 +44,8 @@ _Nothing scouted for this module yet._
 | | |
 |---|---|
 | Status | **Days 1–15 of 15 done — the build order is complete.** A mock interview is planned from a real job description and the student's resume, run by a panel of personas across M02, M04, M05, M06 and M13, and reaches the skill graph; mounted in Platform_Shell on one origin. |
-| Backend tests passing | **705**, no socket opened, no API key (counted 2026-10-23) |
+| Backend tests passing | **748**, no socket opened, no API key (counted 2026-10-24) |
+| Frontend tests passing | **30** (`npm test`: vitest + Testing Library on jsdom, since 2026-10-24) |
 | Release gates (`-m gate`) | **82** |
 | Route decorators | **45** on `/v1`, plus `/health` and `/status` |
 | Lint | `ruff check` and `ruff format --check` clean; frontend `tsc` clean |
@@ -1084,6 +1085,47 @@ The user sat interviews and listed what felt wrong. Each item, as fixed:
   goodbye. An unknown track id is refused with a 422.
 - ✅ The notes call a resume question and a backup question what they are
   (`e8b02aa`).
+
+### 2026-10-24 — notes a student can trust: the user's 8-section brief
+
+A correct, a vague and a wrong answer looked alike in the notes. The full
+report — root causes, the model comparison, twelve bugs with their tests, the
+security review — is [M06_NOTES.md](M06_NOTES.md). Platform_Core `5682d0d`
+(v0.40.0); this repo; Platform_Shell.
+
+- ✅ **One status per question** (`report._status`): correct, partial,
+  vague, incorrect, unanswered, unsupported, not judged, not reached — from
+  how the interview left the question and every judged answer in the thread.
+  Code decides it; no model can change it.
+- ✅ **Each answer explained** (`notes_writer.py`): what held (quoted), what was
+  missing or wrong (with a fix), the misconception and the right reasoning,
+  a model answer, next steps. Checked before it is shown (quotes are the
+  student's, no praise for a wrong answer, a correction for an incorrect one,
+  no generic advice), stored per question by brief hash, written after the
+  session, polled by the page.
+- ✅ **The writing tier on NVIDIA NIM**, chosen by measurement
+  (`Backend/research/notes_models/RESULTS.md`): minimax-m3.1-flash, Groq
+  gpt-oss-120b as the fallback; after one failure a run skips NIM. Live: 4
+  write-ups in 45–50 s; a refused key and a 429 both fell back at once.
+- ✅ **The page rebuilt around the status**: colour + shape + word per
+  status, the student's answer first, the rubric marked ✓ / ✕ / – in a neutral
+  frame, a distribution (never a score), what to work on first, filters. The
+  shell's My answers and Today show the same badge.
+- ✅ **Found by the audit and live runs, fixed with tests**: the rubric
+  un-covering what an earlier answer reached (last answer's list won); a
+  missed key point listed twice; "Writing…" kept after polling stopped; a
+  hanging NIM costing 90 s per question; an ai_core without the tier taking
+  every model job down; a `not_judged` answer sent to the writer; background
+  calls on the hot-path pool; fenced JSON refused; one quote under every gap.
+- ✅ **Frontend tests exist**: vitest 4.1.12 (3.2.x carried critical
+  advisories), Testing Library, jsdom — 30 tests of the states and rules.
+- ⬜ **"Incorrect" beside a full ✓ rubric** — a story that covered every
+  point, then a wrong idea in a follow-up. The user agreed (2026-10-24) to a
+  label like "Incorrect in a follow-up"; next.
+- ⬜ **Rotate the NVIDIA key** — pasted in a chat; the user's to do.
+- ⬜ **NIM's free tier throttles** at about ten calls in two minutes, so a
+  cohort's notes would mostly come from Groq: pace a queue or pay for NIM.
+- ⬜ **Notes rated by people** — the checks are necessary, not sufficient.
 
 ### 2026-10-22/23 — the realism overhaul: the user's 19-section brief
 
