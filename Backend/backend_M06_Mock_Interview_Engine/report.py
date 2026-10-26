@@ -569,7 +569,11 @@ def _summary(
     )
     for q in questions:
         label = _label(q)
-        if q.outcome in ("held", "ceiling") or (q.went_well and not q.went_wrong and not q.outcome):
+        # "Held up" is what the status calls correct (2026-10-26). By outcome
+        # alone, an answer that held but left part of a strong answer out
+        # ("Mostly correct") sat under "Held up" and under "Work on these
+        # first" on the same page.
+        if q.status == "correct":
             out.held.append(label)
         elif q.outcome in memory_difficult():
             gap = f"{label}: {(q.outcome_words or q.outcome or '').lower()}"

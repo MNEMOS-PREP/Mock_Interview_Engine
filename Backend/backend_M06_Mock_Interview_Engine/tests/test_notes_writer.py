@@ -91,6 +91,14 @@ def test_a_real_quote_survives_punctuation_and_case():
     assert writeup.gaps[0].evidence == "It is O(N squared)"
 
 
+def test_a_quote_is_whole_words_of_theirs():
+    """A fragment of a word they said is not their words."""
+    assert notes_writer.quoted("O(n squared)", SAID)
+    assert not notes_writer.quoted("squ", SAID)
+    assert not notes_writer.quoted("sort", "I used quicksort on the array.")
+    assert not notes_writer.quoted("ash map", "I put it in a hash map.")
+
+
 def test_a_wrong_answer_is_never_praised():
     raw = {**EXPLAINED, "headline": "Great answer, just a small slip on the complexity."}
     writeup, problems = notes_writer.check(raw, question("incorrect"))

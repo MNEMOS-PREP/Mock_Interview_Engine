@@ -134,9 +134,10 @@ def said(question: QuestionReport) -> str:
 
 def quoted(evidence: str, spoken: str) -> bool:
     """Whether `evidence` is the student's own words (punctuation and case
-    aside) — the test an invented quote fails."""
+    aside) — the test an invented quote fails. Whole words: "sort" is not a
+    quote of "I used quicksort", nor "ash map" of "hash map"."""
     needle = _norm(evidence)
-    return bool(needle) and needle in _norm(spoken)
+    return bool(needle) and f" {needle} " in f" {_norm(spoken)} "
 
 
 def brief(question: QuestionReport) -> str:

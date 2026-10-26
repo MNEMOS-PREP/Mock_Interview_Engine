@@ -174,6 +174,23 @@ def test_the_summary_counts_the_statuses_and_puts_the_worst_first(db):
     assert built.summary.focus and built.summary.focus[0].endswith("— incorrect")
 
 
+def test_held_up_is_only_what_the_status_calls_correct():
+    """An answer that held but left part of a strong answer out is "Mostly
+    correct": it is something to work on, so it is not listed as held too."""
+    from types import SimpleNamespace
+
+    def q(topic, status, label):
+        return report.QuestionReport(
+            question=f"About {topic}?", source="m05_bank", scored=True, topic=topic,
+            outcome="held", status=status, status_label=label,
+        )  # fmt: skip
+
+    mostly, right = q("Stacks", "partial", "Mostly correct"), q("Queues", "correct", "Correct")
+    summary = report._summary(SimpleNamespace(topics={}), [mostly, right])
+    assert summary.held == ["Queues"]
+    assert summary.focus == ["Stacks — mostly correct"]
+
+
 def test_every_status_has_a_label_and_a_place_in_the_order():
     assert set(report.FOCUS_ORDER) <= set(report.STATUSES)
     assert len(set(report.STATUSES)) == len(report.STATUSES)
