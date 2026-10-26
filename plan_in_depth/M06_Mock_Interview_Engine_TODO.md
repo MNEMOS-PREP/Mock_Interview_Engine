@@ -25,6 +25,20 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked on anothe
 
 ---
 
+### 2026-10-26 — two notes defects from the bug sweep (`7fd06ab`)
+
+- ✅ **"Held up" is what the status calls correct.** A held answer that left part
+  of a strong answer out is "Mostly correct" (status `partial`, since 10-24),
+  but the summary still listed it by outcome under "Held up" while "Work on
+  these first" listed it too — one question on both sides of the page.
+- ✅ **A write-up's quote is whole words of the student's.** After punctuation
+  was stripped any substring passed: "sort" as a quote of "I used quicksort".
+- 🟡 **Seen, owned elsewhere:** M06's timestamps leave the API without a zone
+  (SQLite hands them back naive), so a browser read them as local time — a
+  1 a.m. interview counted for the day before. Fixed where they are read
+  (Platform_Core v0.41.0 `instant()`, the shell's streak); the platform-wide
+  producer fix is PLATFORM_TODO §3. 752 tests.
+
 ## 0. Ideas and scouting
 
 Things worth building that did not come from the spec — usually from reading
