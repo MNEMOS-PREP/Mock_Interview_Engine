@@ -43,6 +43,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from ..clarify import _STOP, _TOKEN, _same_stem
 from ..llm import JOB_GUARD, LLM, LLMResult
 from ..phrasebook import RUDE, TELEGRAPHS
 
@@ -189,6 +190,51 @@ def leaks(text: str, answer_key: list[str], allowed: list[str]) -> str | None:
         key -= _grams(source)
     found = _grams(text) & key
     return " ".join(sorted(found)[0]) if found else None
+
+
+def names_a_point(text: str, points: list[str], allowed: list[str]) -> str | None:
+    """The terms of a key point a line names in its own words, if any.
+
+    Five words in a row is not the only way to give a point away. Live
+    (2026-10-29): "What assumptions about the hash function's distribution and
+    the table's load factor…" named the very point the student had missed —
+    "Names uniform distribution or a bounded load factor as a condition" —
+    with no run of it at all. Only words neither the question nor the student
+    has said count, compared by stem, and a line names a point when it says
+    two of them together as the point does ("load factor", "relative order"),
+    or three at least that are half the point. A scenario ("what decides
+    which bucket a key goes to?") shares a word or two, apart."""
+    said = [w for source in allowed for w in _terms(source)]
+    line = _terms(text)
+    together = list(zip(line, line[1:], strict=False))
+
+    def new(word: str) -> bool:
+        return not any(_same_stem(word, other) for other in said)
+
+    for point in points:
+        words = _terms(point, rubric=True)
+        for a, b in zip(words, words[1:], strict=False):
+            if new(a) and new(b) and any(
+                _same_stem(a, x) and _same_stem(b, y) for x, y in together
+            ):
+                return f"{a} {b}"
+        terms: list[str] = []
+        for word in words:
+            if new(word) and not any(_same_stem(word, t) for t in terms):
+                terms.append(word)
+        hit = [t for t in terms if any(_same_stem(t, w) for w in line)]
+        if len(hit) >= max(3, -(-len(terms) // 2)):
+            return " ".join(hit)
+    return None
+
+
+def _terms(text: str, *, rubric: bool = False) -> list[str]:
+    tokens = _TOKEN.findall(text)
+    if rubric and tokens and tokens[0][:1].isupper() and tokens[0].lower().endswith("s"):
+        # "Names …", "States that …": the rubric's verb, not the point.
+        tokens = tokens[1:]
+    words = (t.lower().removesuffix("'s").strip("'-") for t in tokens)
+    return [w for w in words if len(w) >= 3 and w not in _STOP]
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -351,6 +397,7 @@ __all__ = [
     "INJECTION_THRESHOLD",
     "LEAK_RUN",
     "leaks",
+    "names_a_point",
     "PERSONAL",
     "REMOVED",
     "AnswerScreen",

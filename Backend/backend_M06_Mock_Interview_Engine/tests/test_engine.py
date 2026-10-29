@@ -260,7 +260,7 @@ def test_model_calls_are_recorded_for_the_trace(db):
     jobs = sorted(c.job for c in calls)
     assert jobs == ["interviewer_phrasing", "probe_strategist"]
     strategist = next(c for c in calls if c.job == "probe_strategist")
-    assert strategist.prompt_version == "strategist-5"
+    assert strategist.prompt_version == "strategist-6"
     assert strategist.reasoning_tokens == 20
     assert strategist.cached_tokens is None
 

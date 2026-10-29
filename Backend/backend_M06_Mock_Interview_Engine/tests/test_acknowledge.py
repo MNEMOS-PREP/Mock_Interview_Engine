@@ -100,6 +100,33 @@ def test_whoever_sat_in_is_thanked_once_then_once_more_at_the_close(db):
     closing = next(t for t in asked(state) if t.question_source == "closing")
     assert thanks in closing.text, "once more at the end"
     assert sum(thanks in t.text for t in asked(state)) == 2, [t.text for t in asked(state)]
+    # The walkthrough, 2026-10-29: "Thanks, Meera. Nicely put." praised Meera,
+    # and "Thanks, Meera.  We're close to time" had two spaces.
+    credit = persona(lead).credit
+    for turn in asked(state):
+        assert "  " not in turn.text, turn.text
+        if thanks in turn.text:
+            after = turn.text.split(thanks, 1)[1].strip()
+            assert not any(after.startswith(word) for word in credit), turn.text
+
+
+def test_lines_said_in_turn_have_one_space_and_none_empty():
+    from backend_M06_Mock_Interview_Engine.orchestration.graph import _said_in_turn
+
+    assert _said_in_turn("", "Thanks, Meera. ", "", "We're close to time.") == (
+        "Thanks, Meera. We're close to time."
+    )
+    assert _said_in_turn("Nicely put.", "Thanks, Meera. ", "Next one.") == (
+        "Nicely put. Thanks, Meera. Next one."
+    )
+
+
+def test_the_pace_line_says_a_minute_not_1_minutes():
+    from backend_M06_Mock_Interview_Engine.phrasebook import LINES
+
+    for register, said in LINES.items():
+        assert "a minute left" in said.pace_note.format(minutes="a minute"), register
+        assert "3 minutes left" in said.pace_focus.format(minutes="3 minutes", topic="SQL")
 
 
 def test_after_an_answer_that_counted_the_next_question_opens_with_the_word(db, monkeypatch):

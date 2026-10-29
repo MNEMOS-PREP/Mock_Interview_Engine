@@ -203,3 +203,52 @@ def test_a_vague_attempt_then_i_dont_know_is_vague_not_unanswered(db):
         db, VAGUE, VAGUE, answers=["It is efficient.", "Fast.", "I don't know.", "I don't know."]
     )
     assert q.status == "vague"
+
+
+def test_a_vague_follow_up_does_not_mark_missed_points_covered(db):
+    """Live walkthrough, 2026-10-29, the hash-map question: a partial first
+    answer, then "Honestly I'm not sure... a good hash function?" — judged
+    vague with nothing listed missing — then "I don't know". The intersection
+    of misses came out empty and the checklist marked ✓ the very points the
+    write-up said were omitted. A vague reply reaches nothing."""
+    vague_empty = verdict(category="vague", key_points_missing=[])
+    q = first(
+        db,
+        PARTIAL,
+        vague_empty,
+        vague_empty,
+        answers=["Linear, one pass.", "Not sure, it is just efficient?", "I don't know."],
+    )
+    assert [p.covered for p in q.key_points] == [True, False]
+    missed = q.key_points[1].statement
+    assert any(missed in line for line in q.study) or q.study, q.study
+
+
+def test_incomplete_with_nothing_named_missing_marks_no_point_either_way(db):
+    """Live, 2026-10-29: correct_incomplete came back with an empty list of
+    misses, twice. Crediting every point would tick what the write-up says
+    was left out; ✕ on every point would cross out what it quotes as right.
+    Until M13 judges, the checklist does not guess."""
+    unnamed = verdict(category="correct_incomplete", key_points_missing=[])
+    q = first(db, unnamed, unnamed, answers=["Linear, one pass.", "Yes, linear."])
+    assert q.status == "partial"
+    assert [p.covered for p in q.key_points] == [None, None]
+    # A later answer that reaches everything settles it.
+    q = first(db, unnamed, RIGHT, answers=["Linear.", "One pass, constant work."])
+    assert [p.covered for p in q.key_points] == [True, True]
+
+
+def test_m13s_judgement_decides_the_checklist_when_it_has_scored():
+    """One judgement for the write-up and the checklist: they cannot disagree."""
+    feedback = [
+        report.Feedback(dimension="correctness", missing=["kp2", "kp3"]),
+        report.Feedback(dimension="communication", missing=[]),
+    ]
+    assert report._checklist_missed(feedback, ["kp1", "kp2", "kp3"], {"kp1", "kp2", "kp3"}) == [
+        "kp2",
+        "kp3",
+    ]
+    # Before M13 answers: what no content-bearing answer reached.
+    assert report._checklist_missed([], ["kp1", "kp2"], {"kp1"}) == ["kp2"]
+    # Nothing judged the content: unknown, not a guess either way.
+    assert report._checklist_missed([], ["kp1", "kp2"], None) is None

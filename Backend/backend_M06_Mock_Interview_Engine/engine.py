@@ -2586,7 +2586,9 @@ class Engine:
         deeper (§6.9).
         """
         reading = pacing.read(state, now)
-        minutes = max(1, round(reading.time_for_questions_s / 60))
+        left = max(1, round(reading.time_for_questions_s / 60))
+        # "About 1 minutes left" was said live (2026-10-29).
+        minutes = "a minute" if left == 1 else f"{left} minutes"
         said = speaker(state).said()
         segment = current_segment(state)
         if reading.coverage_debt and segment is not None:

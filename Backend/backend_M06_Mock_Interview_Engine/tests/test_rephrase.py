@@ -135,6 +135,19 @@ def test_the_strategists_off_question_is_overruled_for_an_on_topic_answer(db):
     assert moves(engine, row)[-1] != "redirect_once"
 
 
+def test_the_overrule_holds_for_a_verdict_with_a_category(db):
+    """Since strategist-5 the ladder reads the category as well as the flag:
+    clearing the flag alone left "That's a different question" in place."""
+    llm = StubLLM([verdict(category="off_question", off_question=True)])
+    engine = make(db, plan=ONE_ROUND, llm=llm)
+    row = session(engine, minutes=30)
+    asked = engine.state(row.id).transcript[-1].question_text or ""
+    words = [w for w in asked.replace("?", "").split() if len(w) >= 5][:3]
+    state = say(engine, row, f"I think {' '.join(words)} is always true, nothing else matters.")
+    assert "different question" not in last_line(state)
+    assert moves(engine, row)[-1] == "clarify"
+
+
 def test_a_truly_different_answer_is_still_redirected(db):
     llm = StubLLM([verdict(off_question=True)])
     engine = make(db, plan=ONE_ROUND, llm=llm)

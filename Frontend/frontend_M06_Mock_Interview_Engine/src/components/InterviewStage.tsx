@@ -343,10 +343,13 @@ function StatusStrip({
   voice,
   panel,
   speakingId,
+  holding = false,
   tiled = false,
 }: {
   session: Session;
   waiting: boolean;
+  /** A line has landed and waits on its voice past the silence meant for it. */
+  holding?: boolean;
   connected: boolean;
   onPause: () => void;
   onResume: () => void;
@@ -368,24 +371,42 @@ function StatusStrip({
   const filled = plannedN
     ? Math.min(dots, Math.round((Math.min(Math.max(session.questions_asked, 1), plannedN) / plannedN) * dots))
     : 0;
-  const tone =
-    session.status === "paused"
-      ? "bg-session-idle"
+  // Whose turn it is, as the room shows it: "Your turn" only once nothing is
+  // still to be said. Live (2026-10-29) the header read "Your turn" for
+  // seconds while the follow-up waited on its voice, before it was on screen.
+  const firstName = (p: { name: string } | null | undefined) => p?.name.split(" ")[0] ?? "The interviewer";
+  const state =
+    session.status !== "live"
+      ? null
       : waiting
-        ? "bg-session-thinking"
-        : session.status === "live"
+        ? "reading"
+        : speakingId
+          ? "speaking"
+          : holding
+            ? "holding"
+            : "yours";
+  const tone =
+    state === "reading" || state === "holding"
+      ? "bg-session-thinking"
+      : state === "speaking"
+        ? "bg-session-speaking"
+        : state === "yours"
           ? "bg-session-listening"
           : "bg-session-idle";
   const label =
     session.status === "paused"
       ? "Paused"
-      : session.status === "live"
-        ? waiting
-          ? "Reading your answer"
-          : "Your turn"
-        : session.status === "planned"
-          ? "Not started"
-          : "Finished";
+      : state === "reading"
+        ? "Reading your answer"
+        : state === "speaking"
+          ? `${firstName(shown)} is speaking`
+          : state === "holding"
+            ? `${firstName(asking)} is thinking`
+            : state === "yours"
+              ? "Your turn"
+              : session.status === "planned"
+                ? "Not started"
+                : "Finished";
 
   const head = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -2416,6 +2437,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             voice={voice}
             panel={panel}
             speakingId={speakingId}
+            holding={reveal.overdue}
             tiled={tiled}
           />
           <Stepper session={data} />
