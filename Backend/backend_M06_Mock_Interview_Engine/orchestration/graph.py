@@ -518,6 +518,12 @@ def _came_in(state: SessionState, persona_id: str) -> bool:
     )
 
 
+def _said_in_turn(*pieces: str) -> str:
+    """Lines said one after another, one space between — whichever of them
+    is empty. Live: "Thanks, Meera.  We're close to time" (2026-10-29)."""
+    return " ".join(p.strip() for p in pieces if p and p.strip())
+
+
 def _taken_back(
     state: SessionState, owner: Persona, panel: list[Persona], *, closing: bool = False
 ) -> str:
@@ -814,7 +820,14 @@ def build(deps: Deps):
             # is an attempt, not a different question. The model judged a
             # confused answer about BST lookup "off question"; the student
             # heard "That's a different question".
-            verdict = verdict.model_copy(update={"off_question": False})
+            update: dict[str, Any] = {"off_question": False}
+            if verdict.category == "off_question":
+                # Since strategist-5 the ladder reads the category too, and
+                # clearing the flag alone overruled nothing. The model never
+                # judged the content, so it is not called right or wrong:
+                # unclear, and they are asked to say it differently.
+                update.update(category="ambiguous", ambiguous=True)
+            verdict = verdict.model_copy(update=update)
         return {
             "verdict": verdict,
             "strategist_fallback": d.fallback_reason,
@@ -949,8 +962,9 @@ def build(deps: Deps):
                 on_token=_emit,
                 seed=f"{inp.state.session_id}:{len(inp.state.transcript)}",
             )
-            if utterance.call is not None:
-                out["calls"] = [utterance.call]
+            calls = [c for c in (utterance.retried, utterance.call) if c is not None]
+            if calls:
+                out["calls"] = calls
             if move.kind in ("give_time", "resume_cut"):
                 # Nothing new is asked: the question stays the one before.
                 utterance.question = repeat_q
@@ -1142,12 +1156,13 @@ def build(deps: Deps):
                 # never follows a break, where it would read as a verdict.
                 # Said on its own, then a pause while they write (FR-11.12).
                 before.append((leaving.id, said_leaving.note_taking, NOTE_TAKING_PAUSE_MS))
-        exit_line = f"{exit_line} {pace}".strip()
         bridge = s.get("bridge") or inp.state.pending_bridge
         if bridge and arriving.id != leaving.id:
             # A hand-over (FR-6.3): the one leaving names the one arriving,
             # who thanks them and takes the round — two voices, not a cut.
-            handing = f"{exit_line} {said_leaving.hand_over.format(name=arriving.name)}"
+            handing = _said_in_turn(
+                exit_line, pace, said_leaving.hand_over.format(name=arriving.name)
+            )
             # Into the closing, the one arriving also thanks, once, anyone
             # else who came in during the interview.
             also = "".join(
@@ -1160,22 +1175,25 @@ def build(deps: Deps):
             taking = f"{said_arriving.take_over.format(name=leaving.name)} {also}{bridge}"
             return [*before, (leaving.id, handing)], taking, nudge
         # After someone else's follow-up, the asker takes the question back:
-        # thanked the first time, and once more at the closing.
+        # thanked the first time, and once more at the closing. The word for
+        # the student's answer comes first: "Thanks, Meera. Nicely put." read
+        # as praise of Meera (walkthrough, 2026-10-29).
         back = _taken_back(inp.state, leaving, seated, closing=closing_next)
         if bridge:
             # A new round starts. The bridge replaces "next question", because
             # saying both ("Okay, let's leave that there. Next question. Let's
             # move to the next part: SQL.") is three transitions for one.
-            return before, f"{back}{exit_line} {bridge}".strip(), nudge
+            return before, _said_in_turn(exit_line, back, pace, bridge), nudge
         item = s.get("item")
         if item is not None and item.source == "closing":
             # The closing without a bridge (a crash replayed): it still asks.
-            return before, f"{back}{exit_line} {said_arriving.bridge_to_closing}".strip(), nudge
+            closing_lead = _said_in_turn(exit_line, back, pace, said_arriving.bridge_to_closing)
+            return before, closing_lead, nudge
         if skipped == "replaced":
             # The same question number, a different question: "next" would
             # say the skipped one was used up, and it was not.
-            return before, f"{back}{said_arriving.skip_lead}".strip(), nudge
-        return before, f"{back}{exit_line} {said_arriving.next_question_lead}".strip(), nudge
+            return before, _said_in_turn(back, said_arriving.skip_lead), nudge
+        return before, _said_in_turn(exit_line, back, pace, said_arriving.next_question_lead), nudge
 
     def phrase(s: StepState) -> dict[str, Any]:
         item = s["item"]

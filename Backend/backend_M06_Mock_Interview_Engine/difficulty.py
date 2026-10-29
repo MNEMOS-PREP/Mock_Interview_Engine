@@ -152,15 +152,18 @@ def same_misconception(a: str, b: str) -> bool:
 
 
 def explain(topic: TopicState) -> str:
-    """The level in plain words — for the trace and the notes."""
+    """The level in plain words, for the notes, read after the interview.
+    It said "going well: a harder follow-up next" — the interviewer's note to
+    itself, which a student read as "thinking aloud: going well: a harder
+    follow-up next" (walkthrough, 2026-10-29)."""
     if topic.level >= 2:
-        return "going very well: follow-ups at the hard end"
+        return "strong — the follow-ups went to the hard end"
     if topic.level == 1:
-        return "going well: a harder follow-up next"
+        return "going well — the follow-ups got harder"
     if topic.level == -1:
-        return "not going well: back to the core idea"
+        return "shaky — the follow-ups went back to the core idea"
     if topic.level <= -2:
-        return "a real gap: no harder follow-ups in this topic"
+        return "a gap to work on — the interviewer stopped going deeper"
     return "as asked"
 
 

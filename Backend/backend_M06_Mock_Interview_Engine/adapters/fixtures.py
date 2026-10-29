@@ -380,9 +380,9 @@ class FixtureMemory:
         "concept:stacks": ("Stacks", ["concept:arrays"]),
         "concept:queues": ("Queues", ["concept:arrays"]),
         "concept:hashing": ("Hashing", ["concept:arrays"]),
-        "concept:recursion": ("Recursion", ["concept:functions"]),
+        "concept:recursion": ("Recursion", ["concept:functions_and_scope"]),
         "concept:arrays": ("Arrays", []),
-        "concept:functions": ("Functions", []),
+        "concept:functions_and_scope": ("Functions and Scope", []),
     }
 
     def concept(self, concept_id: str) -> dict[str, Any] | None:

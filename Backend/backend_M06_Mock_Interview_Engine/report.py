@@ -354,7 +354,7 @@ def _study(question: QuestionReport, missing: list[str], key_points: dict[str, s
     """What to practise next — specific to what this question showed."""
     out: list[str] = []
     if question.misconception:
-        out.append(f"Revisit the idea behind this: {question.misconception}.")
+        out.append(f"Clear up this misunderstanding: {question.misconception.rstrip('.')}.")
     for kp in missing[:2]:
         statement = key_points.get(kp)
         if statement:
@@ -517,6 +517,34 @@ def _still_missing(before: list[str] | None, now: list[str]) -> list[str]:
     return now if before is None else [k for k in before if k in now]
 
 
+#: Answers that engaged the content, so what they did not miss they reached. A
+#: wrong one, a vague one, a remark, an "I don't know" reaches nothing whatever
+#: its list of misses says — and an incomplete one whose list is empty says
+#: nothing about which points it reached (live, 2026-10-29: twice).
+REACHING = frozenset({"correct", "correct_incomplete", "partial"})
+
+
+def _checklist_missed(
+    feedback: list[Feedback], key_points: list[str], reached: set[str] | None
+) -> list[str] | None:
+    """The key points the checklist marks ✕.
+
+    M13 judged the whole thread against the rubric, so when it has scored the
+    question its list decides — the write-up and the checklist then come from
+    one judgement and cannot contradict each other. Before that (or for a
+    question M13 does not score), what no content-bearing answer reached.
+    None: nothing judged the content, so ✓ or ✕ would be a guess.
+    """
+    lists = [f.missing for f in feedback if f.missing is not None]
+    if lists:
+        correctness = [f.missing for f in feedback if f.dimension == "correctness"]
+        judged = correctness[0] if correctness else sorted({k for m in lists for k in m})
+        return [k for k in key_points if k in judged]
+    if reached is None:
+        return None
+    return [k for k in key_points if k not in reached]
+
+
 def _covered(status: str | None, key_point: str, missed: list[str] | None) -> bool | None:
     """Whether the answers reached one key point — unknown rather than
     guessed when nothing judged the content."""
@@ -591,7 +619,7 @@ def _summary(
             name = names.get(topic.concept_id) or (
                 topic.concept_id.split(":", 1)[-1].replace("_", " ")
             )
-            out.topics.append(f"{name}: {difficulty.explain(topic)}")
+            out.topics.append(f"{name[:1].upper()}{name[1:]}: {difficulty.explain(topic)}")
     return out
 
 
@@ -624,6 +652,14 @@ def build(
     # or a remark lists none, which would read as "covered everything").
     categories: dict[int, list[str]] = {}
     judged_missing: dict[int, list[str]] = {}
+    # 2026-10-29: the key points some answer REACHED, for the checklist. Only
+    # an answer that engaged the content can reach one: a vague "not sure, a
+    # good hash function?" listed nothing missing, the intersection of misses
+    # came out empty, and the notes marked ✓ the very points the write-up said
+    # were omitted (live walkthrough, hash-map question).
+    reached: dict[int, set[str]] = {}
+    engaged: set[int] = set()
+    unsure: set[int] = set()
 
     by_turn: dict[str, QuestionReport] = {}
     deliveries: list = []
@@ -768,6 +804,22 @@ def build(
                     judged_missing[id(current)] = _still_missing(
                         judged_missing.get(id(current)), [str(k) for k in p.get("missing") or []]
                     )
+            category = p.get("category")
+            if category in JUDGED_CATEGORIES or (category is None and "missing" in p):
+                # Something judged the content: ✓ and ✕ are no longer guesses.
+                engaged.add(id(current))
+                reached.setdefault(id(current), set())
+                if category is None or category in REACHING:
+                    kp_ids = [
+                        kp["id"] for kp in (items.get(id(current)) or {}).get("key_points") or []
+                    ]
+                    gone = {str(k) for k in p.get("missing") or []}
+                    if gone or category in (None, "correct"):
+                        reached[id(current)].update(k for k in kp_ids if k not in gone)
+                    else:
+                        # "Incomplete", naming nothing it missed: which points
+                        # it reached is not known, so ✓ or ✕ would be a guess.
+                        unsure.add(id(current))
         elif event.kind == "hint.given" and current is not None:
             current.hints_used = int(p.get("level", current.hints_used))
         elif event.kind == "question.skipped" and current is not None:
@@ -817,14 +869,21 @@ def build(
             question.one_strong_answer = str(item["reference_answer"])
             question.strong_answer_reviewed = question.source != "m05_draft"
         key_points = {kp["id"]: kp["statement"] for kp in item.get("key_points") or []}
+        seen = reached.get(id(question), set())
+        known = id(question) in engaged and (
+            id(question) not in unsure or seen >= set(key_points)
+        )
+        checklist = _checklist_missed(question.feedback, list(key_points), seen if known else None)
         question.key_points = [
-            KeyPointCheck(statement=statement, covered=_covered(question.status, kp, missed))
+            KeyPointCheck(statement=statement, covered=_covered(question.status, kp, checklist))
             for kp, statement in key_points.items()
         ]
         # Nothing was said, so everything a strong answer covers is what to learn.
         unmet = (
             list(key_points)
             if question.status == "unanswered"
+            else checklist
+            if checklist is not None
             else missing.get(id(question), [])
         )
         question.study = _study(question, unmet, key_points)

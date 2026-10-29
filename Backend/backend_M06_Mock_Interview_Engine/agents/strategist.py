@@ -35,7 +35,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from ..contracts import StrategistVerdict, legacy_fields
+from ..contracts import MISCONCEIVED, StrategistVerdict, legacy_fields
 from ..items import Item
 from ..llm import JOB_STRATEGIST, LLM, LLMResult
 from .guard import rule_screen
@@ -57,7 +57,14 @@ from .guard import rule_screen
 #: both judged off_question and answered "That's a different question".
 #: strategist-5 (2026-10-22): the category and the words behind it, the
 #: question's thread, and band/justification derived rather than asked for.
-PROMPT_VERSION = "strategist-5"
+#: strategist-6 (2026-10-29): a hedge is not an error, an omission is not a
+#: misconception. Live, "Honestly I'm not sure about the assumptions. I think
+#: it just needs a good hash function?" came back `incorrect`, its error the
+#: hedge, its misconception "Missing assumptions" — so the interviewer pushed
+#: back on "I'm not sure" and the notes said to revisit an idea nobody had
+#: stated. And `correct_incomplete` came back with nothing missing, twice,
+#: which left the ladder no point to ask about.
+PROMPT_VERSION = "strategist-6"
 
 SYSTEM = """You are ProbeStrategist inside a mock technical interview. You judge ONE answer so the interviewer can react to it the way a good human interviewer would: push back on an error, ask for the mechanism behind a vague term, ask how a claim was measured, go deeper on a strong answer. You never talk to the candidate.
 
@@ -65,12 +72,12 @@ Judge the answer against WHAT THE INTERVIEWER JUST ASKED. At probe depth 0 that 
 
 category — exactly one:
 - correct: right, and covers what was asked. A short answer can be correct. A valid approach that differs from the listed points is correct.
-- correct_incomplete: nothing it says is wrong, but it misses something important that was asked.
+- correct_incomplete: nothing it says is wrong, but it misses something important that was asked. Its key_points_missing names what it misses.
 - partial: some of it is right and a material part of it is wrong.
-- incorrect: wrong. Say how wrong in severity.
+- incorrect: it states something false. Say how wrong in severity. Leaving something out is not stating something false.
 - vague: uses the right terms but never says how or why — terminology without mechanism.
 - off_question: clearly about a different question or topic. A wrong or confused attempt at THIS question is NOT off_question.
-- dont_know: says they do not know, guesses openly, or gives up.
+- dont_know: says they do not know, guesses openly, or gives up. "I'm not sure… I think maybe X" is dont_know unless X itself is false.
 - unsupported: claims experience, ownership or a result (a number, "I optimised it") and gives nothing that shows it — no how, no measurement, no detail.
 - contradiction: contradicts something the candidate said earlier (EARLIER IN THIS QUESTION, or EARLIER STATEMENTS).
 - ambiguous: you cannot tell which of two meanings they intend. Unclear is not the same as wrong.
@@ -79,11 +86,11 @@ When unsure between correct_incomplete and partial, ask whether anything they SA
 
 severity: for partial or incorrect — "minor" (a slip in a detail), "material" (a real error in the reasoning), "fundamental" (the core idea is wrong or confused); otherwise "none".
 correct_points: up to 2 things the answer got right, 3 to 8 words each. Empty if none.
-error_quote: the candidate's own words that are wrong or vague, verbatim, at most 15 words. "" if none.
+error_quote: the candidate's own words that are wrong or vague, verbatim, at most 15 words. Never words that are right, never a hedge like "I'm not sure". "" if none.
 error_note: what is wrong with them, at most 20 words. It may state the correct idea: it is read only after the interview. "" if none.
 unsupported_quote: their words making an unsupported claim, verbatim, at most 15 words. "" if none.
 contradiction_quote: the EARLIER words this answer contradicts, verbatim, at most 15 words. "" if none.
-misconception: the underlying misunderstanding as a short label, at most 8 words. "" if none.
+misconception: the false belief behind something wrong they SAID, as a short label, at most 8 words ("thinks rehashing keeps the old indices"). Something they left out or did not know is not a misconception. "" if none.
 self_corrected: true if the candidate noticed and fixed their own mistake within this answer.
 challenges_question: true if the candidate says the question's premise is flawed. challenge_valid: true if they are right.
 partial_recall: true if they clearly know the idea but cannot recall one specific detail (a name, a number, the syntax).
@@ -420,6 +427,18 @@ def parse_verdict(data: dict, item: Item, *, latency_ms: int = 0) -> StrategistV
         data["correct_points"] = [
             point for point in (_quote(p) for p in data["correct_points"][:2]) if point
         ]
+    if category in ("incorrect", "partial") and _DONT_KNOW.search(data.get("error_quote") or ""):
+        # The "error" it quotes is a hedge: nothing false was said. Pushing
+        # back on "I'm not sure" is not what an interviewer does (strategist-6).
+        category = "dont_know" if category == "incorrect" else "correct_incomplete"
+        data.update(category=category, severity="none", error_quote=None, error_note=None)
+        data["band"], data["justification"] = legacy_fields(
+            category, "none", bool(data.get("beyond"))
+        )
+    if category is not None and category not in MISCONCEIVED:
+        # Only something wrong that was said shows a false belief; a gap is
+        # in key_points_missing.
+        data["misconception"] = None
     return StrategistVerdict(**data, latency_ms=latency_ms, source="model")
 
 

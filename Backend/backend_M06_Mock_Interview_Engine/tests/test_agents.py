@@ -89,7 +89,47 @@ def test_a_model_verdict_is_parsed_and_its_key_points_filtered():
     assert decision.verdict.source == "model"
     assert decision.verdict.band == "below"
     assert decision.verdict.key_points_missing == ["kp1"]
-    assert decision.call is not None and decision.call.prompt_version == "strategist-5"
+    assert decision.call is not None and decision.call.prompt_version == "strategist-6"
+
+
+HEDGE = "Honestly I'm not sure about the assumptions. I think it just needs a good hash function?"
+
+
+def test_a_hedge_is_not_an_error_and_an_omission_is_not_a_misconception():
+    """Live, 2026-10-29: "Honestly I'm not sure about the assumptions. I think
+    it just needs a good hash function?" came back incorrect, the hedge quoted
+    as the error, "Missing assumptions" as the misconception. The interviewer
+    then pushes back on "I'm not sure", and the notes say to revisit an idea
+    nobody stated."""
+    hedged = verdict(
+        category="incorrect",
+        severity="material",
+        error_quote="Honestly I'm not sure about the assumptions.",
+        error_note="Did not state the assumptions.",
+        misconception="Missing assumptions",
+        key_points_missing=["kp1"],
+    )
+    v = ProbeStrategist(StubLLM([hedged])).decide(item(), 1, "q?", HEDGE).verdict
+    assert (v.category, v.severity, v.justification) == ("dont_know", "none", "failed")
+    assert v.error_quote is None and v.misconception is None
+    assert v.key_points_missing == ["kp1"]
+
+    partly = dict(hedged, category="partial", correct_points=["hash gives the index"])
+    v = ProbeStrategist(StubLLM([partly])).decide(item(), 1, "q?", HEDGE).verdict
+    assert v.category == "correct_incomplete" and v.misconception is None
+    assert v.correct_points == ["hash gives the index"]
+
+    # Nothing wrong was said, so there is no false belief to name.
+    gap = verdict(category="correct_incomplete", misconception="Missing worst case")
+    v = ProbeStrategist(StubLLM([gap])).decide(item(), 0, "q?", "a").verdict
+    assert v.misconception is None
+
+    # A real error keeps its misconception — and a hedge before it does not hide it.
+    wrong = dict(
+        hedged, error_quote="it is always O(1)", misconception="thinks lookups never degrade"
+    )
+    v = ProbeStrategist(StubLLM([wrong])).decide(item(), 0, "q?", "a").verdict
+    assert (v.category, v.misconception) == ("incorrect", "thinks lookups never degrade")
 
 
 def test_the_strategist_context_is_narrow_and_the_answer_is_fenced():

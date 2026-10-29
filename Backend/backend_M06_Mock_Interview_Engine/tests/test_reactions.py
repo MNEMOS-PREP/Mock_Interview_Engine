@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from backend_M06_Mock_Interview_Engine import decompose
-from backend_M06_Mock_Interview_Engine.agents.guard import leaks, screen
+from backend_M06_Mock_Interview_Engine.agents.guard import leaks, names_a_point, screen
 from backend_M06_Mock_Interview_Engine.agents.interviewer import (
     Interviewer,
     opener,
@@ -129,6 +129,88 @@ def test_an_opener_used_just_now_is_not_used_again():
     said, _ = _react("Hmm, okay. What if every key collides?", CHALLENGE, openers=["hmm okay"])
     assert said.source == "template"
     assert opener(said.text) != "hmm okay"
+
+
+LIVE_ANSWER = (
+    "Because the hash function gives you the index directly, so you just go to that slot "
+    "in the array and get the value. That is why it is constant time."
+)
+
+
+def test_a_line_that_names_a_missed_point_in_its_own_words_is_caught():
+    """Live, 2026-10-29: the follow-up named the very point the student had
+    missed, with no five words of it in a row — so it passed."""
+    points = [kp.statement for kp in ITEM.key_points]
+    allowed = [ITEM.stem, LIVE_ANSWER]
+    live = (
+        "What assumptions about the hash function’s distribution and the table’s load factor "
+        "are necessary to keep collisions rare enough that the expected lookup stays constant?"
+    )
+    assert names_a_point(live, points, allowed) == "load factor"
+    for scenario in (
+        "What if every key landed in the same bucket?",
+        "What decides which bucket a key goes to?",
+        "What happens to that lookup as you keep inserting into a fixed-size table?",
+        "Is there any input where that constant time breaks down?",
+    ):
+        assert names_a_point(scenario, points, allowed) is None, scenario
+    said = "I think the load factor has to stay bounded."
+    assert names_a_point("Why does a bounded load factor matter?", points, [*allowed, said]) is None
+
+
+class _Retrying(StubLLM):
+    """A model whose second line is not its first."""
+
+    def __init__(self, *lines: str):
+        super().__init__(probe=lines[0])
+        self.lines = list(lines)
+
+    def stream(self, *, job, system, user):
+        self.probe = self.lines[min(len(self.stream_calls), len(self.lines) - 1)]
+        yield from super().stream(job=job, system=system, user=user)
+
+
+RUNG = Move(kind="rung", depth=1, angle="mechanism", tone="credit")
+
+
+def _rung(llm):
+    tokens: list[str] = []
+    said = Interviewer(llm).react(
+        ITEM,
+        RUNG,
+        view=VIEW,
+        name="Ananya",
+        last_answer=LIVE_ANSWER,
+        asked=ITEM.stem,
+        answer_key=ITEM.answer_key,
+        on_token=tokens.append,
+    )
+    return said, "".join(tokens)
+
+
+def test_a_line_that_gives_the_answer_away_is_tried_once_more_before_the_template():
+    """The stable-sort follow-up, live: the guard caught the model's line and
+    the student heard the stock "What is actually happening underneath that
+    makes it work?" — a question that ignored what they had just said."""
+    llm = _Retrying(
+        "Right. And what about the load factor, how does it keep lookups constant?",
+        "Right. What happens to that lookup as you keep inserting into a fixed-size table?",
+    )
+    said, preview = _rung(llm)
+    assert said.source == "model"
+    assert said.text.endswith("fixed-size table?")
+    assert said.retried is not None and said.call is not None, "both calls are on the ledger"
+    assert "load factor" in llm.stream_calls[1]["system"], "told what it named"
+    assert "load" not in preview, "the leak never reached the preview, not even its first word"
+    assert preview.startswith("Right. And what about"), "what was clean was shown"
+
+
+def test_twice_giving_it_away_is_the_authored_line():
+    llm = _Retrying("So is it the load factor that keeps it constant?")
+    said, preview = _rung(llm)
+    assert said.source == "template" and said.fallback_reason.startswith("gives the answer away")
+    assert len(llm.stream_calls) == 2
+    assert "load factor" not in said.text and "load factor" not in preview
 
 
 def test_a_line_that_gives_the_answer_away_falls_back():

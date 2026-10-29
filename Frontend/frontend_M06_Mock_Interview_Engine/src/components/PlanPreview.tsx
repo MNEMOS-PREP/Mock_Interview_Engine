@@ -395,11 +395,9 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
       <p className="mt-3 text-2xs text-ink-faint">
         {minutes(totalMinutes)} · {totalQuestions} question
         {totalQuestions === 1 ? "" : "s"}
-        {` · you can pause ${
-          (session.data?.flags.pauses_allowed ?? 1) === 1
-            ? "once"
-            : `${session.data?.flags.pauses_allowed} times`
-        }, up to five minutes each`}
+        {(session.data?.flags.pauses_allowed ?? 1) === 1
+          ? " · you can pause once, for up to five minutes"
+          : ` · you can pause ${session.data?.flags.pauses_allowed} times, up to five minutes each`}
       </p>
 
       {(built?.uncovered.length ?? 0) > 0 && (
