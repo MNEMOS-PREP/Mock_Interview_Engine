@@ -24,7 +24,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { Button, Card, ErrorNote, PageHeader, api, prepareLine } from "@ai/core";
+import { Button, ErrorNote, api, prepareLine } from "@ai/core";
 
 import {
   useDropSegment,
@@ -83,6 +83,8 @@ function Building() {
   );
 }
 
+const PART_COLOURS = ["#c9f4c8", "#8dcba4", "#6eaa8a", "#dce6b5"];
+
 const KIND_LABEL: Record<string, string> = {
   warmup: "Warm-up",
   technical: "Technical",
@@ -121,13 +123,13 @@ function PanelStrip({
 }) {
   if (people.length < 2) return null;
   return (
-    <section aria-labelledby="your-panel" className="mt-5">
-      <h2 id="your-panel" className="text-sm font-medium text-ink">
+    <section aria-labelledby="your-panel" className="rounded-xl border border-line bg-surface p-[22px]">
+      <h2 id="your-panel" className="text-sm font-semibold text-ink">
         Your panel · {people.length} interviewers
       </h2>
-      <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+      <ul className="mt-4 flex flex-col gap-4">
         {people.map(({ card, role }) => (
-          <li key={card.id} className="placard flex items-start gap-3">
+          <li key={card.id} className="flex items-start gap-3">
             <Face persona={card.id} name={card.name} size={40} />
             <div className="min-w-0">
               <p className="text-sm font-medium text-ink">{card.name}</p>
@@ -348,130 +350,155 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
     .filter((card): card is PersonaCard => card !== undefined);
   const panelPeople = panelRoles(built?.panel ?? [], live, byId);
 
+  const subtitle = built?.jd_id
+    ? "Built from the job description you chose, so the questions follow what it asks for."
+    : segments.some((s) => s.title.startsWith("Focus: "))
+      ? "Built around the topic you chose."
+      : built?.track
+        ? `Every question is on ${trackTitle(built.track, segments)}, the track you picked${
+            built.resume_included ? ", with a part on your resume" : ""
+          }.`
+        : "A mix of topics — pick a track, a job description or a drive and the plan follows it.";
+  const longest = Math.max(1, ...live.map((x) => x.minutes));
+
   return (
-    <div className="mx-auto max-w-2xl">
-      <PageHeader
-        title="Here is the plan"
-        subtitle={
-          built?.jd_id
-            ? "Built from the job description you chose, so the questions follow what it asks for."
-            : segments.some((s) => s.title.startsWith("Focus: "))
-              ? "Built around the topic you chose."
-              : built?.track
-                ? `Every question is on ${trackTitle(built.track, segments)}, the track you picked${
-                    built.resume_included ? ", with a part on your resume" : ""
-                  }.`
-                : "A mix of topics — pick a track, a job description or a drive and the plan follows it."
-        }
-      />
+    <div className="flex flex-col gap-10">
+      <header className="flex flex-col gap-3">
+        <p className="text-[11px] leading-normal tracking-[1.6px] text-brand">YOUR PLAN</p>
+        <h1 className="text-[43px] font-medium leading-[1.15] tracking-[-1.8px] text-ink">Here is the plan</h1>
+        <p className="max-w-2xl text-[15px] leading-[1.65] text-ink-soft">{subtitle}</p>
+      </header>
 
-      <PanelStrip people={panelPeople} />
+      <div className="flex flex-col items-stretch gap-8 xl:flex-row xl:items-start">
+        <div className="flex min-w-0 flex-1 flex-col gap-6">
+          <div className="rounded-[20px] border border-line bg-surface p-7">
+            {segments.length === 0 ? (
+              <p className="text-sm text-ink-soft">
+                There is nothing to ask yet — the question bank had nothing for this session.
+              </p>
+            ) : (
+              <ul>
+                {segments.map((segment) => (
+                  <SegmentRow
+                    key={segment.index}
+                    who={byId.get(segment.persona_id)}
+                    alongside={BOOKEND.has(segment.kind) ? [] : sittingIn}
+                    faceWidth={FACE + FACE_OVERLAP * sittingIn.length}
+                    segment={segment}
+                    busy={drop.isPending}
+                    onDrop={() => drop.mutate(segment.index)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
 
-      {live.length > 1 && (
-        // The whole interview on one line, each part as wide as it is long.
-        <ol aria-label="How the time is spent" className="mt-6 flex gap-1">
-          {live.map((segment) => (
-            <li
-              key={segment.index}
-              className="min-w-0"
-              style={{ flexGrow: segment.minutes, flexBasis: 0 }}
-              title={`${segment.title} · ${minutes(segment.minutes)}`}
-            >
-              <span
-                className={`block h-2 rounded-sm ${segment.is_reserved ? "bg-line-strong" : "bg-data"}`}
-                style={{ opacity: segment.is_reserved ? 1 : 0.35 + 0.65 * (segment.minutes / Math.max(...live.map((x) => x.minutes))) }}
-              />
-              <span className="mt-1.5 block truncate text-2xs text-ink-soft">{segment.title}</span>
-              <span className="block text-2xs text-ink-faint">{minutes(segment.minutes)}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-
-      <div className="mt-5">
-        <Card>
-          {segments.length === 0 ? (
-            <p className="text-sm text-ink-soft">
-              There is nothing to ask yet — the question bank had nothing for
-              this session.
+          {(built?.uncovered.length ?? 0) > 0 && (
+            <p className="max-w-prose px-1 text-xs leading-relaxed text-ink-soft">
+              Not covered this time: {built?.uncovered.join(", ")}. There was not enough time for everything the posting asks for.
             </p>
-          ) : (
-            <ul>
-              {segments.map((segment) => (
-                <SegmentRow
-                  key={segment.index}
-                  who={byId.get(segment.persona_id)}
-                  alongside={BOOKEND.has(segment.kind) ? [] : sittingIn}
-                  faceWidth={FACE + FACE_OVERLAP * sittingIn.length}
-                  segment={segment}
-                  busy={drop.isPending}
-                  onDrop={() => drop.mutate(segment.index)}
-                />
-              ))}
-            </ul>
           )}
-        </Card>
-      </div>
 
-      <p className="mt-3 text-2xs text-ink-faint">
-        {minutes(totalMinutes)} · {totalQuestions} question
-        {totalQuestions === 1 ? "" : "s"}
-        {(session.data?.flags.pauses_allowed ?? 1) === 1
-          ? " · you can pause once, for up to five minutes"
-          : ` · you can pause ${session.data?.flags.pauses_allowed} times, up to five minutes each`}
-      </p>
-
-      {(built?.uncovered.length ?? 0) > 0 && (
-        <p className="mt-4 max-w-prose text-2xs leading-relaxed text-ink-soft">
-          Not covered this time: {built?.uncovered.join(", ")}. There was not
-          enough time for everything the posting asks for.
-        </p>
-      )}
-
-      {drop.isError && (
-        <div className="mt-4">
-          <ErrorNote
-            message="That part could not be removed."
-            detail={
-              drop.error instanceof Error ? drop.error.message : undefined
-            }
-            onRetry={() => drop.reset()}
-          />
+          {drop.isError && (
+            <ErrorNote
+              message="That part could not be removed."
+              detail={drop.error instanceof Error ? drop.error.message : undefined}
+              onRetry={() => drop.reset()}
+            />
+          )}
         </div>
-      )}
 
-      <div className="mt-6 flex flex-wrap items-center gap-3">
-        <Button
-          onClick={() =>
-            start.mutate(undefined, {
-              // Said, so the stage does not greet a first start as a return.
-              onSuccess: () => navigate(`/mock/${sessionId}`, { state: { justStarted: true } }),
-            })
-          }
-          disabled={start.isPending || drop.isPending}
-        >
-          {start.isPending ? "Starting…" : "Start the interview"}
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={() => navigate("/mock")}
-          disabled={start.isPending}
-        >
-          Not now
-        </Button>
+        <aside className="flex w-full shrink-0 flex-col gap-6 xl:w-[400px]">
+          <section aria-label="Your interview, planned" className="flex flex-col gap-[22px] rounded-[20px] bg-[#142d27] p-[26px] text-white shadow-[0_16px_48px_rgba(22,59,39,0.06)]">
+            <p className="text-[11px] uppercase leading-normal tracking-[1.6px] text-[#c9f4c8]">Your interview, planned</p>
+            <div className="flex flex-col gap-2.5">
+              <p className="text-[25px] font-medium leading-[1.2] tracking-[-0.8px]">{minutes(totalMinutes)}</p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  `${totalQuestions} question${totalQuestions === 1 ? "" : "s"}`,
+                  `${live.length} part${live.length === 1 ? "" : "s"}`,
+                  (session.data?.flags.pauses_allowed ?? 1) === 1 ? "One pause" : `${session.data?.flags.pauses_allowed} pauses`,
+                ].map((t) => (
+                  <span key={t} className="rounded-full border border-[#3c574b] bg-[#203e35] px-2.5 py-1.5 text-[11px] font-medium leading-normal text-[#c9f4c8]">
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </div>
+            {live.length > 1 && (
+              <ol aria-label="How the time is spent" className="flex gap-[3px]">
+                {live.map((segment, i) => (
+                  <li
+                    key={segment.index}
+                    className="min-w-0"
+                    style={{ flexGrow: segment.minutes, flexBasis: 0 }}
+                    title={`${segment.title} · ${minutes(segment.minutes)}`}
+                  >
+                    <span
+                      className="block h-2 rounded-[3px]"
+                      style={{ background: PART_COLOURS[i % PART_COLOURS.length], opacity: segment.is_reserved ? 0.6 : 0.55 + 0.45 * (segment.minutes / longest) }}
+                    />
+                  </li>
+                ))}
+              </ol>
+            )}
+            <ol className="flex flex-col gap-[18px] border-t border-[#3c574b] pt-5">
+              {live.map((segment, i) => (
+                <li key={segment.index} className="flex items-center gap-3">
+                  <span className="h-[34px] w-[3px] shrink-0 rounded-sm" style={{ background: PART_COLOURS[i % PART_COLOURS.length] }} />
+                  <span className="flex min-w-0 flex-1 flex-col gap-[5px]">
+                    <span className="text-xs leading-[1.4] text-white">{segment.title}</span>
+                    <span className="text-[10px] leading-normal text-[#adc4b8]">
+                      {byId.get(segment.persona_id)?.name.split(" ")[0] ?? "Your panel"} · {KIND_LABEL[segment.kind] ?? segment.kind}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 flex-col items-end gap-0.5 leading-normal">
+                    <span className="text-xl text-[#c9f4c8]">{String(Math.round(segment.minutes)).padStart(2, "0")}</span>
+                    <span className="text-[8px] text-[#adc4b8]">MIN</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() =>
+                  start.mutate(undefined, {
+                    // Said, so the stage does not greet a first start as a return.
+                    onSuccess: () => navigate(`/mock/${sessionId}`, { state: { justStarted: true } }),
+                  })
+                }
+                disabled={start.isPending || drop.isPending}
+                className="start-plan flex h-[50px] w-full items-center justify-center gap-3 rounded-lg px-5 text-sm font-semibold disabled:opacity-50"
+              >
+                {start.isPending ? "Starting…" : "Start the interview"}
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/mock")}
+                disabled={start.isPending}
+                className="h-10 w-full rounded-lg text-[13px] text-[#adc4b8] hover:text-white disabled:opacity-50"
+              >
+                Not now
+              </button>
+              <p className="text-center text-[10px] leading-normal text-[#adc4b8]">
+                {(session.data?.flags.pauses_allowed ?? 1) === 1
+                  ? "You can pause once, for up to five minutes"
+                  : `You can pause ${session.data?.flags.pauses_allowed} times, up to five minutes each`}
+              </p>
+            </div>
+            {start.isError && (
+              <ErrorNote
+                message="That didn't start."
+                detail={start.error instanceof Error ? start.error.message : undefined}
+                onRetry={() => start.reset()}
+              />
+            )}
+          </section>
+
+          <PanelStrip people={panelPeople} />
+        </aside>
       </div>
-
-      {start.isError && (
-        <div className="mt-4">
-          <ErrorNote
-            message="That didn't start."
-            detail={
-              start.error instanceof Error ? start.error.message : undefined
-            }
-            onRetry={() => start.reset()}
-          />
-        </div>
-      )}
     </div>
   );
 }

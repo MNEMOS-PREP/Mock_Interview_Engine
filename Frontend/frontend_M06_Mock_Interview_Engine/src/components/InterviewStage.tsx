@@ -628,8 +628,8 @@ function PanelView({
     return (
       <figure
         key={p.id}
-        className={`min-w-0 overflow-hidden rounded-xl border bg-surface transition-colors ${
-          speaking ? "border-brand ring-2 ring-brand/40" : turn ? "border-brand-line" : "border-line"
+        className={`min-w-0 overflow-hidden rounded-[20px] border bg-surface transition-[border-color,box-shadow] duration-300 ${
+          speaking ? "border-brand ring-4 ring-[#c9f4c8]" : turn ? "border-brand-line" : "border-line"
         }`}
       >
         {faces?.has(p.id) ? (

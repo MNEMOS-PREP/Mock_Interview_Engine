@@ -11,6 +11,7 @@
 import { Card, DependencyTable, ErrorNote, Spinner } from "@ai/core";
 
 import { useAgents, useDeps, useHealth, useReliability } from "../api";
+import { PageIntro } from "../ui/PageIntro";
 
 export function SystemPage() {
   const deps = useDeps();
@@ -21,18 +22,19 @@ export function SystemPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">System</h1>
-        <p className="mt-2 text-sm text-ink-soft">
-          {health.data
-            ? `M06 is up, prompts ${health.data.prompt_version}.`
-            : "Checking the engine…"}{" "}
-          {agents.data &&
-            (agents.data.model_on
+      <PageIntro
+        kicker="System"
+        title="How the engine is doing"
+        subtitle={`${
+          health.data ? `M06 is up, prompts ${health.data.prompt_version}.` : "Checking the engine…"
+        } ${
+          agents.data
+            ? agents.data.model_on
               ? "A model is configured."
-              : "No model is configured — questions and probes fall back to their authored wording.")}
-        </p>
-      </header>
+              : "No model is configured — questions and probes fall back to their authored wording."
+            : ""
+        }`.trim()}
+      />
 
       <section>
         <h2 className="text-sm font-semibold text-ink">Upstream modules</h2>

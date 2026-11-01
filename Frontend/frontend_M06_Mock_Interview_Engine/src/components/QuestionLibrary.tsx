@@ -13,10 +13,11 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { EmptyState, ErrorNote, PageHeader, SkeletonRows, relativeDays } from "@ai/core";
+import { EmptyState, ErrorNote, SkeletonRows, relativeDays } from "@ai/core";
 
 import { useCreateSession, useLibrary, useRemoveFromLibrary } from "../api";
 import type { LibraryEntry } from "../types";
+import { PageIntro } from "../ui/PageIntro";
 
 type Mark = "all" | "starred" | "flagged";
 
@@ -148,8 +149,9 @@ export function QuestionLibrary() {
 
   return (
     <div className="mx-auto max-w-(--container-conversation)">
-      <PageHeader
-        title="Your question library"
+      <PageIntro
+        kicker="Your question library"
+        title="Questions worth another go"
         subtitle="Questions you saved, and the ones the interview marked as worth another go."
         how={
           <>
