@@ -548,7 +548,7 @@ function StatusStrip({
             type="button"
             onClick={onEnd}
             disabled={busy}
-            className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#dc2626] px-3.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60"
+            className="inline-flex h-9 items-center gap-2 rounded-full border border-[#dc2626]/40 bg-[#dc2626]/10 px-4 text-sm font-semibold text-[#dc2626] hover:bg-[#dc2626] hover:text-white disabled:opacity-60"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M3 14c4-4 14-4 18 0l-2.5 2.5-3-1.5v-2.2c-2-.7-4-.7-6 0V15l-3 1.5Z" />
