@@ -490,3 +490,12 @@ button.bg-brand, a.bg-brand, button[class*="bg-brand"]:not([class*="bg-brand-"])
   border-radius: 0.5rem;
 }
 .slip ~ * button.bg-brand, aside button.bg-brand { background: #c9f4c8; color: #192d28; }
+
+/* The start button on the deep panel: mint, as in the design. */
+.start-plan {
+  background: #c9f4c8;
+  color: #192d28;
+  border: 1px solid rgba(255, 255, 255, 0);
+  transition: filter 0.16s, transform 0.16s;
+}
+.start-plan:hover:not(:disabled) { filter: brightness(0.96); transform: translateY(-1px); }

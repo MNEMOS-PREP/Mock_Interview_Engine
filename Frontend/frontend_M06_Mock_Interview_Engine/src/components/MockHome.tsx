@@ -24,7 +24,7 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
-import { ErrorNote, Icon, PageHeader, SkeletonRows, relativeDays } from "@ai/core";
+import { ErrorNote, Icon, SkeletonRows, relativeDays } from "@ai/core";
 
 import {
   useCreateSession,
@@ -36,7 +36,51 @@ import {
 } from "../api";
 import { MockTargetsContext } from "../targets";
 import type { Mode, ResumeOption, SessionSummary, TrackOption } from "../types";
-import { Face } from "../ui/Face";
+
+/** The design's own icons (Lucide, as drawn in the Figma), served from assets. */
+const FIGMA_ICONS = import.meta.glob("../assets/figma/*.svg", {
+  eager: true,
+  query: "?url",
+  import: "default",
+}) as Record<string, string>;
+
+function Fig({ name, size }: { name: string; size: number }) {
+  return <img src={FIGMA_ICONS[`../assets/figma/${name}.svg`]} width={size} height={size} alt="" className="shrink-0" />;
+}
+
+/** Where "Group discussion" lives: the GD Arena, mounted beside this module. */
+const GD_URL: string = import.meta.env.VITE_GD_URL ?? "/gd";
+
+const MODE_ICON: Record<string, string> = { practice: "sprout", mock: "timer", real_drive: "briefcase", final_boss: "flame" };
+const MODE_TAGLINE: Record<string, string> = {
+  practice: "A good place to start",
+  mock: "Feel the real round",
+  real_drive: "Job description required",
+  final_boss: "Bring your best reasoning",
+};
+const PART_COLOURS = ["#c9f4c8", "#8dcba4", "#6eaa8a", "#dce6b5"];
+const AVATAR_COLOURS = ["#c9f4c8", "#f0ecdd", "#eae5f6"];
+
+function initials(name: string): string {
+  return name
+    .replace(/^Dr\.?\s+/i, "")
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+/** A numbered step: its number small and green, then its question. */
+function StepHead({ n, title, note }: { n: string; title: string; note?: string }) {
+  return (
+    <div className="flex items-center gap-2.5 whitespace-nowrap leading-normal">
+      <span className="text-[10px] text-brand">{n}</span>
+      <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
+      {note && <span className="text-[11px] text-ink-soft">{note}</span>}
+    </div>
+  );
+}
 
 const LENGTHS = [
   { minutes: 15, label: "15 min", hint: "5–7 questions" },
@@ -47,9 +91,6 @@ const LENGTHS = [
 const LIVE = new Set(["planned", "live", "paused"]);
 
 const MODES: readonly Mode[] = ["practice", "mock", "real_drive", "final_boss"];
-
-/** Interviewers listed before "Show all": about one panel's worth. */
-const PERSONAS_SHOWN = 6;
 
 /** The same pause rule the backend enforces (state.pause_allowance). */
 function pausesFor(minutes: number): number {
@@ -250,246 +291,304 @@ export function MockHome() {
       .filter((g) => g.tracks.length > 0);
   })();
 
+  let step = 0;
+  const num = () => String(++step).padStart(2, "0");
+  const lead = (personas.data ?? [])[0];
+  const second = (personas.data ?? [])[1];
+  const third = (personas.data ?? [])[2];
+  const modeLabel = (modes.data ?? []).find((m) => m.id === mode)?.label ?? mode;
+  const topicTitle = target ?? (track ? (tracks.data?.tracks.find((t) => t.round_type === track)?.title ?? track) : "A mix of topics");
+  // An indicative split; the real plan is built and shown on the next screen.
+  const a = Math.max(2, Math.round(minutes * 0.1));
+  const b = Math.round(minutes * 0.4);
+  const c = Math.round(minutes * 0.33);
+  const d = Math.max(2, minutes - a - b - c);
+  const parts = [
+    { t: "Settle in & introduce yourself", who: lead, m: a },
+    { t: withResume && pickedResume ? "Your projects & trade-offs" : "Core questions", who: second ?? lead, m: b },
+    { t: "Going deeper, with follow-ups", who: third ?? second ?? lead, m: c },
+    { t: "Reflect & wrap up", who: lead, m: d },
+  ];
+  const meetThree = (personas.data ?? []).slice(0, allPersonas ? undefined : 3);
+
+  const startPlan = () =>
+    // Via the plan, not straight into the first question: a student
+    // should see what they are about to be asked (FR-6.2).
+    create.mutate(
+      {
+        minutes,
+        mode,
+        jd_id: jd ?? undefined,
+        company_id: company ?? undefined,
+        drive_id: drive ?? undefined,
+        // One concept from Today, several from a course: comma-separated.
+        focus_concepts: focusConcepts.length ? focusConcepts : undefined,
+        focus_label: focus ? (label ?? undefined) : undefined,
+        track: general && track ? track : undefined,
+        include_resume: withResume && Boolean(pickedResume),
+        resume_id: withResume && pickedResume ? pickedResume.id : undefined,
+      },
+      { onSuccess: (s) => navigate(`/mock/${s.id}/plan`) },
+    );
+
+  const divider = "border-t border-line pt-6";
+
   return (
-    <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <section className="min-w-0">
-        <PageHeader
-          title="Practise an interview"
-          subtitle="An interviewer asks, listens, and follows up until it finds the edge of what you know."
-          how={
-            <>
-              <p>
-                Questions come from the platform's bank, chosen for what you are practising for and
-                for what your skill graph says you haven't shown yet. If the bank can't be reached,
-                the interview says so and runs from a short backup set.
-              </p>
-              <p>
-                Speak your answers with the mic or type them; either way you read and edit before
-                anything is sent. Afterwards you get notes on every question.
-              </p>
-            </>
-          }
-        />
+    <div className="flex flex-col items-stretch gap-8 xl:flex-row xl:items-start">
+      <h1 className="sr-only">Practise an interview</h1>
 
-        <fieldset className="setup-row">
-          <legend className="setup-label">Practising for</legend>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <Choice
-              active={currentKey === "general"}
-              onClick={() => choose({})}
-              title="General practice"
-              sub="Across the topics you haven't shown yet"
-              icon="compass"
-            />
-            {targets.map((t) => (
-              <Choice
-                key={t.key}
-                active={currentKey === t.key}
-                onClick={() => choose(t.params)}
-                title={t.label}
-                sub={t.sub}
-                icon={t.key.startsWith("jd:") ? "listChecks" : "building"}
-              />
-            ))}
-            {!known && target && (
-              <Choice active onClick={() => undefined} title={target} sub="From the link you followed" icon={focus ? "target" : "listChecks"} />
-            )}
-          </div>
-          <p className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-2xs text-ink-faint">
-            <Link to="/jd" className="font-medium text-brand">
-              + Paste a job description
-            </Link>
-            <Link to="/companies" className="font-medium text-brand">
-              + Practise for a company's drive
-            </Link>
-            <Link to="/skills" className="font-medium text-brand">
-              + Pick a topic from your skill graph
-            </Link>
-          </p>
-        </fieldset>
-
-        {general && groups.length > 0 && (
-          <fieldset className="setup-row">
-            <legend className="setup-label">Interview on</legend>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              <button
-                type="button"
-                aria-pressed={track === null}
-                onClick={() => setTrack(null)}
-                className="choice min-w-0"
-              >
-                <span className="block text-sm font-medium">A mix</span>
-                <span className="mt-0.5 block text-2xs leading-relaxed text-ink-faint">
-                  A few rounds on different topics, different each time.
-                </span>
-              </button>
-            </div>
-            {groups.map(({ group, tracks: inGroup }) => (
-              <div key={group} className="mt-3">
-                <p className="text-xs font-medium text-ink-soft">{group}</p>
-                <div className="mt-1.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {inGroup.map((t) => (
-                    <TrackChoice
-                      key={t.round_type}
-                      track={t}
-                      active={track === t.round_type}
-                      onClick={() => setTrack(t.round_type)}
-                    />
-                  ))}
+      <div className="flex min-w-0 flex-1 flex-col gap-6">
+        <div className="flex flex-col gap-7 rounded-[20px] border border-line bg-surface p-7">
+          {/* 01 — format */}
+          <section className="flex flex-col gap-4" aria-label="Format">
+            <StepHead n={num()} title="What are we practising?" />
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="choice flex flex-1 flex-col gap-3 self-stretch" aria-pressed="true" role="group" aria-label="Interview, chosen">
+                <div className="flex items-start justify-between">
+                  <Fig name="mic" size={21} />
+                  <Fig name="circle-check" size={17} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-base font-semibold text-ink">Interview</p>
+                  <p className="text-xs leading-[1.6] text-ink-soft">A live AI panel that follows your answers.</p>
                 </div>
               </div>
-            ))}
-            {tracks.data?.note && <p className="mt-2.5 text-2xs text-ink-faint">{tracks.data.note}</p>}
-          </fieldset>
-        )}
-
-        <fieldset className="setup-row">
-          <legend className="setup-label">Your resume</legend>
-          {myResumes.length === 0 ? (
-            <p className="mt-2 text-2xs text-ink-faint">
-              {resumes.isLoading
-                ? "Looking for your resume…"
-                : resumes.data?.note ?? "No resume yet, so the questions are all about the topics."}{" "}
-              {!resumes.isLoading && !resumes.data?.note && (
-                <Link to="/resume" className="font-medium text-brand">
-                  Add one
-                </Link>
-              )}
-            </p>
-          ) : (
-            <>
-              <label className="mt-2.5 flex cursor-pointer items-start gap-2.5 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={withResume}
-                  onChange={(e) => setWithResume(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 accent-[var(--color-brand)]"
-                />
-                <span>
-                  Ask me about my projects too
-                  <span className="block text-2xs text-ink-faint">
-                    Off: every question is on the topics. On: a short part on lines from your resume
-                    an interviewer would push on, not scored.
-                  </span>
-                </span>
-              </label>
-              {withResume && myResumes.length > 1 && (
-                <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
-                  {myResumes.map((r) => (
-                    <Choice
-                      key={r.id}
-                      active={pickedResume?.id === r.id}
-                      onClick={() => setResumeId(r.id)}
-                      title={resumeName(r)}
-                      sub={
-                        r.defendable === 0
-                          ? "Nothing on it to push on"
-                          : `${r.defendable} line${r.defendable === 1 ? "" : "s"} to defend${r.is_active ? " · current" : ""}`
-                      }
-                    />
-                  ))}
+              <a href={GD_URL} className="choice flex flex-1 flex-col gap-3 self-stretch no-underline">
+                <div className="flex items-start justify-between">
+                  <Fig name="messages-square" size={21} />
+                  <Fig name="circle" size={17} />
                 </div>
-              )}
-              {withResume && pickedResume && pickedResume.defendable === 0 && (
-                <p className="mt-2 text-2xs text-ink-faint">
-                  Nothing on {myResumes.length > 1 ? "that resume" : "your resume"} reads as a line an
-                  interviewer would push on, so there won't be a projects part.
-                </p>
-              )}
-            </>
-          )}
-        </fieldset>
-
-        <fieldset className="setup-row">
-          <legend className="setup-label">How long</legend>
-          <div className="mt-2.5 flex flex-wrap gap-2">
-            {LENGTHS.map((option) => (
-              <button
-                key={option.minutes}
-                type="button"
-                aria-pressed={minutes === option.minutes}
-                onClick={() => {
-                  chosen.current = true;
-                  setMinutes(option.minutes);
-                }}
-                className="choice"
-              >
-                <span className="block text-sm font-medium">{option.label}</span>
-                <span className="block text-2xs text-ink-faint">{option.hint}</span>
-              </button>
-            ))}
-          </div>
-        </fieldset>
-
-        {(modes.data ?? []).length > 0 && (
-          <fieldset className="setup-row">
-            <legend className="setup-label">What kind</legend>
-            <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
-              {(modes.data ?? []).map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  aria-pressed={mode === option.id}
-                  onClick={() => {
-                    chosen.current = true;
-                    setMode(option.id);
-                  }}
-                  // Top-aligned like the track cards: a button centres its
-                  // content, so Practice sat half a line below Mock.
-                  className="choice flex flex-col justify-start"
-                >
-                  <span className="block text-sm font-medium">{option.label}</span>
-                  <span className="block text-2xs leading-relaxed text-ink-faint">{option.summary}</span>
-                </button>
-              ))}
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-base font-semibold text-ink">Group discussion</p>
+                  <p className="text-xs leading-[1.6] text-ink-soft">3–5 AI peers. Three topic tracks.</p>
+                </div>
+              </a>
             </div>
-          </fieldset>
-        )}
+            <a href="#gd-room" className="flex items-center gap-1.5 text-[11px] leading-normal text-ink-soft no-underline">
+              <Fig name="info" size={13} />
+              <span>Curious about GD? Explore tracks &amp; assessment below ↓</span>
+            </a>
+          </section>
 
-        <div className="setup-row setup-start flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() =>
-              // Via the plan, not straight into the first question: a student
-              // should see what they are about to be asked (FR-6.2).
-              create.mutate(
-                {
-                  minutes,
-                  mode,
-                  jd_id: jd ?? undefined,
-                  company_id: company ?? undefined,
-                  drive_id: drive ?? undefined,
-                  // One concept from Today, several from a course: comma-separated.
-                  focus_concepts: focusConcepts.length ? focusConcepts : undefined,
-                  focus_label: focus ? (label ?? undefined) : undefined,
-                  track: general && track ? track : undefined,
-                  include_resume: withResume && Boolean(pickedResume),
-                  resume_id: withResume && pickedResume ? pickedResume.id : undefined,
-                },
-                { onSuccess: (s) => navigate(`/mock/${s.id}/plan`) },
-              )
-            }
-            disabled={create.isPending || Boolean(unfinished)}
-            className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-semibold text-on-brand hover:bg-brand-hover disabled:opacity-50"
-          >
-            <Icon name="mic" size={16} />
-            {create.isPending ? "Building your plan…" : "Start interview"}
-          </button>
-          <p className="text-2xs text-ink-faint">
-            {pauses === 1 ? "One pause" : `${pauses} pauses`} of up to 5 minutes · ending early still
-            gives you notes
-          </p>
-          <Link
-            to="/mock/library"
-            className="ml-auto inline-flex items-center gap-1.5 text-xs font-medium text-brand hover:underline"
-          >
-            <Icon name="star" size={13} />
-            Your question library
-          </Link>
+          {/* 02 — focus */}
+          <section className={`flex flex-col gap-3.5 ${divider}`} aria-label="Focus">
+            <StepHead n={num()} title="Choose your focus" />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Choice
+                active={currentKey === "general"}
+                onClick={() => choose({})}
+                title="General practice"
+                sub="Across the topics you haven't shown yet"
+                icon="compass"
+              />
+              {targets.map((t) => (
+                <Choice
+                  key={t.key}
+                  active={currentKey === t.key}
+                  onClick={() => choose(t.params)}
+                  title={t.label}
+                  sub={t.sub}
+                  icon={t.key.startsWith("jd:") ? "listChecks" : "building"}
+                />
+              ))}
+              {!known && target && (
+                <Choice active onClick={() => undefined} title={target} sub="From the link you followed" icon={focus ? "target" : "listChecks"} />
+              )}
+            </div>
+            {general && groups.length > 0 && (
+              <div className="mt-1 flex flex-col gap-3">
+                <button
+                  type="button"
+                  aria-pressed={track === null}
+                  onClick={() => setTrack(null)}
+                  className="choice min-w-0"
+                >
+                  <span className="block text-sm font-medium">A mix</span>
+                  <span className="mt-0.5 block text-2xs leading-relaxed text-ink-soft">
+                    A few rounds on different topics, different each time.
+                  </span>
+                </button>
+                {groups.map(({ group, tracks: inGroup }) => (
+                  <div key={group}>
+                    <p className="text-[11px] font-medium text-ink-soft">{group}</p>
+                    <div className="mt-1.5 grid gap-3 sm:grid-cols-2">
+                      {inGroup.map((t) => (
+                        <TrackChoice key={t.round_type} track={t} active={track === t.round_type} onClick={() => setTrack(t.round_type)} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {tracks.data?.note && <p className="text-[11px] text-ink-soft">{tracks.data.note}</p>}
+            <p className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] leading-[1.6] text-ink-soft">
+              <Link to="/jd" className="font-medium text-brand">+ Paste a job description</Link>
+              <Link to="/companies" className="font-medium text-brand">+ Practise for a company's drive</Link>
+              <Link to="/skills" className="font-medium text-brand">+ Pick a topic from your skill graph</Link>
+            </p>
+          </section>
+
+          {/* 03 — length */}
+          <section className="flex flex-col gap-3.5" aria-label="Length">
+            <StepHead n={num()} title="How much time do you have?" />
+            <div className="flex gap-2.5" role="group" aria-label="Length">
+              {LENGTHS.map((option) => {
+                const on = minutes === option.minutes;
+                return (
+                  <button
+                    key={option.minutes}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => {
+                      chosen.current = true;
+                      setMinutes(option.minutes);
+                    }}
+                    className={`flex h-[46px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border text-[13px] font-semibold ${
+                      on ? "border-brand bg-brand text-on-brand" : "border-line bg-surface-sunken text-ink-soft hover:border-line-strong"
+                    }`}
+                  >
+                    {option.label}
+                    {on && <img src={FIGMA_ICONS["../assets/figma/check.svg"]} width={13} height={13} alt="" className="brightness-0 invert" />}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* 04 — intensity */}
+          {(modes.data ?? []).length > 0 && (
+            <section className={`flex flex-col gap-4 ${divider}`} aria-label="Intensity">
+              <StepHead n={num()} title="Set the intensity" />
+              <div className="grid gap-3 sm:grid-cols-2">
+                {(modes.data ?? []).map((option) => {
+                  const on = mode === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => {
+                        chosen.current = true;
+                        setMode(option.id);
+                      }}
+                      className="choice flex flex-col items-stretch justify-start gap-2.5"
+                    >
+                      <span className="flex items-center justify-between">
+                        <Fig name={MODE_ICON[option.id] ?? "timer"} size={18} />
+                        <Fig name={on ? "circle-check-sm" : "circle-sm"} size={16} />
+                      </span>
+                      <span className="block text-sm font-semibold text-ink">{option.label}</span>
+                      <span className="block text-xs leading-[1.55] text-ink-soft">{option.summary}</span>
+                      <span className="block text-[10px] font-medium leading-normal text-brand">{MODE_TAGLINE[option.id]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* 05 — context */}
+          <section className={`flex flex-col gap-3.5 ${divider}`} aria-label="Context">
+            <StepHead n={num()} title="Give the panel context" note="Optional" />
+            <p className="text-xs leading-[1.6] text-ink-soft">
+              The planning agent uses your JD or resume to tailor the time split and questions. Real drive requires a JD.
+            </p>
+            {myResumes.length === 0 ? (
+              <Link
+                to="/resume"
+                className="flex items-center gap-3 rounded-lg border border-dashed border-line p-3.5 no-underline"
+              >
+                <Fig name="upload" size={18} />
+                <span className="flex min-w-0 flex-1 flex-col gap-1">
+                  <span className="text-xs text-brand">{resumes.isLoading ? "Looking for your resume…" : "Upload a resume"}</span>
+                  <span className="text-[10px] text-ink-soft">PDF · up to 5 MB · optional</span>
+                </span>
+                <Fig name="plus" size={17} />
+              </Link>
+            ) : (
+              <>
+                <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-dashed border-line p-3.5 text-xs text-ink">
+                  <input
+                    type="checkbox"
+                    checked={withResume}
+                    onChange={(e) => setWithResume(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-[var(--color-brand)]"
+                  />
+                  <span className="flex flex-col gap-1">
+                    <span className="text-xs font-medium text-brand">Ask me about my projects too</span>
+                    <span className="text-[10px] leading-[1.5] text-ink-soft">
+                      Off: every question is on the topics. On: a short part on lines from your resume an interviewer would push on, not scored.
+                    </span>
+                  </span>
+                </label>
+                {withResume && myResumes.length > 1 && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {myResumes.map((r) => (
+                      <Choice
+                        key={r.id}
+                        active={pickedResume?.id === r.id}
+                        onClick={() => setResumeId(r.id)}
+                        title={resumeName(r)}
+                        sub={
+                          r.defendable === 0
+                            ? "Nothing on it to push on"
+                            : `${r.defendable} line${r.defendable === 1 ? "" : "s"} to defend${r.is_active ? " · current" : ""}`
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+                {withResume && pickedResume && pickedResume.defendable === 0 && (
+                  <p className="text-[11px] text-ink-soft">
+                    Nothing on {myResumes.length > 1 ? "that resume" : "your resume"} reads as a line an interviewer would push on, so there won't be a projects part.
+                  </p>
+                )}
+              </>
+            )}
+            <p className="flex items-center gap-1.5 text-[10px] leading-normal text-ink-soft">
+              <Fig name="lock" size={12} />
+              Only add information you&rsquo;re comfortable using in this practice.
+            </p>
+          </section>
         </div>
 
+        {/* Group discussion, discovered from here */}
+        <section id="gd-room" className="flex flex-col gap-[18px] rounded-[20px] bg-brand-soft p-[26px]" aria-label="Group discussion">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] uppercase leading-normal tracking-[1.6px] text-brand">A different kind of room</p>
+            <Fig name="messages-square-lg" size={19} />
+          </div>
+          <div className="flex flex-col gap-[9px]">
+            <p className="text-[22px] leading-normal tracking-[-0.6px] text-ink">Prefer a group discussion?</p>
+            <p className="text-xs leading-[1.65] text-ink-soft">
+              Switch to GD to join 3–5 AI participants: assertive, quiet, off-topic and supportive. Your voice matters; so does how you listen.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2.5">
+            <p className="text-[11px] font-semibold text-ink">Choose a topic track in GD</p>
+            <div className="flex flex-wrap gap-[7px]">
+              {["Current affairs", "Abstract", "Case-based"].map((t) => (
+                <span key={t} className="rounded-full border border-line bg-surface px-2.5 py-1.5 text-[11px] font-medium leading-normal text-brand">
+                  {t}
+                </span>
+              ))}
+            </div>
+            <p className="text-[11px] leading-[1.7] text-ink-soft">
+              AI in campus assessments · A world without deadlines · Reducing a college canteen&rsquo;s food waste
+            </p>
+          </div>
+          <div className="flex flex-col gap-[7px] border-t border-line pt-3.5 text-[11px]">
+            <p className="font-semibold text-ink">Feedback on every contribution</p>
+            <p className="leading-[1.8] text-ink-soft">Initiating · Structuring · Listening · Building on others · Concluding</p>
+          </div>
+          <a href={GD_URL} className="flex items-start justify-between text-xs leading-normal text-brand no-underline">
+            Set up a GD instead
+            <Fig name="arrow-right" size={16} />
+          </a>
+        </section>
+
         {unfinished && (
-          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-brand-line bg-brand-soft p-3.5 text-sm">
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-brand-line bg-brand-soft p-3.5 text-sm">
             <p className="text-ink">You have an interview in progress.</p>
             <Link to={`/mock/${unfinished.id}`} className="font-medium text-brand">
               Go back to it
@@ -498,96 +597,115 @@ export function MockHome() {
         )}
 
         {create.isError && (
-          <div className="mt-4">
-            <ErrorNote
-              message="That didn't start."
-              detail={create.error instanceof Error ? create.error.message : undefined}
-              onRetry={() => create.reset()}
-            />
-          </div>
+          <ErrorNote
+            message="That didn't start."
+            detail={create.error instanceof Error ? create.error.message : undefined}
+            onRetry={() => create.reset()}
+          />
         )}
-      </section>
+      </div>
 
-      <aside className="space-y-5">
-        {/* The interview as the printed slip students are handed in placement
-            season: what, how long, what kind, who — filled in as they choose. */}
-        <section className="slip" aria-label="Your interview slip">
-          <h2 className="slip-head">Your slip</h2>
-          <dl className="slip-rows">
-            <div>
-              <dt>Practising for</dt>
-              <i aria-hidden />
-              <dd>{target ?? (currentKey === "general" ? "General practice" : "A chosen target")}</dd>
+      <aside className="flex w-full shrink-0 flex-col gap-6 xl:w-[400px]">
+        {/* The session, planned: the one dark panel on the screen. */}
+        <section aria-label="Your session, planned" className="flex flex-col gap-[22px] rounded-[20px] bg-[#142d27] p-[26px] text-white shadow-[0_16px_48px_rgba(22,59,39,0.06)]">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] uppercase leading-normal tracking-[1.6px] text-[#c9f4c8]">Your session, planned</p>
+            <Fig name="sparkles" size={18} />
+          </div>
+          <div className="flex flex-col gap-2.5">
+            <p className="text-[25px] font-medium leading-[1.2] tracking-[-0.8px] text-white">{topicTitle}</p>
+            <div className="flex flex-wrap gap-2">
+              {[`${minutes} min`, modeLabel, mode === "practice" ? "Hints on" : mode === "final_boss" ? "No hints" : "Hints cost credit"].map((t) => (
+                <span key={t} className="rounded-full border border-[#3c574b] bg-[#203e35] px-2.5 py-1.5 text-[11px] font-medium leading-normal text-[#c9f4c8]">
+                  {t}
+                </span>
+              ))}
             </div>
-            {general && (
-              <div>
-                <dt>Interview on</dt>
-                <i aria-hidden />
-                <dd>{track ? (tracks.data?.tracks.find((t) => t.round_type === track)?.title ?? track) : "A mix"}</dd>
-              </div>
-            )}
-            <div>
-              <dt>Length</dt>
-              <i aria-hidden />
-              <dd>{minutes} min</dd>
-            </div>
-            <div>
-              <dt>Kind</dt>
-              <i aria-hidden />
-              <dd>{(modes.data ?? []).find((m) => m.id === mode)?.label ?? mode}</dd>
-            </div>
-            <div>
-              <dt>Pauses</dt>
-              <i aria-hidden />
-              <dd>{pauses}</dd>
-            </div>
-            <div>
-              <dt>Resume</dt>
-              <i aria-hidden />
-              <dd>{withResume && pickedResume ? "Asked about" : "Not used"}</dd>
-            </div>
-          </dl>
+          </div>
+          <ol className="flex flex-col gap-[18px] border-t border-[#3c574b] pt-5">
+            {parts.map((part, i) => (
+              <li key={i} className="flex items-center gap-3">
+                <span className="h-[34px] w-[3px] shrink-0 rounded-sm" style={{ background: PART_COLOURS[i] }} />
+                <span className="flex min-w-0 flex-1 flex-col gap-[5px]">
+                  <span className="text-xs leading-[1.4] text-white">{part.t}</span>
+                  <span className="text-[10px] leading-normal text-[#adc4b8]">
+                    {part.who ? `${part.who.name.split(" ")[0]} · ${part.who.title.toLowerCase()}` : "Your panel"}
+                  </span>
+                </span>
+                <span className="flex shrink-0 flex-col items-end gap-0.5 leading-normal">
+                  <span className="text-xl text-[#c9f4c8]">{String(part.m).padStart(2, "0")}</span>
+                  <span className="text-[8px] text-[#adc4b8]">MIN</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+          <p className="flex items-start gap-2 text-[11px] leading-[1.6] text-[#adc4b8]">
+            <Fig name="route" size={15} />
+            <span>
+              Planned from your topic + {minutes}-minute length. Follow-ups and handovers adapt to what you say. The final plan is confirmed on the next screen.
+            </span>
+          </p>
+          <div className="flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={startPlan}
+              disabled={create.isPending || Boolean(unfinished)}
+              className="start-plan flex h-[50px] w-full items-center justify-center gap-3 rounded-lg px-5 text-sm font-semibold disabled:opacity-50"
+            >
+              {create.isPending ? "Building your plan…" : "Start practice interview"}
+              <Fig name="arrow-right-lg" size={17} />
+            </button>
+            <p className="text-center text-[10px] leading-normal text-[#adc4b8]">
+              {pauses === 1 ? "One pause" : `${pauses} pauses`} of up to 5 minutes · ending early still gives you notes
+            </p>
+          </div>
         </section>
 
         {(personas.data ?? []).length > 0 && (
-          <section className="panel p-5">
-            <h2 className="text-base font-semibold text-ink">Who you might meet</h2>
-            <p className="mt-1 text-2xs text-ink-faint">A mock is a panel; the plan says who runs each part.</p>
-            <ul className="mt-4 grid grid-cols-2 gap-3">
-              {/* Six, then the rest on request: all 39 made this page five
-                  screens tall for a list nobody chooses from (2026-10-13). */}
-              {(personas.data ?? []).slice(0, allPersonas ? undefined : PERSONAS_SHOWN).map((persona) => (
-                <li key={persona.id} className="placard">
-                  <Face persona={persona.id} name={persona.name} size={48} />
-                  <span className="placard-name">{persona.name}</span>
-                  <span className="block text-2xs leading-snug text-ink-soft">{persona.title}</span>
-                  {persona.style && (
-                    <span className="mt-1.5 block text-2xs leading-relaxed text-ink-faint">{persona.style}</span>
-                  )}
+          <section className="flex flex-col gap-[18px] rounded-xl border border-line bg-surface p-[22px]" aria-label="Your interview panel">
+            <div className="flex items-start justify-between">
+              <h2 className="whitespace-nowrap text-sm font-semibold text-ink">Three perspectives. One panel.</h2>
+              <Fig name="users-round" size={17} />
+            </div>
+            <ul className={`flex flex-col gap-[18px] ${allPersonas ? "max-h-72 overflow-y-auto pr-1" : ""}`}>
+              {meetThree.map((persona, i) => (
+                <li key={persona.id} className="flex items-center gap-2.5">
+                  <span
+                    className="grid size-8 shrink-0 place-items-center rounded-full text-[11px] text-[#192d28]"
+                    style={{ background: AVATAR_COLOURS[i % AVATAR_COLOURS.length] }}
+                  >
+                    {initials(persona.name)}
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                    <span className="text-xs font-semibold text-ink">{persona.name.split(" ")[0]}</span>
+                    <span className="text-[11px] leading-[1.4] text-ink-soft">
+                      {persona.title}
+                      {persona.style ? ` · ${persona.style.split(/[.;]/)[0].toLowerCase()}` : ""}
+                    </span>
+                  </span>
                 </li>
               ))}
             </ul>
-            {(personas.data ?? []).length > PERSONAS_SHOWN && (
+            {(personas.data ?? []).length > 3 && (
               <button
                 type="button"
                 aria-expanded={allPersonas}
                 onClick={() => setAllPersonas((open) => !open)}
-                className="mt-4 text-2xs font-medium text-brand hover:text-brand-hover"
+                className="flex items-start justify-between text-[11px] leading-normal text-brand"
               >
-                {allPersonas ? "Show fewer" : `Show all ${(personas.data ?? []).length} interviewers`}
+                {allPersonas ? "Show fewer" : `Explore all ${(personas.data ?? []).length} AI interviewers`}
+                <Fig name="arrow-up-right" size={14} />
               </button>
             )}
           </section>
         )}
 
-        <section className="panel p-5">
+        <section className="rounded-xl border border-line bg-surface p-[22px]" aria-label="Your interviews">
           <h2 className="text-sm font-semibold text-ink">Your interviews</h2>
           {history.isLoading ? (
             <SkeletonRows label="Loading your interviews" rows={3} className="mt-4" />
           ) : (history.data ?? []).length === 0 ? (
-            <p className="mt-3 text-sm text-ink-faint">
-              Nothing yet. Each interview is listed here with its notes.
-            </p>
+            <p className="mt-3 text-[11px] text-ink-soft">Nothing yet. Each interview is listed here with its notes.</p>
           ) : (
             <ul className="mt-2">
               {(history.data ?? []).slice(0, 6).map((session) => (
@@ -595,12 +713,16 @@ export function MockHome() {
               ))}
             </ul>
           )}
-          {(history.data ?? []).length > 6 && (
-            <Link to="/history" className="mt-2 inline-block text-2xs font-medium text-brand">
-              All your interviews
-            </Link>
-          )}
+          <div className="mt-3 flex items-center justify-between text-[11px] font-semibold text-brand">
+            <Link to="/mock/library">Your question library</Link>
+            {(history.data ?? []).length > 6 && <Link to="/history">All your interviews</Link>}
+          </div>
         </section>
+
+        <p className="flex items-start gap-[9px] px-3 text-[11px] leading-[1.7] text-ink-soft">
+          <Fig name="notebook-pen" size={16} />
+          <span>After your round: detailed notes on every question, plus focused practice for the gaps.</span>
+        </p>
       </aside>
     </div>
   );
