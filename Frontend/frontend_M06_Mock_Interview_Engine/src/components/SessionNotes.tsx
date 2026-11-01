@@ -509,7 +509,7 @@ function QuestionCard({
                 <span>
                   {point.point}
                   <Said text={point.evidence} />
-                  {point.fix && <span className="mt-0.5 block text-sm text-ink">→ {point.fix}</span>}
+                  {point.fix && <span className="mt-0.5 block text-sm text-ink">{point.fix}</span>}
                 </span>
               </li>
             ))}
@@ -556,7 +556,6 @@ function QuestionCard({
           <ul className="space-y-1.5 text-sm text-ink">
             {steps.map((line) => (
               <li key={line} className="flex gap-2">
-                <span aria-hidden className="text-ink-faint">→</span>
                 {line}
               </li>
             ))}
@@ -633,7 +632,7 @@ function QuestionCard({
               to={`/turns/${question.turn_id}`}
               className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-ink-soft hover:bg-surface-sunken hover:text-ink"
             >
-              How this answer was marked →
+              How this answer was marked
             </Link>
           )}
         </div>
@@ -701,7 +700,7 @@ function SaveToggle({ sessionId, question }: { sessionId: string; question: Ques
         }
         className="text-2xs font-medium text-brand hover:underline disabled:opacity-60"
       >
-        {starred ? "★ Saved" : "☆ Save to your library"}
+        {starred ? "Saved" : "Save to your library"}
       </button>
     </span>
   );
@@ -766,7 +765,7 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
     <div className="mx-auto max-w-(--container-conversation)">
       <header className="relative overflow-hidden rounded-2xl border border-line bg-surface p-6 shadow-raised">
         <p className="relative inline-flex items-center gap-1.5 rounded-full border border-confirmed-line bg-confirmed-soft px-2.5 py-1 text-2xs font-medium text-confirmed">
-          ✓ {data.kind === "drill" ? "Drill complete" : "Session complete"}
+          {data.kind === "drill" ? "Drill complete" : "Session complete"}
         </p>
         <h1 className="relative mt-3 text-3xl font-semibold tracking-tight text-ink">Your notes</h1>
         <p className="relative mt-2 text-sm leading-relaxed text-ink-soft">{data.framing}</p>
@@ -778,9 +777,9 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
         <div className="relative mt-5 flex flex-wrap gap-2">
           <Link
             to="/mock"
-            className="inline-flex h-9 items-center rounded-lg bg-brand px-3.5 text-sm font-semibold text-white hover:bg-brand-hover"
+            className="inline-flex h-9 items-center rounded-lg bg-brand px-3.5 text-sm font-semibold text-on-brand hover:bg-brand-hover"
           >
-            Practise again →
+            Practise again
           </Link>
           <Link
             to="/skills"

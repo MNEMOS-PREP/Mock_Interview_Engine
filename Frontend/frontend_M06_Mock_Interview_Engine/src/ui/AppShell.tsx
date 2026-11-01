@@ -53,7 +53,7 @@ function ThemeToggle() {
       aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
     >
       <span aria-hidden className="text-sm">
-        {theme === "dark" ? "☀" : "☾"}
+        {theme === "dark" ? "Light" : "Dark"}
       </span>
     </button>
   );

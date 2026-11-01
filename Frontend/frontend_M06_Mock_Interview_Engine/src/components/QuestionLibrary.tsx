@@ -50,7 +50,7 @@ function Entry({
           <p className="flex flex-wrap items-center gap-2 text-2xs text-ink-faint">
             {entry.topic && <span>{entry.topic}</span>}
             {entry.starred && (
-              <span className="rounded-full border border-brand-line px-2 py-0.5 text-brand">★ Starred</span>
+              <span className="rounded-full border border-brand-line px-2 py-0.5 text-brand">Starred</span>
             )}
             {entry.flagged && (
               <span
@@ -97,7 +97,7 @@ function Entry({
                       </p>
                     ))}
                     <Link to={`/mock/${attempt.session_id}/report`} className="text-2xs text-brand hover:underline">
-                      That interview's notes →
+                      That interview’s notes
                     </Link>
                   </li>
                 ))}
@@ -231,7 +231,7 @@ export function QuestionLibrary() {
               { onSuccess: (session) => navigate(`/mock/${session.id}/plan`) },
             )
           }
-          className="inline-flex h-10 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+          className="inline-flex h-10 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-on-brand hover:bg-brand-hover disabled:opacity-50"
         >
           {create.isPending ? "Building it…" : `Practise ${picked.length || ""} again`.replace("  ", " ")}
         </button>

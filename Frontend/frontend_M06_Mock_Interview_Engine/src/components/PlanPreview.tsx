@@ -378,7 +378,7 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
               title={`${segment.title} · ${minutes(segment.minutes)}`}
             >
               <span
-                className={`block h-2 rounded-sm ${segment.is_reserved ? "bg-line-strong" : "bg-brand"}`}
+                className={`block h-2 rounded-sm ${segment.is_reserved ? "bg-line-strong" : "bg-data"}`}
                 style={{ opacity: segment.is_reserved ? 1 : 0.35 + 0.65 * (segment.minutes / Math.max(...live.map((x) => x.minutes))) }}
               />
               <span className="mt-1.5 block truncate text-2xs text-ink-soft">{segment.title}</span>

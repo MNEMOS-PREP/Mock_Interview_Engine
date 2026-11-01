@@ -492,7 +492,7 @@ export function MockHome() {
           <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-brand-line bg-brand-soft p-3.5 text-sm">
             <p className="text-ink">You have an interview in progress.</p>
             <Link to={`/mock/${unfinished.id}`} className="font-medium text-brand">
-              Go back to it →
+              Go back to it
             </Link>
           </div>
         )}
@@ -557,7 +557,7 @@ export function MockHome() {
           )}
           {(history.data ?? []).length > 6 && (
             <Link to="/history" className="mt-2 inline-block text-2xs font-medium text-brand">
-              All your interviews →
+              All your interviews
             </Link>
           )}
         </section>
