@@ -244,6 +244,8 @@ export function MockHome() {
   // `?track=ml_verbal` from a link; otherwise a mixed interview.
   const [track, setTrack] = useState<string | null>(() => params.get("track"));
   const [withResume, setWithResume] = useState(false);
+  const [focusOpen, setFocusOpen] = useState(false);
+  const [jdText, setJdText] = useState("");
   const [allPersonas, setAllPersonas] = useState(false);
   const [resumeId, setResumeId] = useState<string | null>(null);
   const myResumes = resumes.data?.resumes ?? [];
@@ -266,7 +268,6 @@ export function MockHome() {
   const unfinished = (history.data ?? []).find((session) => LIVE.has(session.status));
 
   const currentKey = focus ? `focus:${focus}` : jd ? `jd:${jd}` : drive ? `drive:${drive}` : "general";
-  const known = targets.some((t) => t.key === currentKey);
   const choose = (next: Record<string, string>) => setParams(next, { replace: true });
 
   const target = focus
@@ -334,8 +335,15 @@ export function MockHome() {
   const divider = "border-t border-line pt-6";
 
   return (
+    <div className="flex flex-col gap-10">
+      <header className="flex flex-col gap-3">
+        <p className="text-[11px] leading-normal tracking-[1.6px] text-brand">YOUR PRACTICE SPACE</p>
+        <h1 className="text-[43px] font-medium leading-[1.15] tracking-[-1.8px] text-ink">A little practice today?</h1>
+        <p className="text-[15px] leading-[1.65] text-ink-soft">
+          Choose your round and your pace. We&rsquo;ll bring a panel that listens — and a plan that fits.
+        </p>
+      </header>
     <div className="flex flex-col items-stretch gap-8 xl:flex-row xl:items-start">
-      <h1 className="sr-only">Practise an interview</h1>
 
       <div className="flex min-w-0 flex-1 flex-col gap-6">
         <div className="flex flex-col gap-7 rounded-[20px] border border-line bg-surface p-7">
@@ -373,26 +381,48 @@ export function MockHome() {
           {/* 02 — focus */}
           <section className={`flex flex-col gap-3.5 ${divider}`} aria-label="Focus">
             <StepHead n={num()} title="Choose your focus" />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Choice
-                active={currentKey === "general"}
-                onClick={() => choose({})}
-                title="General practice"
-                sub="Across the topics you haven't shown yet"
-                icon="compass"
-              />
-              {targets.map((t) => (
-                <Choice
-                  key={t.key}
-                  active={currentKey === t.key}
-                  onClick={() => choose(t.params)}
-                  title={t.label}
-                  sub={t.sub}
-                  icon={t.key.startsWith("jd:") ? "listChecks" : "building"}
-                />
-              ))}
-              {!known && target && (
-                <Choice active onClick={() => undefined} title={target} sub="From the link you followed" icon={focus ? "target" : "listChecks"} />
+            <div className="relative">
+              <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={focusOpen}
+                onClick={() => setFocusOpen((open) => !open)}
+                className="flex h-[58px] w-full items-center gap-3 rounded-lg border border-line bg-surface px-4 text-left hover:border-line-strong"
+              >
+                <Fig name="code-xml" size={19} />
+                <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                  <span className="truncate text-[13px] text-ink">{target ?? (currentKey === "general" ? "General practice" : topicTitle)}</span>
+                  <span className="truncate text-[10px] text-ink-soft">
+                    {currentKey === "general" ? "Across the topics you haven't shown yet" : (targets.find((t) => t.key === currentKey)?.sub ?? "From the link you followed")}
+                  </span>
+                </span>
+                <Fig name="chevron-down" size={17} />
+              </button>
+              {focusOpen && (
+                <ul
+                  role="listbox"
+                  aria-label="Focus"
+                  className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded-xl border border-line bg-surface p-1.5 shadow-[0_16px_48px_rgba(22,59,39,0.12)]"
+                >
+                  {[
+                    { key: "general", label: "General practice", sub: "Across the topics you haven't shown yet", params: {} as Record<string, string> },
+                    ...targets.map((t) => ({ key: t.key, label: t.label, sub: t.sub, params: t.params })),
+                  ].map((o) => (
+                    <li key={o.key} role="option" aria-selected={currentKey === o.key}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          choose(o.params);
+                          setFocusOpen(false);
+                        }}
+                        className={`flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left hover:bg-brand-soft ${currentKey === o.key ? "bg-brand-soft" : ""}`}
+                      >
+                        <span className="text-[13px] font-medium text-ink">{o.label}</span>
+                        {o.sub && <span className="text-[11px] text-ink-soft">{o.sub}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
             {general && groups.length > 0 && (
@@ -493,6 +523,25 @@ export function MockHome() {
             <p className="text-xs leading-[1.6] text-ink-soft">
               The planning agent uses your JD or resume to tailor the time split and questions. Real drive requires a JD.
             </p>
+            <div className="flex flex-col gap-[9px]">
+              <label htmlFor="jd-text" className="text-[11px] leading-normal text-ink">Job description</label>
+              <textarea
+                id="jd-text"
+                value={jdText}
+                onChange={(e) => setJdText(e.target.value)}
+                placeholder="Paste the role, responsibilities and skills here…"
+                className="min-h-[94px] w-full resize-y rounded-lg border border-line bg-canvas p-3.5 text-xs leading-normal text-ink placeholder:text-ink-soft"
+              />
+              {jdText.trim().length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => navigate("/jd", { state: { jdText } })}
+                  className="self-start text-[11px] font-semibold text-brand"
+                >
+                  Review and use this job description →
+                </button>
+              )}
+            </div>
             {myResumes.length === 0 ? (
               <Link
                 to="/resume"
@@ -724,6 +773,7 @@ export function MockHome() {
           <span>After your round: detailed notes on every question, plus focused practice for the gaps.</span>
         </p>
       </aside>
+    </div>
     </div>
   );
 }
