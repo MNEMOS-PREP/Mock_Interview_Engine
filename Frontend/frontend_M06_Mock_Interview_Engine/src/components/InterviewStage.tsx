@@ -443,7 +443,7 @@ function StatusStrip({
         </svg>
       </Link>
       <span className="flex min-w-0 items-center gap-2.5">
-        <span className="truncate text-base font-semibold text-ink">
+        <span className="shrink-0 whitespace-nowrap text-base font-semibold text-ink">
           {session.kind === "drill"
             ? "Defend drill"
             : session.mode === "practice"
@@ -501,7 +501,7 @@ function StatusStrip({
             aria-label="Progress through the planned questions"
           >
             {Array.from({ length: dots }).map((_, i) => (
-              <span key={i} className={`h-1.5 w-5 min-w-1 shrink rounded-full ${i < filled ? "bg-brand" : "bg-line-strong"}`} />
+              <span key={i} className={`h-1.5 w-5 min-w-1 shrink rounded-full ${i < filled ? "bg-data" : "bg-line-strong"}`} />
             ))}
           </span>
         )}
@@ -548,7 +548,7 @@ function StatusStrip({
             type="button"
             onClick={onEnd}
             disabled={busy}
-            className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#dc2626] px-3.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60"
+            className="inline-flex h-9 items-center gap-2 rounded-full border border-[#dc2626]/40 bg-[#dc2626]/10 px-4 text-sm font-semibold text-[#dc2626] hover:bg-[#dc2626] hover:text-white disabled:opacity-60"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M3 14c4-4 14-4 18 0l-2.5 2.5-3-1.5v-2.2c-2-.7-4-.7-6 0V15l-3 1.5Z" />
@@ -624,12 +624,12 @@ function PanelView({
     // for a persona with no head, sat on a flat slab the head then left.
     const photo = <InterviewerPhoto persona={p.id} name={p.name} fill backdrop />;
     // Wider than tall on a short window, so the answer box fits beneath.
-    const frame = `aspect-[4/3] w-full [@media(max-height:800px)]:aspect-video ${big ? "lg:max-h-[calc(100dvh-26rem)]" : ""}`;
+    const frame = `aspect-video w-full ${big ? "lg:max-h-[calc(100dvh-26rem)]" : ""}`;
     return (
       <figure
         key={p.id}
-        className={`min-w-0 overflow-hidden rounded-xl border bg-surface transition-colors ${
-          speaking ? "border-brand ring-2 ring-brand/40" : turn ? "border-brand-line" : "border-line"
+        className={`min-w-0 overflow-hidden rounded-[20px] border bg-surface transition-[border-color,box-shadow] duration-300 ${
+          speaking ? "border-brand ring-4 ring-[#c9f4c8]" : turn ? "border-brand-line" : "border-line"
         }`}
       >
         {faces?.has(p.id) ? (
@@ -735,7 +735,7 @@ function Stepper({ session }: { session: Session }) {
               aria-current={current ? "step" : undefined}
               className={`inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-2xs font-medium ${
                 current
-                  ? "bg-brand text-white"
+                  ? "bg-brand text-on-brand"
                   : done
                     ? "bg-brand-soft text-brand"
                     : "border border-line text-ink-faint"
@@ -895,7 +895,7 @@ function RoundRule({ title }: { title: string }) {
       aria-label={`New round: ${title}`}
     >
       <span className="h-px flex-1 bg-line" />
-      <span className="text-2xs uppercase tracking-wide text-ink-faint">
+      <span className="text-2xs text-ink-faint">
         {title}
       </span>
       <span className="h-px flex-1 bg-line" />
@@ -1171,7 +1171,7 @@ function YouTile({ level, listening }: { level: () => number; listening: boolean
   const currentLabel = cameras.find((camera) => camera.deviceId === current)?.label;
   return (
     <figure className="min-w-0 overflow-hidden rounded-xl border border-line bg-surface">
-      <div className="relative aspect-[4/3] w-full bg-surface-sunken [@media(max-height:800px)]:aspect-video">
+      <div className="relative aspect-video w-full bg-surface-sunken">
         {on ? (
           <video ref={video} autoPlay muted playsInline className="h-full w-full -scale-x-100 object-cover" />
         ) : (
@@ -1232,7 +1232,7 @@ function YouTile({ level, listening }: { level: () => number; listening: boolean
 /** The question being answered, large (the mockup's "Current question"). */
 function CurrentQuestion({ text, asker, closing }: { text: string; asker: string | null; closing: boolean }) {
   return (
-    <section aria-label="Current question" className="rounded-2xl border border-line bg-surface p-5 shadow-raised">
+    <section aria-label="Current question" className="z-10 rounded-2xl border border-line bg-surface px-6 py-5 lg:sticky lg:top-[7.75rem]">
       <p className="flex items-center gap-2 text-xs font-semibold text-brand">
         <span aria-hidden className="grid h-6 w-6 place-items-center rounded-md bg-brand-soft">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1243,7 +1243,7 @@ function CurrentQuestion({ text, asker, closing }: { text: string; asker: string
         {closing ? "Your turn to ask" : "Current question"}
         {asker && <span className="font-normal text-ink-faint">· {asker}</span>}
       </p>
-      <p className="mt-3 text-lg font-semibold leading-snug text-ink sm:text-xl">{text}</p>
+      <p className="turn-interviewer mt-3">{text}</p>
     </section>
   );
 }
@@ -2684,7 +2684,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     className={`grid h-9 w-9 place-items-center rounded-full disabled:opacity-40 ${
                       dictation.listening
                         ? "bg-session-listening text-white"
-                        : "bg-brand text-white hover:brightness-110"
+                        : "bg-brand text-on-brand hover:bg-brand-hover"
                     }`}
                   >
                     <Icon name="mic" size={16} />
@@ -2825,7 +2825,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                     onClick={() => setFlagging((v) => !v)}
                     aria-label="Flag this question as broken or unclear"
                   >
-                    ⚑ Flag
+                    Flag
                   </Button>
                 )}
                 {!data.in_closing && data.open_turn_id && questionId && (
@@ -2851,7 +2851,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                       );
                     }}
                   >
-                    {starred.has(questionId) ? "★ Saved" : "☆ Save question"}
+                    {starred.has(questionId) ? "Saved" : "Save question"}
                   </Button>
                 )}
                 <span className="ml-auto hidden text-2xs text-ink-faint xl:inline">
@@ -2859,7 +2859,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                 </span>
                 <span className="ml-auto xl:ml-0">
                   <Button type="submit" disabled={!canAnswer || !draft.trim() || listening.writing}>
-                    {listening.writing ? "Writing it down…" : `${data.in_closing ? "Ask" : "Answer"} →`}
+                    {listening.writing ? "Writing it down…" : data.in_closing ? "Ask" : "Answer"}
                   </Button>
                 </span>
               </div>

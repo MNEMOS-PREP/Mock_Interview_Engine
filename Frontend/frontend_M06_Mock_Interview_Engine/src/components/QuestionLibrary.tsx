@@ -13,10 +13,11 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { EmptyState, ErrorNote, PageHeader, SkeletonRows, relativeDays } from "@ai/core";
+import { EmptyState, ErrorNote, SkeletonRows, relativeDays } from "@ai/core";
 
 import { useCreateSession, useLibrary, useRemoveFromLibrary } from "../api";
 import type { LibraryEntry } from "../types";
+import { PageIntro } from "../ui/PageIntro";
 
 type Mark = "all" | "starred" | "flagged";
 
@@ -48,9 +49,9 @@ function Entry({
         />
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-2 text-2xs text-ink-faint">
-            {entry.topic && <span className="uppercase tracking-wide">{entry.topic}</span>}
+            {entry.topic && <span>{entry.topic}</span>}
             {entry.starred && (
-              <span className="rounded-full border border-brand-line px-2 py-0.5 text-brand">★ Starred</span>
+              <span className="rounded-full border border-brand-line px-2 py-0.5 text-brand">Starred</span>
             )}
             {entry.flagged && (
               <span
@@ -97,7 +98,7 @@ function Entry({
                       </p>
                     ))}
                     <Link to={`/mock/${attempt.session_id}/report`} className="text-2xs text-brand hover:underline">
-                      That interview's notes →
+                      That interview’s notes
                     </Link>
                   </li>
                 ))}
@@ -148,8 +149,9 @@ export function QuestionLibrary() {
 
   return (
     <div className="mx-auto max-w-(--container-conversation)">
-      <PageHeader
-        title="Your question library"
+      <PageIntro
+        kicker="Your question library"
+        title="Questions worth another go"
         subtitle="Questions you saved, and the ones the interview marked as worth another go."
         how={
           <>
@@ -231,7 +233,7 @@ export function QuestionLibrary() {
               { onSuccess: (session) => navigate(`/mock/${session.id}/plan`) },
             )
           }
-          className="inline-flex h-10 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+          className="inline-flex h-10 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-on-brand hover:bg-brand-hover disabled:opacity-50"
         >
           {create.isPending ? "Building it…" : `Practise ${picked.length || ""} again`.replace("  ", " ")}
         </button>

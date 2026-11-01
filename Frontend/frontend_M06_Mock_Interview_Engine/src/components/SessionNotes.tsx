@@ -223,7 +223,7 @@ function KeptAnswers({ sessionId, count }: { sessionId: string; count: number })
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="mt-4">
-      <h4 className="text-2xs font-semibold uppercase tracking-wide text-ink-faint">{title}</h4>
+      <h4 className="text-xs font-semibold text-ink-soft">{title}</h4>
       <div className="mt-1.5">{children}</div>
     </section>
   );
@@ -317,7 +317,7 @@ function Overview({ data }: { data: SessionReport }) {
         <div className="mt-4 grid gap-4 border-t border-line pt-4 sm:grid-cols-2">
           {focus.length > 0 && (
             <div>
-              <h3 className="text-2xs font-semibold uppercase tracking-wide text-ink-faint">Work on first</h3>
+              <h3 className="text-xs font-semibold text-ink-soft">Work on first</h3>
               <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-sm leading-relaxed text-ink">
                 {focus.slice(0, 3).map((line) => (
                   <li key={line}>{line}</li>
@@ -327,7 +327,7 @@ function Overview({ data }: { data: SessionReport }) {
           )}
           {repeated.length > 0 && (
             <div>
-              <h3 className="text-2xs font-semibold uppercase tracking-wide text-ink-faint">
+              <h3 className="text-xs font-semibold text-ink-soft">
                 Came up more than once
               </h3>
               <ul className="mt-1.5 space-y-1 text-sm leading-relaxed text-ink">
@@ -358,7 +358,7 @@ function More({ summary }: { summary: ReportSummary }) {
     <section className="mt-3 grid gap-3 sm:grid-cols-2" aria-label="More about this interview">
       {shown.map(([title, lines]) => (
         <div key={title} className="rounded-xl border border-line bg-surface p-4">
-          <h3 className="text-2xs font-semibold uppercase tracking-wide text-ink-faint">{title}</h3>
+          <h3 className="text-xs font-semibold text-ink-soft">{title}</h3>
           <ul className="mt-2 space-y-1.5">
             {lines.map((line) => (
               <li key={line} className="text-sm leading-relaxed text-ink">
@@ -445,7 +445,7 @@ function QuestionCard({
             qualifier={question.status_qualifier}
           />
         )}
-        <span className="text-2xs uppercase tracking-wide text-ink-faint">Question {index + 1}</span>
+        <span className="text-2xs text-ink-faint">Question {index + 1}</span>
         {topicName(question) && <span className="text-2xs text-ink-faint">· {topicName(question)}</span>}
         {question.asked_by && <span className="text-2xs text-ink-faint">· {question.asked_by}</span>}
         <span className="ml-auto">
@@ -509,7 +509,7 @@ function QuestionCard({
                 <span>
                   {point.point}
                   <Said text={point.evidence} />
-                  {point.fix && <span className="mt-0.5 block text-sm text-ink">→ {point.fix}</span>}
+                  {point.fix && <span className="mt-0.5 block text-sm text-ink">{point.fix}</span>}
                 </span>
               </li>
             ))}
@@ -539,7 +539,7 @@ function QuestionCard({
 
       {ideal && (
         <details open={!correct && question.status !== "not_reached"} className="mt-4 rounded-xl bg-surface-sunken p-3">
-          <summary className="cursor-pointer text-2xs font-semibold uppercase tracking-wide text-ink-soft hover:text-ink">
+          <summary className="cursor-pointer text-xs font-semibold text-ink-soft hover:text-ink">
             {ideal.source === "written" ? "A model answer" : "One strong answer"}
             {ideal.source === "unreviewed" ? " · not yet reviewed by a person" : ""}
             {ideal.source === "written" ? " · written for these notes" : ""}
@@ -556,7 +556,6 @@ function QuestionCard({
           <ul className="space-y-1.5 text-sm text-ink">
             {steps.map((line) => (
               <li key={line} className="flex gap-2">
-                <span aria-hidden className="text-ink-faint">→</span>
                 {line}
               </li>
             ))}
@@ -633,7 +632,7 @@ function QuestionCard({
               to={`/turns/${question.turn_id}`}
               className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-ink-soft hover:bg-surface-sunken hover:text-ink"
             >
-              How this answer was marked →
+              How this answer was marked
             </Link>
           )}
         </div>
@@ -701,7 +700,7 @@ function SaveToggle({ sessionId, question }: { sessionId: string; question: Ques
         }
         className="text-2xs font-medium text-brand hover:underline disabled:opacity-60"
       >
-        {starred ? "★ Saved" : "☆ Save to your library"}
+        {starred ? "Saved" : "Save to your library"}
       </button>
     </span>
   );
@@ -765,12 +764,8 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
   return (
     <div className="mx-auto max-w-(--container-conversation)">
       <header className="relative overflow-hidden rounded-2xl border border-line bg-surface p-6 shadow-raised">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -top-20 -right-10 h-48 w-48 rounded-full bg-brand opacity-15 blur-3xl"
-        />
         <p className="relative inline-flex items-center gap-1.5 rounded-full border border-confirmed-line bg-confirmed-soft px-2.5 py-1 text-2xs font-medium text-confirmed">
-          ✓ {data.kind === "drill" ? "Drill complete" : "Session complete"}
+          {data.kind === "drill" ? "Drill complete" : "Session complete"}
         </p>
         <h1 className="relative mt-3 text-3xl font-semibold tracking-tight text-ink">Your notes</h1>
         <p className="relative mt-2 text-sm leading-relaxed text-ink-soft">{data.framing}</p>
@@ -782,9 +777,9 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
         <div className="relative mt-5 flex flex-wrap gap-2">
           <Link
             to="/mock"
-            className="inline-flex h-9 items-center rounded-lg bg-brand px-3.5 text-sm font-semibold text-white hover:bg-brand-hover"
+            className="inline-flex h-9 items-center rounded-lg bg-brand px-3.5 text-sm font-semibold text-on-brand hover:bg-brand-hover"
           >
-            Practise again →
+            Practise again
           </Link>
           <Link
             to="/skills"

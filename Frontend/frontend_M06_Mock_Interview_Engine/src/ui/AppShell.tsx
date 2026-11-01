@@ -18,6 +18,7 @@ import { Link, NavLink } from "react-router-dom";
 
 import { DependencyAlert } from "@ai/core";
 
+import logo from "../assets/logo.png";
 import { useDeps } from "../api";
 import {
   DEFAULT_CANDIDATE_ID,
@@ -27,7 +28,8 @@ import {
 } from "../identity";
 
 const NAV = [
-  { to: "/mock", label: "Interview" },
+  { to: "/mock", label: "Practise" },
+  { to: "/mock/library", label: "Question library" },
   { to: "/mock/system", label: "System" },
 ];
 
@@ -53,7 +55,7 @@ function ThemeToggle() {
       aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
     >
       <span aria-hidden className="text-sm">
-        {theme === "dark" ? "☀" : "☾"}
+        {theme === "dark" ? "Light" : "Dark"}
       </span>
     </button>
   );
@@ -66,26 +68,34 @@ function CandidateControl() {
   useEffect(() => setDraft(candidate), [candidate]);
 
   return (
-    <form
-      className="flex items-center gap-1.5"
-      onSubmit={(event) => {
-        event.preventDefault();
-        setCandidateId(draft);
-      }}
-    >
-      <label htmlFor="candidate" className="text-2xs uppercase tracking-wide text-ink-faint">
-        Student
-      </label>
-      <input
-        id="candidate"
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={() => setCandidateId(draft)}
-        spellCheck={false}
-        className="w-[15ch] rounded-md border border-line bg-surface px-2 py-1 font-mono text-2xs text-ink-soft focus:border-brand focus:outline-none"
-        title="No login exists yet (PLATFORM_TODO §1). This is the dev identity."
-      />
-    </form>
+    <details className="relative">
+      <summary
+        className="grid size-9 cursor-pointer list-none place-items-center rounded-full bg-[#c9f4c8] text-[11px] font-semibold text-[#192d28] [&::-webkit-details-marker]:hidden"
+        title="Who you are practising as"
+      >
+        {candidate.slice(0, 2).toUpperCase()}
+      </summary>
+      <form
+        className="absolute right-0 z-20 mt-2 flex w-64 flex-col gap-2 rounded-xl border border-line bg-surface p-3.5 shadow-[0_16px_48px_rgba(22,59,39,0.12)]"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setCandidateId(draft);
+        }}
+      >
+        <label htmlFor="candidate" className="text-[11px] text-ink-soft">
+          Student id
+        </label>
+        <input
+          id="candidate"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => setCandidateId(draft)}
+          spellCheck={false}
+          className="rounded-lg border border-line bg-surface px-2.5 py-2 font-mono text-2xs text-ink-soft focus:border-brand focus:outline-none"
+        />
+        <p className="text-[10px] leading-normal text-ink-faint">No login exists yet (PLATFORM_TODO §1), so this is the dev identity.</p>
+      </form>
+    </details>
   );
 }
 
@@ -96,20 +106,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-dvh bg-canvas text-ink">
       <header className="sticky top-0 z-10 border-b border-line bg-surface/85 backdrop-blur">
-        <div className="mx-auto flex h-12 max-w-6xl items-center gap-4 px-4">
-          <Link to="/mock" className="text-sm font-semibold tracking-tight">
-            Mock interview
-            <span className="ml-2 font-mono text-2xs font-normal text-ink-faint">M06</span>
+        <div className="mx-auto flex min-h-[72px] max-w-[1440px] flex-wrap items-center gap-x-8 gap-y-1 px-5 py-2 md:px-10 xl:px-20">
+          <Link to="/mock" className="inline-flex items-center no-underline" aria-label="Home">
+            <img src={logo} alt="" className="h-9 w-auto" />
           </Link>
-          <nav aria-label="Sections" className="flex items-center gap-1 text-sm">
+          <nav aria-label="Sections" className="flex items-center gap-6 text-[13px]">
             {NAV.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 end
                 className={({ isActive }) =>
-                  `rounded-md px-2 py-1 transition-colors ${
-                    isActive ? "bg-surface-sunken text-ink" : "text-ink-soft hover:text-ink"
+                  `border-b-2 py-1 no-underline transition-colors ${
+                    isActive ? "border-brand font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink"
                   }`
                 }
               >
@@ -139,7 +148,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+      <main className="mx-auto max-w-[1440px] px-5 py-8 md:px-10 xl:px-20 xl:py-10">{children}</main>
     </div>
   );
 }

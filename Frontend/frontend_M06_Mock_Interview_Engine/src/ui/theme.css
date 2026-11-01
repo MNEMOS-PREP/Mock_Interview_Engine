@@ -8,6 +8,7 @@
   them are never generated and the layout collapses in a way that looks like a
   CSS bug rather than a build one.
 */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 @import "@ai/core/styles.css";
 
 /*
@@ -34,23 +35,133 @@
   product when they arrive.
 */
 
+/*
+  ── The room ────────────────────────────────────────────────────────────────
+  Placement interviews happen in plain institutional rooms: a long table, a
+  panel behind name cards, a candidate in a blazer. The palette is that room —
+  corridor-grey-green walls, paper on the table, pine-black ink, and one
+  blazer burgundy for the thing to press. Core invites a module to override
+  the neutrals and the brand; the verification palette (confirmed / reported /
+  contested) is left alone, because that is the platform's one shared meaning.
+*/
 @theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
+  /* The one hue: it marks data (how far through, how the time is spent) and
+     never chrome. Buttons, selection and nav are ink. */
+  --color-data: #176b55;
+  --color-accent: #dce6b5;
+  --color-accent-2: #6eaa8a;
+  --text-2xs: 0.8125rem;
+  --text-2xs--line-height: 1.15rem;
+  --radius-card: 0.5rem;
+  /* One radius on everything reads as a template. Surfaces that carry content
+     are squarer than the controls inside them. */
+  --radius-2xl: 1.25rem;
+  --radius-xl: 0.75rem;
+  --radius-lg: 0.625rem;
+
   /* The conversation's measure. Wider than prose because answers contain code
      fragments, narrower than a dashboard because it is read, not scanned. */
   --container-conversation: 44rem;
 
   /* The question, set as the page's largest element. */
-  --text-question: 1.375rem;
-  --text-question--line-height: 1.9rem;
+  --text-question: 1.5rem;
+  --text-question--line-height: 2rem;
   --text-question--letter-spacing: -0.01em;
 }
 
 @layer components {
+  /* A selectable card. Selected is a stub on the leading edge and a brand
+     outline on paper — not a tint — so it still reads in monochrome. */
+  .choice {
+    @apply min-w-0 rounded-md border border-line bg-surface px-3.5 py-2.5 text-left text-ink-soft transition-[border-color,box-shadow,color];
+    }
+  .choice:hover {
+    @apply border-line-strong text-ink;
+  }
+  .choice[aria-pressed="true"] {
+    @apply border-brand text-ink;
+    outline: 1px solid var(--color-brand);
+    outline-offset: -2px;
+  }
+  .choice:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  /* Setup reads as a form with its labels in a gutter. */
+  .setup-row {
+    @apply relative mt-7 pt-6;
+  }
+  .setup-row::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: var(--color-line);
+  }
+  .setup-label {
+    @apply mb-3 flex items-center gap-2.5 text-[0.9375rem] font-semibold text-ink;
+    font-family: var(--font-display);
+  }
+  /* The step number, small and green, as in the setup design. */
+  form { counter-reset: step; }
+  .setup-row { counter-increment: step; }
+  .setup-label::before {
+    content: counter(step, decimal-leading-zero);
+    font-size: 0.625rem;
+    font-weight: 400;
+    color: var(--color-brand);
+  }
+
+  /* The slip: the interview so far, as a printed slip. Dotted leaders are
+     round dots, as on the slip a candidate is handed. */
+  .slip {
+    @apply rounded-md bg-surface-raised px-5 py-5;
+    border: 1px solid var(--color-line);
+  }
+  .slip-head {
+    @apply text-base font-semibold text-ink;
+    font-family: var(--font-display);
+  }
+  .slip-rows {
+    @apply mt-3 space-y-2 text-sm;
+  }
+  .slip-rows > div {
+    @apply flex items-baseline gap-2;
+  }
+  .slip-rows dt {
+    @apply shrink-0 text-ink-soft;
+  }
+  .slip-rows i {
+    @apply min-w-4 flex-1;
+    border-bottom: 3px dotted var(--color-line-strong);
+    transform: translateY(-3px);
+  }
+  .slip-rows dd {
+    @apply min-w-0 text-right font-medium text-ink;
+  }
+
+  /* A name card on the table: a panel member, folded top edge. */
+  .placard {
+    @apply rounded-md border border-line bg-surface-raised px-3 py-3;
+      box-shadow: var(--shadow-card);
+  }
+  .placard-name {
+    @apply mt-2.5 block text-sm font-semibold text-ink;
+    font-family: var(--font-display);
+  }
+
   /* A turn in the transcript. The interviewer speaks in the page's voice; the
      student's own words are inset and quieter, because they are already theirs
      — the emphasis belongs on what was asked. */
   .turn-interviewer {
     @apply text-question text-ink;
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-variation-settings: "opsz" 40;
+    text-wrap: pretty;
   }
 
   .turn-candidate {
@@ -96,3 +207,295 @@
     @apply inline-block h-2 w-2 shrink-0 rounded-full;
   }
 }
+
+/* Palette override. Same selectors core uses, so an explicit light choice and
+   the OS preference both behave exactly as core documents. */
+:root {
+  --color-ink: #192d28;
+  --color-ink-soft: #68766e;
+  --color-ink-faint: #5d6b63;
+
+  --color-canvas: #f7f8f4;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #f1f3ec;
+  --color-surface-raised: #ffffff;
+  --color-line: #dde5dc;
+  --color-line-strong: #b9c7bd;
+
+  --color-brand: #176b55;
+  --color-brand-hover: #125646;
+  --color-brand-soft: #e8f3ec;
+  --color-brand-line: #9cc8b4;
+  --color-on-brand: #ffffff;
+
+  --color-session-listening: #176b55;
+  --color-session-speaking: #2f8f72;
+  --color-session-thinking: #c79a2c;
+  --color-data: #176b55;
+  --color-accent: #dce6b5;
+  --color-accent-2: #6eaa8a;
+
+  --shadow-card: 0 1px 2px rgba(22, 59, 39, 0.05);
+  --shadow-raised: 0 16px 48px rgba(22, 59, 39, 0.07);
+  --shadow-glow: 0 0 0 4px rgba(23, 107, 85, 0.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-ink: #e8f3ec;
+    --color-ink-soft: #adc4b8;
+    --color-ink-faint: #93ab9f;
+    --color-canvas: #0e1d19;
+    --color-surface: #142d27;
+    --color-surface-sunken: #10241f;
+    --color-surface-raised: #1a3830;
+    --color-line: #2a4a40;
+    --color-line-strong: #3c574b;
+    --color-brand: #c9f4c8;
+    --color-brand-hover: #dcfadb;
+    --color-brand-soft: #203e35;
+    --color-brand-line: #3c574b;
+    --color-on-brand: #142d27;
+    --color-data: #8dcba4;
+    --color-accent: #dce6b5;
+    --color-accent-2: #6eaa8a;
+    --color-session-listening: #8dcba4;
+    --color-session-speaking: #c9f4c8;
+    --color-session-thinking: #e5c36b;
+    --shadow-raised: 0 16px 48px rgba(0, 0, 0, 0.35);
+    --shadow-glow: 0 0 0 4px rgba(201, 244, 200, 0.18);
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-ink: #e8f3ec;
+  --color-ink-soft: #adc4b8;
+  --color-ink-faint: #93ab9f;
+  --color-canvas: #0e1d19;
+  --color-surface: #142d27;
+  --color-surface-sunken: #10241f;
+  --color-surface-raised: #1a3830;
+  --color-line: #2a4a40;
+  --color-line-strong: #3c574b;
+  --color-brand: #c9f4c8;
+  --color-brand-hover: #dcfadb;
+  --color-brand-soft: #203e35;
+  --color-brand-line: #3c574b;
+  --color-on-brand: #142d27;
+  --color-data: #8dcba4;
+  --color-accent: #dce6b5;
+  --color-accent-2: #6eaa8a;
+  --color-session-listening: #8dcba4;
+  --color-session-speaking: #c9f4c8;
+  --color-session-thinking: #e5c36b;
+  --shadow-raised: 0 16px 48px rgba(0, 0, 0, 0.35);
+  --shadow-glow: 0 0 0 4px rgba(201, 244, 200, 0.18);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+/* A noun title at 24px: the screen is worked in, so it carries no hero header. */
+main h1 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+/* The page header already draws a rule; the first row does not draw a second. */
+fieldset.setup-row:first-of-type {
+  padding-top: 1.25rem;
+}
+fieldset.setup-row:first-of-type::before {
+  display: none;
+}
+
+
+/* ───────── Premium layer: depth, glass, motion ───────── */
+
+body {
+  background-image: radial-gradient(48rem 22rem at 50% -8rem, color-mix(in oklch, var(--color-brand) 7%, transparent), transparent);
+  background-repeat: no-repeat;
+}
+
+/* The bar and the room's header are frosted, so what scrolls under them stays calm. */
+header.sticky,
+.sticky.top-14 {
+  -webkit-backdrop-filter: saturate(1.4) blur(14px);
+  backdrop-filter: saturate(1.4) blur(14px);
+  background-color: color-mix(in oklch, var(--color-surface) 82%, transparent) !important;
+}
+
+.shadow-raised { box-shadow: var(--shadow-raised); }
+.shadow-card { box-shadow: var(--shadow-card); }
+
+/* Buttons: a quiet press, a clear focus. */
+button:not(:disabled),
+a[class*="btn"],
+[role="button"] {
+  transition: transform 0.16s cubic-bezier(0.2, 0.7, 0.2, 1), background-color 0.16s, border-color 0.16s, color 0.16s, box-shadow 0.2s;
+}
+button:not(:disabled):active { transform: scale(0.98); }
+button:focus-visible, a:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* Selectable cards lift a hair; the chosen one gets the glow. */
+.choice:hover { transform: translateY(-1px); box-shadow: var(--shadow-card); }
+.choice[aria-pressed="true"] { box-shadow: var(--shadow-glow); }
+.placard { transition: transform 0.2s cubic-bezier(0.2, 0.7, 0.2, 1), border-color 0.2s; }
+.placard:hover { transform: translateY(-2px); border-color: var(--color-line-strong); }
+
+/* A new line in the conversation arrives, it does not pop. */
+.turn-interviewer, .turn-candidate {
+  animation: turn-in 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes turn-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Whoever is speaking glows softly; the rest sit back. */
+figure.ring-brand\/40 {
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--color-brand) 14%, transparent), var(--shadow-raised);
+}
+figure { transition: box-shadow 0.3s, border-color 0.3s, transform 0.3s; }
+
+/* The question card reads as the focus of the room. */
+section[aria-label="Current question"] {
+  box-shadow: var(--shadow-raised);
+  border-left: 3px solid transparent;
+  border-image: linear-gradient(180deg, var(--color-brand), var(--color-accent-2)) 1;
+}
+
+/* The answer composer rises into focus. */
+.focus-within\:border-brand:focus-within { box-shadow: var(--shadow-glow); }
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-interviewer, .turn-candidate { animation: none; }
+  .choice:hover, .placard:hover { transform: none; }
+  button:not(:disabled):active { transform: none; }
+}
+
+/* ───────── Colour that moves ───────── */
+
+/* Primary actions: a living gradient, not a flat slab. */
+button.bg-brand, a.bg-brand, [class*="bg-brand "]:is(button, a), button[class*="bg-brand"]:not([class*="bg-brand-"]) {
+  background-image: linear-gradient(120deg, var(--color-brand), color-mix(in oklch, var(--color-brand) 55%, var(--color-accent-2)), var(--color-brand));
+  background-size: 200% 100%;
+  background-position: 0 0;
+  transition: background-position 0.6s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.16s, box-shadow 0.2s;
+  box-shadow: 0 6px 18px -8px color-mix(in oklch, var(--color-brand) 70%, transparent);
+}
+button.bg-brand:hover:not(:disabled), a.bg-brand:hover, button[class*="bg-brand"]:not([class*="bg-brand-"]):hover:not(:disabled) {
+  background-position: 100% 0;
+  transform: translateY(-1px);
+}
+
+/* The page title carries the palette. */
+main h1 { color: var(--color-ink); }
+
+/* A thin colour thread under the app bar. */
+header.sticky { position: sticky; }
+header.sticky::after {
+  content: ""; position: absolute; inset: auto 0 -1px 0; height: 2px;
+  background: linear-gradient(90deg, var(--color-brand), var(--color-accent-2), var(--color-accent), var(--color-brand));
+  background-size: 200% 100%; animation: thread 9s linear infinite; opacity: 0.85;
+}
+@keyframes thread { to { background-position: 200% 0; } }
+
+/* Progress carries colour and a shimmer. */
+.bg-data { background-image: linear-gradient(90deg, var(--color-data), var(--color-accent-2)); }
+[role="progressbar"] .bg-data { background-size: 200% 100%; animation: thread 4s linear infinite; }
+
+/* Selected and active things glow in the brand colour. */
+.choice[aria-pressed="true"] {
+  background: linear-gradient(135deg, var(--color-brand-soft), color-mix(in oklch, var(--color-brand-soft) 70%, var(--color-accent-2) 30%));
+}
+.placard:hover { border-color: var(--color-brand-line); box-shadow: var(--shadow-glow); }
+.person:hover, .slip { border-color: var(--color-brand-line); }
+
+/* The speaker's ring breathes. */
+figure.ring-brand\/40 { animation: breathe 2.2s ease-in-out infinite; }
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-brand) 20%, transparent), var(--shadow-raised); }
+  50% { box-shadow: 0 0 0 8px color-mix(in oklch, var(--color-brand) 6%, transparent), var(--shadow-raised); }
+}
+
+/* Live dots pulse in their own colour. */
+.status-dot-live { animation: live 1.8s ease-out infinite; }
+@keyframes live {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklch, currentColor 55%, transparent); }
+  100% { box-shadow: 0 0 0 9px transparent; }
+}
+
+/* Chips and tags take a tint. */
+.bg-brand-soft { background-image: linear-gradient(135deg, var(--color-brand-soft), color-mix(in oklch, var(--color-brand-soft) 75%, var(--color-accent) 25%)); }
+
+/* Links and focus pick up the accent. */
+a:not([class]) { text-decoration-color: var(--color-accent-2); text-underline-offset: 3px; }
+::selection { background: color-mix(in oklch, var(--color-brand) 30%, transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+  header.sticky::after, [role="progressbar"] .bg-data, figure.ring-brand\/40, .status-dot-live { animation: none; }
+}
+
+
+/* ───────── Figma setup look ───────── */
+
+/* The one dark panel: the slip is deep green with mint type. */
+.slip {
+  background: #142d27;
+  border: 0;
+  border-radius: 1.25rem;
+  color: #fff;
+  padding: 1.625rem;
+  box-shadow: 0 16px 48px rgba(22, 59, 39, 0.07);
+}
+.slip-head { color: #c9f4c8; font-size: 0.6875rem; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; }
+.slip-rows dt { color: #adc4b8; }
+.slip-rows dd { color: #fff; }
+.slip-rows i { border-bottom-color: #3c574b; }
+
+/* Chosen option: mint fill, 1.5px green edge. */
+.choice { border-radius: 0.75rem; padding: 1.125rem; background: var(--color-surface); }
+.choice[aria-pressed="true"] {
+  background: #e8f3ec;
+  border-color: #176b55;
+  outline: 0;
+  border-width: 1.5px;
+  box-shadow: none;
+}
+:root[data-theme="dark"] .choice[aria-pressed="true"] { background: #203e35; border-color: #c9f4c8; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .choice[aria-pressed="true"] { background: #203e35; border-color: #c9f4c8; }
+}
+
+/* Primary button: solid green, mint on the dark panel. */
+button.bg-brand, a.bg-brand, button[class*="bg-brand"]:not([class*="bg-brand-"]) {
+  background-image: none;
+  box-shadow: none;
+  border-radius: 0.5rem;
+}
+.slip ~ * button.bg-brand, aside button.bg-brand { background: #c9f4c8; color: #192d28; }
+
+/* The start button on the deep panel: mint, as in the design. */
+.start-plan {
+  background: #c9f4c8;
+  color: #192d28;
+  border: 1px solid rgba(255, 255, 255, 0);
+  transition: filter 0.16s, transform 0.16s;
+}
+.start-plan:hover:not(:disabled) { filter: brightness(0.96); transform: translateY(-1px); }

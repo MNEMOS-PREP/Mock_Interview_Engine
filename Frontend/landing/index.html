@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Practise interviews and group discussions</title>
+  <meta name="description" content="Practise with AI interviewers and GD panelists who listen, ask better follow-ups, and leave you with a clear next step.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Lora:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="nav">
+  <a class="logo" href="#top" aria-label="Home"><img src="assets/logo.png" alt="" width="44" height="42"></a>
+  <nav class="nav-links" aria-label="Sections">
+    <a href="#how">How it works</a>
+    <a href="#formats">Mock interviews</a>
+    <a href="#formats">Group discussions</a>
+  </nav>
+  <div class="nav-actions">
+    <a class="signin" href="/mock">Sign in</a>
+    <a class="btn btn-primary" href="/mock">Start practising <img src="assets/arrow-up-right-white.svg" alt="" width="17" height="17"></a>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="hero-grid">
+      <div class="hero-story">
+        <p class="eyebrow"><i class="dot dot-green"></i>BUILT FOR CAMPUS PLACEMENTS</p>
+        <h1>Your next<br>interview.<br><em>Not your<br>first time.</em></h1>
+        <p class="lede">Practise with AI interviewers and GD panelists who listen, ask better follow-ups, and leave you with a clear next step.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="/mock">Start practising <img src="assets/arrow-up-right-white.svg" alt="" width="17" height="17"></a>
+          <a class="btn btn-ghost" href="#demo">Explore the demo <img src="assets/play.svg" alt="" width="17" height="17"></a>
+        </div>
+        <p class="fine">Interview or GD. 15 minutes is a good place to start.</p>
+        <div class="panel-intro">
+          <div class="avatars" aria-hidden="true">
+            <span class="av av-mint">MR</span><span class="av av-lilac">AN</span><span class="av av-sand">VK</span><span class="av av-more">+36</span>
+          </div>
+          <p><strong>39 AI interviewers. Different perspectives.</strong><br>A small, focused panel for each session — not all 39 at once.</p>
+        </div>
+      </div>
+
+      <div class="demo" id="demo" aria-label="Interactive preview">
+        <div class="demo-head">
+          <p><i class="dot dot-mint"></i>A panel that actually listens</p>
+          <span class="tag-dark">INTERACTIVE PREVIEW</span>
+        </div>
+        <ol class="steps" id="steps">
+          <li><b>1</b>Choose</li><li><b>2</b>Answer</li><li><b>3</b>Follow-up</li><li class="on"><b>4</b>Notes</li>
+        </ol>
+        <div class="demo-block">
+          <p class="cap">01 / PICK A SAMPLE QUESTION</p>
+          <div class="choices" id="choices" role="radiogroup" aria-label="Sample question">
+            <button class="choice on" role="radio" aria-checked="true" data-i="0"><img src="assets/circle-check.svg" alt="" width="15" height="15"><span>Tell us about a project you built.</span></button>
+            <button class="choice" role="radio" aria-checked="false" data-i="1"><img src="assets/circle.svg" alt="" width="15" height="15"><span>When would you use a hash map?</span></button>
+            <button class="choice" role="radio" aria-checked="false" data-i="2"><img src="assets/circle.svg" alt="" width="15" height="15"><span>Tell us about a team disagreement.</span></button>
+          </div>
+        </div>
+        <div class="answer">
+          <div class="answer-head"><p class="cap">02 / YOU · SAMPLE ANSWER</p><img src="assets/audio-lines-sm.svg" alt="" width="16" height="16"></div>
+          <p class="answer-text" id="answer"></p>
+        </div>
+        <div class="reply" id="reply">
+          <p class="handover"><img src="assets/arrow-right-left.svg" alt="" width="13" height="13"><span id="handover"></span></p>
+          <div class="who"><span class="av av-sand av-sm" id="who-av">VK</span><div><strong id="who-name">Vikram</strong><small id="who-role">AI staff engineer · follows your answer</small></div></div>
+          <p class="followup" id="followup"></p>
+        </div>
+        <div class="note" id="note">
+          <p class="note-head"><img src="assets/notebook-pen-sm.svg" alt="" width="14" height="14">04 / A NOTE YOU CAN USE</p>
+          <p id="note-good"></p>
+          <p class="muted"><span>Try next:</span> <span id="note-next"></span></p>
+          <p class="queued"><img src="assets/corner-down-right-sm.svg" alt="" width="12" height="12"><span id="note-queue"></span></p>
+        </div>
+        <p class="demo-fine">Illustrative conversation. In your session, the next question comes from your answer.</p>
+      </div>
+    </div>
+    <div class="focus" aria-label="Preparation focus">
+      <span>PROJECT DEEP-DIVES</span><span>TECHNICAL ROUNDS</span><span>HR &amp; BEHAVIOURAL</span><span>LIVE GROUP DISCUSSIONS</span>
+    </div>
+  </section>
+
+  <section class="ways" id="formats">
+    <div class="intro">
+      <p class="kicker">THE ROUND CHANGES. YOU’RE READY.</p>
+      <h2>Find your voice.<br>In more than one kind of room.</h2>
+      <p class="body">Think out loud, work through the awkward pause, and practise the conversations that campus placements actually ask of you.</p>
+    </div>
+    <div class="formats">
+      <article class="format format-int">
+        <div class="format-head"><img src="assets/mic.svg" alt="" width="24" height="24"><span class="tag tag-white">01 / MOCK INTERVIEW</span></div>
+        <div class="format-copy">
+          <h3>A panel. Not a question bank.</h3>
+          <p>A live interview with a focused panel drawn from 39 AI interviewers. Recruiters, engineers and professors bring different lenses to the same answer.</p>
+        </div>
+        <div class="sample">
+          <div class="member"><span class="av av-mint av-sm">MR</span><div><strong>Meera</strong><small>Campus recruiter · opens the conversation</small></div></div>
+          <div class="member"><span class="av av-lilac av-sm">AN</span><div><strong>Ananya</strong><small>Software engineer · explores your approach</small></div></div>
+          <div class="member"><span class="av av-sand av-sm">AR</span><div><strong>Arjun</strong><small>Bar raiser · tests the trade-offs</small></div></div>
+        </div>
+        <a class="link" href="/mock">Build your interview <img src="assets/arrow-up-right.svg" alt="" width="18" height="18"></a>
+      </article>
+      <article class="format format-gd">
+        <div class="format-head"><img src="assets/messages-square.svg" alt="" width="24" height="24"><span class="tag tag-mint">02 / GROUP DISCUSSION</span></div>
+        <div class="format-copy">
+          <h3>Make a point. Make space, too.</h3>
+          <p>Join 3–5 AI participants with distinct personalities. Learn when to enter, how to build on a point, and when to bring the room back.</p>
+        </div>
+        <div class="sample">
+          <p class="topic">Should AI tools be allowed in campus assessments?</p>
+          <div class="tags"><span class="tag tag-white">Kavya · assertive</span><span class="tag tag-white">Neel · quiet</span><span class="tag tag-white">Rohan · off-topic</span><span class="tag tag-white">Sana · supportive</span></div>
+          <p class="quote">Sana: “Building on your point about fairness, could we distinguish learning from evaluation?”</p>
+        </div>
+        <p class="tracks">Current affairs &nbsp;/&nbsp; Abstract &nbsp;/&nbsp; Case-based</p>
+        <a class="link" href="/gd">Find your discussion <img src="assets/arrow-up-right.svg" alt="" width="18" height="18"></a>
+      </article>
+    </div>
+    <div class="assess"><p>IN A GD, WE LOOK BEYOND SPEAKING TIME</p><p>Initiating · Structuring · Listening · Building on others · Concluding</p></div>
+  </section>
+
+  <section class="loop" id="how">
+    <div class="intro intro-dark">
+      <p class="kicker">LESS SCRIPT. MORE CONVERSATION.</p>
+      <h2>It doesn’t just ask.<br>It pays attention.</h2>
+    </div>
+    <div class="stages">
+      <div class="stage"><div class="stage-top"><img src="assets/route.svg" alt="" width="23" height="23"><span>01</span></div><div class="stage-copy"><h3>A plan before a question.</h3><p>Your topic, length and optional JD or resume shape the time split. There’s a purpose to every part.</p></div></div>
+      <div class="stage"><div class="stage-top"><img src="assets/audio-lines.svg" alt="" width="23" height="23"><span>02</span></div><div class="stage-copy"><h3>Your answer sets the route.</h3><p>Agents pick up your exact words, probe the gaps, and hand over to the right interviewer.</p></div></div>
+      <div class="stage"><div class="stage-top"><img src="assets/notebook-pen.svg" alt="" width="23" height="23"><span>03</span></div><div class="stage-copy"><h3>Nothing useful gets lost.</h3><p>Afterwards, get detailed notes on every interview question and every GD contribution.</p></div></div>
+      <div class="stage"><div class="stage-top"><img src="assets/repeat-2.svg" alt="" width="23" height="23"><span>04</span></div><div class="stage-copy"><h3>A next step, not just a score.</h3><p>Weak spots become focused practice. Work on the next small thing, then try the room again.</p></div></div>
+    </div>
+    <div class="beforeafter">
+      <div class="plan">
+        <p class="plan-title"><span>BEFORE / A PLAN THAT FITS</span><span>30 MIN</span></p>
+        <p class="plan-name">Project deep-dive + DSA</p>
+        <div class="bar" aria-hidden="true"><i style="flex:3;background:#c9f4c8"></i><i style="flex:12;background:#8dcba4"></i><i style="flex:9.9;background:#6eaa8a"></i><i style="flex:5.1;background:#dce6b5"></i></div>
+        <p class="plan-parts">Intro 3m · Project 12m · DSA 10m · Wrap-up 5m</p>
+        <p class="plan-note">The panel adapts within these parts, without losing the clock.</p>
+      </div>
+      <div class="queue">
+        <p class="plan-kicker">AFTER / YOUR NEXT SMALL WIN</p>
+        <div class="drill"><img src="assets/corner-down-right.svg" alt="" width="20" height="20"><div><strong>Defend a project metric</strong><small>From your Redis answer · 5-minute focused drill</small></div></div>
+        <div class="drill"><img src="assets/corner-down-right.svg" alt="" width="20" height="20"><div><strong>Build before you disagree</strong><small>From a GD contribution · 5-minute focused drill</small></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="modes-sec">
+    <div class="modes-intro">
+      <p class="kicker">YOU CHOOSE THE PRESSURE</p>
+      <h2>A warm-up. Or the real test.</h2>
+      <p class="body">Four interview modes. The same thoughtful panel, at the intensity you need today.</p>
+    </div>
+    <div class="modes">
+      <article class="mode"><div class="mode-top"><img src="assets/sprout.svg" alt="" width="22" height="22"><span>FIND YOUR FEET</span></div><h3>Practice</h3><p>A gentle space to think. Hints on, retries welcome. Build the answer before you build the pressure.</p></article>
+      <article class="mode"><div class="mode-top"><img src="assets/timer.svg" alt="" width="22" height="22"><span>FEEL THE ROUND</span></div><h3>Mock</h3><p>A realistic panel and an enforced clock. Hints are available, but each hint costs credits.</p></article>
+      <article class="mode"><div class="mode-top"><img src="assets/briefcase.svg" alt="" width="22" height="22"><span>MAKE IT SPECIFIC</span></div><h3>Real drive</h3><p>Built from a job description. A brisker interview that connects your preparation to the actual role.</p></article>
+      <article class="mode"><div class="mode-top"><img src="assets/flame.svg" alt="" width="22" height="22"><span>TEST YOUR LIMITS</span></div><h3>Final Boss</h3><p>No hints. A hard clock. Relentless follow-ups that challenge your reasoning — never your dignity.</p></article>
+    </div>
+    <div class="perspectives">
+      <div><p class="pt">A different lens on your answer.</p><p class="pb">From a recruiter’s first impression to a professor’s fundamentals — choose from 39 AI interviewers, each with a distinct role.</p></div>
+      <div class="member member-lg"><span class="av av-lilac av-lg">DR</span><div><strong>Dr. Raghavan</strong><small>AI professor · fundamentals &amp; clarity</small></div></div>
+    </div>
+    <div class="faq">
+      <div><h3>Do I need a polished answer to start?</h3><p>No. Start with what you know. Practice mode keeps hints and retries on, so you can work through an answer instead of memorising one.</p></div>
+      <div><h3>What happens after the conversation?</h3><p>You get question-by-question interview notes or contribution-by-contribution GD notes, with concrete changes to try and weak spots in your practice queue.</p></div>
+    </div>
+    <div class="invite">
+      <div><h2>Get the first awkward<br>answer out of the way.</h2><p>Your next round can start with a little less unknown.</p></div>
+      <div class="invite-action">
+        <a class="btn btn-primary" href="/mock">Start practising <img src="assets/arrow-up-right-white.svg" alt="" width="17" height="17"></a>
+        <p>Choose your format. Set your pace.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="footer-row"><a class="logo logo-sm" href="#top" aria-label="Home"><img src="assets/logo.png" alt="" width="34" height="32"></a><nav aria-label="Legal"><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Contact</a></nav></div>
+  <p>© 2026 Logo. A little more prepared, one conversation at a time.</p>
+</footer>
+<script src="script.js"></script>
+</body>
+</html>
