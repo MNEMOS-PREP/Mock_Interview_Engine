@@ -18,6 +18,7 @@ import { Link, NavLink } from "react-router-dom";
 
 import { DependencyAlert } from "@ai/core";
 
+import logo from "../assets/logo.png";
 import { useDeps } from "../api";
 import {
   DEFAULT_CANDIDATE_ID,
@@ -106,8 +107,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="min-h-dvh bg-canvas text-ink">
       <header className="sticky top-0 z-10 border-b border-line bg-surface/85 backdrop-blur">
         <div className="mx-auto flex min-h-[72px] max-w-[1440px] flex-wrap items-center gap-x-8 gap-y-1 px-5 py-2 md:px-10 xl:px-20">
-          <Link to="/mock" className="text-[22px] tracking-[-1px] text-ink no-underline">
-            Logo
+          <Link to="/mock" className="inline-flex items-center no-underline" aria-label="Home">
+            <img src={logo} alt="" className="h-9 w-auto" />
           </Link>
           <nav aria-label="Sections" className="flex items-center gap-6 text-[13px]">
             {NAV.map((item) => (

@@ -14,8 +14,9 @@ section, .footer { padding-left: 80px; padding-right: 80px; }
 
 /* nav */
 .nav { height: 88px; padding: 0 80px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10; background: rgb(247 248 244 / .92); backdrop-filter: blur(10px); }
-.logo { font-size: 25px; letter-spacing: -1.2px; }
-.logo-sm { font-size: 22px; letter-spacing: -1px; }
+.logo { display: inline-flex; align-items: center; }
+.logo img { height: 42px; width: auto; }
+.logo-sm img { height: 32px; }
 .nav-links { display: flex; gap: 32px; font-size: 13px; color: var(--muted); }
 .nav-links a:hover, .signin:hover { color: var(--ink); }
 .nav-actions { display: flex; align-items: center; gap: 24px; }
@@ -197,7 +198,7 @@ h2 { font-weight: 500; }
 @media (max-width: 720px) {
   section, .footer { padding-left: 20px; padding-right: 20px; }
   .nav { height: 76px; padding: 0 20px; }
-  .logo { font-size: 22px; }
+  .logo img { height: 34px; }
   .signin { display: none; }
   .nav-actions .btn { height: 42px; padding: 0 14px; font-size: 13px; }
   .hero { padding-top: 32px; padding-bottom: 48px; }
