@@ -245,6 +245,8 @@ export function MockHome() {
   const [track, setTrack] = useState<string | null>(() => params.get("track"));
   const [withResume, setWithResume] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
+  // What is being set up: an interview here, or a group discussion in the GD arena.
+  const [kind, setKind] = useState<"interview" | "gd">("interview");
   const [jdText, setJdText] = useState("");
   const [allPersonas, setAllPersonas] = useState(false);
   const [resumeId, setResumeId] = useState<string | null>(null);
@@ -312,6 +314,17 @@ export function MockHome() {
   ];
   const meetThree = (personas.data ?? []).slice(0, allPersonas ? undefined : 3);
 
+  // The GD arena is part of this app (the shell frames it at /gd), so go there
+  // inside the router; a full page load would drop the shell around it.
+  const openGd = () => {
+    if (GD_URL.startsWith("/")) navigate(GD_URL);
+    else window.location.assign(GD_URL);
+  };
+  // An interview already planned or running: go back into it.
+  const continueIt = () => {
+    if (unfinished) navigate(unfinished.status === "planned" ? `/mock/${unfinished.id}/plan` : `/mock/${unfinished.id}`);
+  };
+
   const startPlan = () =>
     // Via the plan, not straight into the first question: a student
     // should see what they are about to be asked (FR-6.2).
@@ -351,26 +364,26 @@ export function MockHome() {
           <section className="flex flex-col gap-4" aria-label="Format">
             <StepHead n={num()} title="What are we practising?" />
             <div className="flex flex-col gap-3 sm:flex-row">
-              <div className="choice flex flex-1 flex-col gap-3 self-stretch" aria-pressed="true" role="group" aria-label="Interview, chosen">
-                <div className="flex items-start justify-between">
+              <button type="button" aria-pressed={kind === "interview"} onClick={() => setKind("interview")} className="choice flex flex-1 flex-col gap-3 self-stretch">
+                <span className="flex items-start justify-between">
                   <Fig name="mic" size={21} />
-                  <Fig name="circle-check" size={17} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <p className="text-base font-semibold text-ink">Interview</p>
-                  <p className="text-xs leading-[1.6] text-ink-soft">A live AI panel that follows your answers.</p>
-                </div>
-              </div>
-              <a href={GD_URL} className="choice flex flex-1 flex-col gap-3 self-stretch no-underline">
-                <div className="flex items-start justify-between">
+                  <Fig name={kind === "interview" ? "circle-check" : "circle"} size={17} />
+                </span>
+                <span className="flex flex-col gap-1.5">
+                  <span className="text-base font-semibold text-ink">Interview</span>
+                  <span className="text-xs leading-[1.6] text-ink-soft">A live AI panel that follows your answers.</span>
+                </span>
+              </button>
+              <button type="button" aria-pressed={kind === "gd"} onClick={() => setKind("gd")} className="choice flex flex-1 flex-col gap-3 self-stretch">
+                <span className="flex items-start justify-between">
                   <Fig name="messages-square" size={21} />
-                  <Fig name="circle" size={17} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <p className="text-base font-semibold text-ink">Group discussion</p>
-                  <p className="text-xs leading-[1.6] text-ink-soft">3–5 AI peers. Three topic tracks.</p>
-                </div>
-              </a>
+                  <Fig name={kind === "gd" ? "circle-check" : "circle"} size={17} />
+                </span>
+                <span className="flex flex-col gap-1.5">
+                  <span className="text-base font-semibold text-ink">Group discussion</span>
+                  <span className="text-xs leading-[1.6] text-ink-soft">3–5 AI peers. Three topic tracks.</span>
+                </span>
+              </button>
             </div>
             <a href="#gd-room" className="flex items-center gap-1.5 text-[11px] leading-normal text-ink-soft no-underline">
               <Fig name="info" size={13} />
@@ -378,6 +391,7 @@ export function MockHome() {
             </a>
           </section>
 
+          {kind === "interview" && (<>
           {/* 02 — focus */}
           <section className={`flex flex-col gap-3.5 ${divider}`} aria-label="Focus">
             <StepHead n={num()} title="Choose your focus" />
@@ -599,6 +613,7 @@ export function MockHome() {
               Only add information you&rsquo;re comfortable using in this practice.
             </p>
           </section>
+          </>)}
         </div>
 
         {/* Group discussion, discovered from here */}
@@ -630,10 +645,10 @@ export function MockHome() {
             <p className="font-semibold text-ink">Feedback on every contribution</p>
             <p className="leading-[1.8] text-ink-soft">Initiating · Structuring · Listening · Building on others · Concluding</p>
           </div>
-          <a href={GD_URL} className="flex items-start justify-between text-xs leading-normal text-brand no-underline">
+          <button type="button" onClick={openGd} className="flex w-full items-start justify-between bg-transparent p-0 text-left text-xs leading-normal text-brand">
             Set up a GD instead
             <Fig name="arrow-right" size={16} />
-          </a>
+          </button>
         </section>
 
         {unfinished && (
@@ -662,15 +677,20 @@ export function MockHome() {
             <Fig name="sparkles" size={18} />
           </div>
           <div className="flex flex-col gap-2.5">
-            <p className="text-[25px] font-medium leading-[1.2] tracking-[-0.8px] text-white">{topicTitle}</p>
+            <p className="text-[25px] font-medium leading-[1.2] tracking-[-0.8px] text-white">{kind === "gd" ? "A group discussion" : topicTitle}</p>
             <div className="flex flex-wrap gap-2">
-              {[`${minutes} min`, modeLabel, mode === "practice" ? "Hints on" : mode === "final_boss" ? "No hints" : "Hints cost credit"].map((t) => (
+              {(kind === "gd" ? ["3–5 AI peers", "Open, for/against or case"] : [`${minutes} min`, modeLabel, mode === "practice" ? "Hints on" : mode === "final_boss" ? "No hints" : "Hints cost credit"]).map((t) => (
                 <span key={t} className="rounded-full border border-[#3c574b] bg-[#203e35] px-2.5 py-1.5 text-[11px] font-medium leading-normal text-[#c9f4c8]">
                   {t}
                 </span>
               ))}
             </div>
           </div>
+          {kind === "gd" ? (
+            <p className="border-t border-[#3c574b] pt-5 text-[13px] leading-[1.65] text-[#adc4b8]">
+              You set the topic, the time and who is at the table on the next step. Everyone speaks, and you get feedback on every contribution afterwards.
+            </p>
+          ) : (<>
           <ol className="flex flex-col gap-[18px] border-t border-[#3c574b] pt-5">
             {parts.map((part, i) => (
               <li key={i} className="flex items-center gap-3">
@@ -694,18 +714,51 @@ export function MockHome() {
               Planned from your topic + {minutes}-minute length. Follow-ups and handovers adapt to what you say. The final plan is confirmed on the next screen.
             </span>
           </p>
+          </>)}
           <div className="flex flex-col gap-3">
-            <button
-              type="button"
-              onClick={startPlan}
-              disabled={create.isPending || Boolean(unfinished)}
-              className="start-plan flex h-[50px] w-full items-center justify-center gap-3 rounded-lg px-5 text-sm font-semibold disabled:opacity-50"
-            >
-              {create.isPending ? "Building your plan…" : "Start practice interview"}
-              <Fig name="arrow-right-lg" size={17} />
-            </button>
+            {kind === "gd" ? (
+              <button
+                type="button"
+                onClick={openGd}
+                className="start-plan flex h-[50px] w-full items-center justify-center gap-3 rounded-lg px-5 text-sm font-semibold"
+              >
+                Set up the discussion
+                <Fig name="arrow-right-lg" size={17} />
+              </button>
+            ) : unfinished ? (
+              <>
+                <button
+                  type="button"
+                  onClick={continueIt}
+                  className="start-plan flex h-[50px] w-full items-center justify-center gap-3 rounded-lg px-5 text-sm font-semibold"
+                >
+                  Continue your interview
+                  <Fig name="arrow-right-lg" size={17} />
+                </button>
+                <button
+                  type="button"
+                  onClick={startPlan}
+                  disabled={create.isPending}
+                  className="h-9 w-full rounded-lg bg-transparent text-[12px] text-[#adc4b8] underline-offset-2 hover:text-white hover:underline disabled:opacity-50"
+                >
+                  {create.isPending ? "Building your plan…" : "Start a new one instead"}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={startPlan}
+                disabled={create.isPending}
+                className="start-plan flex h-[50px] w-full items-center justify-center gap-3 rounded-lg px-5 text-sm font-semibold disabled:opacity-50"
+              >
+                {create.isPending ? "Building your plan…" : "Start practice interview"}
+                <Fig name="arrow-right-lg" size={17} />
+              </button>
+            )}
             <p className="text-center text-[10px] leading-normal text-[#adc4b8]">
-              {pauses === 1 ? "One pause" : `${pauses} pauses`} of up to 5 minutes · ending early still gives you notes
+              {kind === "gd"
+                ? "Topic, time and panel are chosen on the next step"
+                : `${pauses === 1 ? "One pause" : `${pauses} pauses`} of up to 5 minutes · ending early still gives you notes`}
             </p>
           </div>
         </section>
