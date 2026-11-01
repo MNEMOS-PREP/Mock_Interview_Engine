@@ -3,238 +3,200 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mock Interview: sit the panel before the real one</title>
-  <meta name="description" content="A practice interview for placement season. A panel asks, listens and follows up on what you actually said, then gives you notes on every question.">
+  <title>Mock Interview: practise with a panel that listens</title>
+  <meta name="description" content="Practise placement interviews with a panel that follows up on what you actually said, then get notes on every question.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue:wght@400&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600&family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
+<div class="progress" id="progress" aria-hidden="true"></div>
+
+<header class="nav" id="nav">
+  <div class="nav-in">
+    <a class="brand" href="#top">Mock Interview</a>
+    <nav aria-label="Sections">
+      <a href="#sim">Try it</a>
+      <a href="#build">Plan</a>
+      <a href="#panel">Panel</a>
+      <a href="#modes">Modes</a>
+      <a href="#notes">Notes</a>
+      <a href="#faq">Questions</a>
+    </nav>
+    <a class="btn small" href="/mock">Start an interview</a>
+  </div>
+</header>
+
 <main>
 
-  <!-- Hero: the interview slip, pinned over the room, shrinking as the page moves -->
+  <!-- Hero: a short promise and a live mini-interview -->
   <section class="hero" id="top" aria-labelledby="h1">
-    <div class="hero-stage">
-      <img class="hero-photo" src="assets/room.jpg" width="1920" height="1440" alt="An empty tiered lecture theatre with rows of wooden seats">
-      <div class="slip" id="slip">
-        <h1 id="h1" class="slip-title"><span>Sit</span><span>the</span><span>panel</span></h1>
-        <div class="slip-body">
-          <ul class="slip-facts">
-            <li>15, 30 or 45 minutes</li>
-            <li>Practice, Mock, Real drive, Final Boss</li>
-            <li>Notes on every question</li>
-          </ul>
-          <p class="slip-lead">A practice interview that follows up on what you actually said.</p>
-        </div>
-        <div class="slip-foot">
-          <p class="credit">Photo: Open Ed, CC BY 2.0</p>
+    <img class="hero-photo" src="assets/room.jpg" width="1920" height="1440" alt="" decoding="async">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <h1 id="h1">Sit the panel before the real one</h1>
+        <p class="lead">A practice interview that follows up on what you actually said, then writes you notes on every question.</p>
+        <div class="hero-cta">
           <a class="btn" href="/mock">Start an interview</a>
-          <a class="textlink" href="#notes">See the notes</a>
+          <a class="btn ghost" href="#sim">Try three questions</a>
+        </div>
+        <dl class="stats">
+          <div><dt>Interviewers</dt><dd><span data-count="39">39</span></dd></div>
+          <div><dt>Ways to sit it</dt><dd><span data-count="4">4</span></dd></div>
+          <div><dt>Minutes, your pick</dt><dd>15 · 30 · 45</dd></div>
+        </dl>
+      </div>
+
+      <div class="sim" id="sim" aria-label="Three-question practice">
+        <div class="sim-top">
+          <p class="sim-count" id="sim-count">Question 1 of 3</p>
+          <div class="sim-bar" aria-hidden="true"><i id="sim-fill"></i></div>
+        </div>
+        <div id="sim-stage" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Build your plan -->
+  <section class="band" id="build" aria-labelledby="build-h">
+    <div class="wrap build">
+      <div class="build-copy reveal">
+        <h2 id="build-h">Shape your slip</h2>
+        <p class="lead">Three choices. Watch the plan and the panel change as you make them.</p>
+      </div>
+      <div class="card builder reveal" style="--d:1">
+        <div class="field">
+          <p class="lbl" id="l-topic">Practise</p>
+          <div class="chips" role="radiogroup" aria-labelledby="l-topic" data-key="topic">
+            <button type="button" role="radio" aria-checked="true" data-v="dsa">Data structures</button>
+            <button type="button" role="radio" aria-checked="false" data-v="os">Operating systems</button>
+            <button type="button" role="radio" aria-checked="false" data-v="ds">Data science</button>
+            <button type="button" role="radio" aria-checked="false" data-v="hr">People questions</button>
+          </div>
+        </div>
+        <div class="field">
+          <p class="lbl" id="l-len">Length</p>
+          <div class="chips" role="radiogroup" aria-labelledby="l-len" data-key="len">
+            <button type="button" role="radio" aria-checked="false" data-v="15">15 min</button>
+            <button type="button" role="radio" aria-checked="true" data-v="30">30 min</button>
+            <button type="button" role="radio" aria-checked="false" data-v="45">45 min</button>
+          </div>
+        </div>
+        <div class="field">
+          <p class="lbl" id="l-mode">Kind</p>
+          <div class="chips" role="radiogroup" aria-labelledby="l-mode" data-key="mode">
+            <button type="button" role="radio" aria-checked="false" data-v="practice">Practice</button>
+            <button type="button" role="radio" aria-checked="true" data-v="mock">Mock</button>
+            <button type="button" role="radio" aria-checked="false" data-v="drive">Real drive</button>
+            <button type="button" role="radio" aria-checked="false" data-v="boss">Final Boss</button>
+          </div>
+        </div>
+
+        <div class="plan" aria-live="polite">
+          <div class="plan-bar" id="plan-bar" role="img" aria-label="Time split"></div>
+          <ul class="plan-list" id="plan-list"></ul>
+          <p class="plan-meta" id="plan-meta"></p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- The panel: one printed sheet -->
-  <section class="ground panel-band" id="panel" aria-labelledby="panel-h">
-    <div class="wrap panel-wrap">
-      <div class="panel-intro reveal">
-        <h2 id="panel-h" class="head">Who is asking</h2>
-        <p class="lead">A mock seats a panel. Each part of the plan has its own interviewer, and you see their names before you start. There are 39 in all.</p>
+  <!-- Panel -->
+  <section class="band alt" id="panel" aria-labelledby="panel-h">
+    <div class="wrap">
+      <div class="reveal">
+        <h2 id="panel-h">Who is asking</h2>
+        <p class="lead">Each part of the plan has its own interviewer. There are 39 in all; here are some of them.</p>
       </div>
-      <div class="sheet scallop reveal" style="--d:1">
-        <p class="sheet-title">The panel</p>
-        <p class="sheet-note">Some of the people you may meet</p>
-
-        <h3 class="group">The topics</h3>
-        <ul class="items">
-          <li><span class="n">Ananya</span><span class="r">Software Engineer</span><span class="d">Likes to see a solution grow from the simplest version, and asks what the code does on a small example.</span></li>
-          <li><span class="n">Rohit</span><span class="r">Senior Software Engineer</span><span class="d">Wants the complexity of every idea and the reason for it. Keeps asking about the worst input.</span></li>
-          <li><span class="n">Aditi</span><span class="r">Infrastructure Engineer</span><span class="d">Starts from a laptop slowing down and asks what the operating system is doing about it.</span></li>
-          <li><span class="n">Isha</span><span class="r">Data Scientist</span><span class="d">Asks how you would frame the problem, what you would measure, and what could fool you.</span></li>
-        </ul>
-
-        <h3 class="group">The people questions</h3>
-        <ul class="items">
-          <li><span class="n">Meera</span><span class="r">Campus Recruiter</span><span class="d">Puts people at ease. Short, plain questions; never pushes past the first sign of difficulty.</span></li>
-          <li><span class="n">Nisha</span><span class="r">Campus Hiring Manager</span><span class="d">Asks why this role, and about a time you had to learn something fast.</span></li>
-          <li><span class="n">Lata</span><span class="r">Director of Engineering</span><span class="d">Listens for judgement: how you decide with incomplete information, and how you explain it.</span></li>
-        </ul>
-
-        <h3 class="group">The hard room</h3>
-        <ul class="items">
-          <li><span class="n">Arjun</span><span class="r">Bar Raiser</span><span class="d">Keeps asking until the reasoning runs out. Precise, economical, never rude.</span></li>
-          <li><span class="n">Vikram</span><span class="r">Staff Engineer</span><span class="d">Wants the short version first. Terse and direct, interested in performance and scale.</span></li>
-          <li><span class="n">Dr. Raghavan</span><span class="r">Professor</span><span class="d">Runs a viva: derive it, justify it, and follow the reasoning further than most would.</span></li>
-          <li><span class="n">Kabir</span><span class="r">Founder</span><span class="d">Talks fast, cares about trade-offs and what you would actually ship.</span></li>
-        </ul>
-        <p class="sheet-foot">Harder never means ruder.</p>
+      <div class="chips tabs reveal" role="tablist" aria-label="Interviewer groups" id="ptabs" style="--d:1">
+        <button type="button" role="tab" aria-selected="true" data-g="topics">The topics</button>
+        <button type="button" role="tab" aria-selected="false" data-g="people">The people questions</button>
+        <button type="button" role="tab" aria-selected="false" data-g="hard">The hard room</button>
       </div>
+      <ul class="people" id="people"></ul>
+      <p class="foot-note">Harder never means ruder.</p>
     </div>
   </section>
 
-  <!-- The one live thing -->
-  <section class="field try" id="try" aria-labelledby="try-h">
-    <div class="wrap try-wrap">
-      <div class="try-copy reveal">
-        <h2 id="try-h" class="head">Try one answer</h2>
-        <p class="lead">Pick what you would say. See what the panel asks next, and the note you would get.</p>
-        <p class="small">A fixed example. In a real interview the follow-up is written for your own words.</p>
+  <!-- Modes -->
+  <section class="band" id="modes" aria-labelledby="modes-h">
+    <div class="wrap">
+      <h2 id="modes-h" class="reveal">Four ways to sit it</h2>
+      <div class="chips tabs reveal" role="tablist" aria-label="Interview modes" id="mtabs" style="--d:1">
+        <button type="button" role="tab" aria-selected="true" data-m="0">Practice</button>
+        <button type="button" role="tab" aria-selected="false" data-m="1">Mock</button>
+        <button type="button" role="tab" aria-selected="false" data-m="2">Real drive</button>
+        <button type="button" role="tab" aria-selected="false" data-m="3">Final Boss</button>
       </div>
-      <div class="try-card reveal" style="--d:1">
-        <p class="try-q"><span class="who">Arjun, Bar Raiser, asks</span>Why is a hash map lookup O(1) on average?</p>
-        <div class="try-opts" role="group" aria-label="Choose an answer">
-          <button type="button" class="opt" data-k="good">Keys are hashed to a bucket, so we jump straight to it.</button>
-          <button type="button" class="opt" data-k="vague">It is just fast.</button>
-          <button type="button" class="opt" data-k="wrong">Because the keys are kept sorted.</button>
-        </div>
-        <div class="try-out" id="try-out" aria-live="polite">
-          <p class="try-out-empty">Choose an answer above.</p>
+      <div class="mode card reveal" style="--d:2">
+        <div class="mode-copy" id="mode-copy" aria-live="polite"></div>
+        <div class="shot" id="shot">
+          <img id="mode-img" src="assets/ui-setup.jpg" width="1440" height="900" alt="" decoding="async">
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Notes: the output as slips -->
-  <section class="notes" id="notes" aria-labelledby="notes-h">
-    <img class="notes-photo" src="assets/room.jpg" width="1920" height="1440" alt="" loading="lazy" decoding="async">
-    <div class="notes-copy wrap">
-      <h2 id="notes-h" class="head reveal">Notes on every question</h2>
-      <p class="statement reveal" style="--d:1">No score on screen while you talk. Afterwards every question gets a note: what you said, how it went, what a strong answer covers.</p>
-    </div>
-    <div class="slips" role="list" aria-label="Sample notes, one for each way an answer can go">
-      <article class="slip-note t1" role="listitem"><h3>Correct</h3><p class="rule" aria-hidden="true">- - - - - - - - - - -</p><p>Why is a hash map lookup O(1)?</p><p>Keys hash to a bucket index, so the lookup goes straight there. Named the load factor when pushed.</p></article>
-      <article class="slip-note t2" role="listitem"><h3>Mostly correct</h3><p class="rule" aria-hidden="true">- - - - - - - - - - -</p><p>What keeps the buckets short?</p><p>Said resizing. Missed that resizing is triggered by the load factor, and why that keeps the average cost flat.</p></article>
-      <article class="slip-note t3" role="listitem"><h3>Too vague</h3><p class="rule" aria-hidden="true">- - - - - - - - - - -</p><p>What does an index buy you?</p><p>Said it is faster. Named no mechanism: what is stored, and what a scan would do instead.</p></article>
-      <article class="slip-note t4" role="listitem"><h3>Incorrect</h3><p class="rule" aria-hidden="true">- - - - - - - - - - -</p><p>Is a view stored on disk?</p><p>Said always. A view stores a query, not rows, unless it is materialised. Challenged in your own words.</p></article>
-      <article class="slip-note t5" role="listitem"><h3>Not answered</h3><p class="rule" aria-hidden="true">- - - - - - - - - - -</p><p>Name one use of a trie.</p><p>Moved on after a pause. Counted as not answered, and listed first under work to do.</p></article>
-      <article class="slip-note t6" role="listitem"><h3>Not backed up</h3><p class="rule" aria-hidden="true">- - - - - - - - - - -</p><p>Your project line: "cut latency by half".</p><p>Claimed a number without saying how it was measured. Not scored; kept in the notes.</p></article>
-    </div>
-  </section>
-
-  <!-- How it works: the itinerary slip -->
-  <section class="ground how" id="how" aria-labelledby="how-h">
-    <div class="wrap how-wrap">
-      <div class="how-copy reveal">
-        <h2 id="how-h" class="head">Ready in a minute</h2>
-        <p class="lead">Setup is three choices and a look at the plan. The interview takes as long as you picked. The notes are waiting when you finish.</p>
+  <!-- Notes -->
+  <section class="band alt" id="notes" aria-labelledby="notes-h">
+    <div class="wrap notes">
+      <div class="reveal">
+        <h2 id="notes-h">Notes on every question</h2>
+        <p class="lead">No score on screen while you talk. Afterwards every question gets a note: what you said, how it went, what a strong answer covers. Tap a result to read one.</p>
       </div>
-      <div class="itin zigzag reveal" style="--d:1">
-        <h3 class="itin-h">Before</h3>
-        <ul class="rows">
-          <li><span>Choose what to practise</span><i></i><b>20 s</b></li>
-          <li><span>Choose length and kind</span><i></i><b>20 s</b></li>
-          <li><span>Read the plan, drop a part</span><i></i><b>10 s</b></li>
-        </ul>
-        <h3 class="itin-h">During</h3>
-        <ul class="rows">
-          <li><span>The interview</span><i></i><b>15, 30 or 45 min</b></li>
-          <li><span>A pause, if you need one</span><i></i><b>1 per 15 min</b></li>
-        </ul>
-        <h3 class="itin-h">After</h3>
-        <ul class="rows">
-          <li><span>Notes on every question</span><i></i><b>at once</b></li>
-          <li><span>Save questions to practise again</span><i></i><b>any time</b></li>
-        </ul>
-        <p class="itin-total"><span>You hold: notes on every question</span><b>about 31 min</b></p>
+      <div class="notes-ui reveal" style="--d:1">
+        <div class="chips stack" role="tablist" aria-label="How an answer can go" id="ntabs">
+          <button type="button" role="tab" aria-selected="true" data-n="0"><i class="dot ok"></i>Correct</button>
+          <button type="button" role="tab" aria-selected="false" data-n="1"><i class="dot ok2"></i>Mostly correct</button>
+          <button type="button" role="tab" aria-selected="false" data-n="2"><i class="dot mid"></i>Too vague</button>
+          <button type="button" role="tab" aria-selected="false" data-n="3"><i class="dot bad"></i>Incorrect</button>
+          <button type="button" role="tab" aria-selected="false" data-n="4"><i class="dot na"></i>Not answered</button>
+          <button type="button" role="tab" aria-selected="false" data-n="5"><i class="dot na"></i>Not backed up</button>
+        </div>
+        <article class="note card" id="note" aria-live="polite"></article>
       </div>
-    </div>
-  </section>
-
-  <!-- Four ways to sit it: stacking sheets -->
-  <section class="modes" id="modes" aria-labelledby="modes-h">
-    <div class="wrap modes-head">
-      <h2 id="modes-h" class="head reveal">Four ways to sit it</h2>
-    </div>
-    <div class="stack">
-      <article class="sheet-m m1">
-        <div class="m-band"><h3>Practice</h3></div>
-        <div class="m-body wrap">
-          <p class="m-text">A gentle interviewer, hints on, and a retry if you want another go. Each answer is checked once rather than three times: less precise, never more generous.</p>
-          <img class="m-img" src="assets/ui-setup.jpg" width="1440" height="900" alt="The setup screen: what to practise, which topic, how long, and who you might meet" loading="lazy" decoding="async">
-        </div>
-      </article>
-      <article class="sheet-m m2">
-        <div class="m-band"><h3>Mock</h3></div>
-        <div class="m-body wrap">
-          <p class="m-text">A realistic panel: a lead who opens and closes, someone who knows each part, HR for the people questions. The clock is enforced and a hint costs credit.</p>
-          <img class="m-img" src="assets/ui-plan.jpg" width="1440" height="900" alt="The plan screen: the panel, the time split across parts, and a Start button" loading="lazy" decoding="async">
-        </div>
-      </article>
-      <article class="sheet-m m3">
-        <div class="m-band"><h3>Real drive</h3></div>
-        <div class="m-body wrap">
-          <p class="m-text">As Mock, with a brisker technical interviewer. Start from a job description or a company's drive and the plan follows what it asks for.</p>
-          <img class="m-img" src="assets/ui-live.jpg" width="1440" height="900" alt="The live interview: the panel's tiles, the current question and the conversation" loading="lazy" decoding="async">
-        </div>
-      </article>
-      <article class="sheet-m m4">
-        <div class="m-band"><h3>Final Boss</h3></div>
-        <div class="m-body wrap">
-          <p class="m-text">No hints, a hard clock with no overrun, and an interviewer who keeps going until your reasoning runs out. Harder, never ruder.</p>
-          <img class="m-img" src="assets/ui-notes.jpg" width="1440" height="900" alt="The notes screen: how your answers went, question by question" loading="lazy" decoding="async">
-        </div>
-      </article>
     </div>
   </section>
 
   <!-- Questions -->
-  <section class="field faq" id="faq" aria-labelledby="faq-h">
-    <div class="wrap faq-wrap">
-      <div class="faq-col">
-        <h2 id="faq-h" class="head reveal">Before you start</h2>
-        <ul class="facts reveal" style="--d:1">
+  <section class="band" id="faq" aria-labelledby="faq-h">
+    <div class="wrap faq">
+      <div class="reveal">
+        <h2 id="faq-h">Before you start</h2>
+        <ul class="facts">
           <li>About a minute to set up</li>
           <li>15, 30 or 45 minutes long</li>
           <li>Type your answers, or speak and edit</li>
         </ul>
-        <div class="qa">
-          <details class="reveal"><summary>Is my answer scored while I speak?</summary><p>No. Nothing on the screen is a live score. The notes come at the end, and say how each answer went.</p></details>
-          <details class="reveal"><summary>Can I pause?</summary><p>Yes. You get one pause for every fifteen planned minutes, up to five minutes each, and the clock stops while you are away.</p></details>
-          <details class="reveal"><summary>Do I need a microphone?</summary><p>No. Type your answers, or speak them and read and edit the text before anything is sent.</p></details>
-          <details class="reveal"><summary>Can it use my resume or a job description?</summary><p>Both are optional. A job description shapes the plan. A resume adds a short part on lines an interviewer would push on, and that part is not scored.</p></details>
-          <details class="reveal"><summary>What if a question is broken?</summary><p>Flag it during the interview. It goes back to the owners of the question bank.</p></details>
-        </div>
-        <a class="btn on-field reveal" href="/mock">Start an interview</a>
       </div>
-      <div class="faq-pics">
-        <img class="tall" src="assets/room.jpg" width="1200" height="1600" alt="Rows of seats in a tiered lecture theatre, seen from the back" loading="lazy" decoding="async">
-        <img class="sq" src="assets/ui-library.jpg" width="900" height="900" alt="The question library: saved questions with their last attempts" loading="lazy" decoding="async">
+      <div class="qa reveal" style="--d:1">
+        <details><summary>Is my answer scored while I speak?</summary><p>No. Nothing on the screen is a live score. The notes come at the end, and say how each answer went.</p></details>
+        <details><summary>Can I pause?</summary><p>Yes. You get one pause for every fifteen planned minutes, up to five minutes each, and the clock stops while you are away.</p></details>
+        <details><summary>Do I need a microphone?</summary><p>No. Type your answers, or speak them and read and edit the text before anything is sent.</p></details>
+        <details><summary>Can it use my resume or a job description?</summary><p>Both are optional. A job description shapes the plan. A resume adds a short part on lines an interviewer would push on, and that part is not scored.</p></details>
+        <details><summary>What if a question is broken?</summary><p>Flag it during the interview. It goes back to the owners of the question bank.</p></details>
       </div>
     </div>
   </section>
 
-  <!-- Reply card -->
-  <section class="ground reply" id="start" aria-labelledby="reply-h">
-    <div class="wrap reply-wrap">
-      <p class="statement reveal">Every interview is different, because the questions follow what you say.</p>
-      <div class="card reveal" style="--d:1">
-        <h2 id="reply-h" class="card-h">Start practising</h2>
-        <p>Pick a topic, a length and a kind. Your plan is ready in seconds.</p>
-        <a class="bar" href="/mock">Start an interview</a>
-      </div>
+  <section class="cta" aria-labelledby="cta-h">
+    <div class="wrap reveal">
+      <h2 id="cta-h">Every interview is different, because the questions follow what you say.</h2>
+      <a class="btn" href="/mock">Start an interview</a>
     </div>
   </section>
 
 </main>
 
-<footer class="ground foot">
-  <div class="back scallop-top">
-    <div class="back-l">
-      <p class="sign">Good luck out there</p>
-      <p>The real panel will not repeat itself. This one lets you try again, as many times as you like.</p>
-    </div>
-    <div class="back-r">
-      <img class="stamp" src="assets/room.jpg" width="264" height="352" alt="" loading="lazy" decoding="async">
-      <ul class="addr">
-        <li><a href="/mock">Start an interview</a></li>
-        <li><a href="/mock/library">Your question library</a></li>
-        <li><a href="#panel">Who is asking</a></li>
-        <li><a href="#faq">Before you start</a></li>
-      </ul>
-    </div>
+<footer class="foot">
+  <div class="wrap foot-in">
+    <p>Good luck out there. The real panel will not repeat itself; this one lets you try again.</p>
+    <ul>
+      <li><a href="/mock">Start an interview</a></li>
+      <li><a href="/mock/library">Your question library</a></li>
+    </ul>
     <p class="imprint">Photo: "University of Edinburgh Lecture Theatre" by Open Ed, <a href="https://creativecommons.org/licenses/by/2.0">CC BY 2.0</a>, via <a href="https://commons.wikimedia.org/wiki/File:University_of_Edinburgh_Lecture_Theatre_(28779436435).jpg">Wikimedia Commons</a>.</p>
   </div>
 </footer>
