@@ -509,6 +509,46 @@ export function MockHome() {
       </section>
 
       <aside className="space-y-5">
+        {/* The interview as the printed slip students are handed in placement
+            season: what, how long, what kind, who — filled in as they choose. */}
+        <section className="slip" aria-label="Your interview slip">
+          <h2 className="slip-head">Your slip</h2>
+          <dl className="slip-rows">
+            <div>
+              <dt>Practising for</dt>
+              <i aria-hidden />
+              <dd>{target ?? (currentKey === "general" ? "General practice" : "A chosen target")}</dd>
+            </div>
+            {general && (
+              <div>
+                <dt>Interview on</dt>
+                <i aria-hidden />
+                <dd>{track ? (tracks.data?.tracks.find((t) => t.round_type === track)?.title ?? track) : "A mix"}</dd>
+              </div>
+            )}
+            <div>
+              <dt>Length</dt>
+              <i aria-hidden />
+              <dd>{minutes} min</dd>
+            </div>
+            <div>
+              <dt>Kind</dt>
+              <i aria-hidden />
+              <dd>{(modes.data ?? []).find((m) => m.id === mode)?.label ?? mode}</dd>
+            </div>
+            <div>
+              <dt>Pauses</dt>
+              <i aria-hidden />
+              <dd>{pauses}</dd>
+            </div>
+            <div>
+              <dt>Resume</dt>
+              <i aria-hidden />
+              <dd>{withResume && pickedResume ? "Asked about" : "Not used"}</dd>
+            </div>
+          </dl>
+        </section>
+
         {(personas.data ?? []).length > 0 && (
           <section className="panel p-5">
             <h2 className="text-base font-semibold text-ink">Who you might meet</h2>

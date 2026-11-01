@@ -117,6 +117,34 @@
     }
   }
 
+  /* The slip: the interview so far, as a printed slip. Dotted leaders are
+     round dots, as on the slip a candidate is handed. */
+  .slip {
+    @apply rounded-md bg-surface-raised px-5 py-5;
+    border: 1px solid var(--color-line);
+  }
+  .slip-head {
+    @apply text-base font-semibold text-ink;
+    font-family: var(--font-display);
+  }
+  .slip-rows {
+    @apply mt-3 space-y-2 text-sm;
+  }
+  .slip-rows > div {
+    @apply flex items-baseline gap-2;
+  }
+  .slip-rows dt {
+    @apply shrink-0 text-ink-soft;
+  }
+  .slip-rows i {
+    @apply min-w-4 flex-1;
+    border-bottom: 3px dotted var(--color-line-strong);
+    transform: translateY(-3px);
+  }
+  .slip-rows dd {
+    @apply min-w-0 text-right font-medium text-ink;
+  }
+
   /* A name card on the table: a panel member, folded top edge. */
   .placard {
     @apply rounded-md border border-line bg-surface-raised px-3 py-3;
