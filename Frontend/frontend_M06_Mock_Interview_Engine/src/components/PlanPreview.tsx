@@ -127,7 +127,7 @@ function PanelStrip({
       </h2>
       <ul className="mt-2 grid gap-2 sm:grid-cols-2">
         {people.map(({ card, role }) => (
-          <li key={card.id} className="flex items-start gap-3 rounded-lg border border-line bg-surface px-3 py-2.5">
+          <li key={card.id} className="placard flex items-start gap-3">
             <Face persona={card.id} name={card.name} size={40} />
             <div className="min-w-0">
               <p className="text-sm font-medium text-ink">{card.name}</p>
@@ -222,7 +222,7 @@ function SegmentRow({
           >
             {segment.title}
           </span>
-          <span className="text-2xs uppercase tracking-wide text-ink-faint">
+          <span className="text-2xs text-ink-faint">
             {KIND_LABEL[segment.kind] ?? segment.kind}
           </span>
         </p>
@@ -366,6 +366,27 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
       />
 
       <PanelStrip people={panelPeople} />
+
+      {live.length > 1 && (
+        // The whole interview on one line, each part as wide as it is long.
+        <ol aria-label="How the time is spent" className="mt-6 flex gap-1">
+          {live.map((segment) => (
+            <li
+              key={segment.index}
+              className="min-w-0"
+              style={{ flexGrow: segment.minutes, flexBasis: 0 }}
+              title={`${segment.title} · ${minutes(segment.minutes)}`}
+            >
+              <span
+                className={`block h-2 rounded-sm ${segment.is_reserved ? "bg-line-strong" : "bg-brand"}`}
+                style={{ opacity: segment.is_reserved ? 1 : 0.35 + 0.65 * (segment.minutes / Math.max(...live.map((x) => x.minutes))) }}
+              />
+              <span className="mt-1.5 block truncate text-2xs text-ink-soft">{segment.title}</span>
+              <span className="block text-2xs text-ink-faint">{minutes(segment.minutes)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
 
       <div className="mt-5">
         <Card>

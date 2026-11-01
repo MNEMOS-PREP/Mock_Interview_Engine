@@ -48,7 +48,7 @@ function Entry({
         />
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-2 text-2xs text-ink-faint">
-            {entry.topic && <span className="uppercase tracking-wide">{entry.topic}</span>}
+            {entry.topic && <span>{entry.topic}</span>}
             {entry.starred && (
               <span className="rounded-full border border-brand-line px-2 py-0.5 text-brand">★ Starred</span>
             )}

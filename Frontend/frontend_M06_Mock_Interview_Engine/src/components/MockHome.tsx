@@ -74,11 +74,7 @@ function Choice({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`flex min-w-0 items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
-        active
-          ? "border-brand bg-brand-soft text-ink"
-          : "border-line bg-surface text-ink-soft hover:border-line-strong"
-      }`}
+      className="choice flex min-w-0 items-start gap-2.5"
     >
       {icon && <Icon name={icon} size={16} className={`mt-0.5 shrink-0 ${active ? "text-brand" : "text-ink-faint"}`} />}
       <span className="min-w-0">
@@ -112,11 +108,7 @@ function TrackChoice({
       // A flex column, so a card in a tall row keeps its title at the top: a
       // button centres its content, which floated the shorter cards' titles
       // half a line below their neighbours' (2026-10-13).
-      className={`flex min-w-0 flex-col justify-start rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
-        active
-          ? "border-brand bg-brand-soft text-ink"
-          : "border-line bg-surface text-ink-soft hover:border-line-strong"
-      }`}
+      className="choice flex min-w-0 flex-col justify-start"
     >
       <span className="flex items-start justify-between gap-2">
         <span className="min-w-0 text-sm font-medium leading-snug">{track.title}</span>
@@ -279,9 +271,9 @@ export function MockHome() {
           }
         />
 
-        <fieldset className="mt-7">
-          <legend className="text-sm font-medium text-ink">Practising for</legend>
-          <div className="mt-2.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <fieldset className="setup-row">
+          <legend className="setup-label">Practising for</legend>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <Choice
               active={currentKey === "general"}
               onClick={() => choose({})}
@@ -317,18 +309,14 @@ export function MockHome() {
         </fieldset>
 
         {general && groups.length > 0 && (
-          <fieldset className="mt-7">
-            <legend className="text-sm font-medium text-ink">Interview on</legend>
-            <div className="mt-2.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <fieldset className="setup-row">
+            <legend className="setup-label">Interview on</legend>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               <button
                 type="button"
                 aria-pressed={track === null}
                 onClick={() => setTrack(null)}
-                className={`min-w-0 rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
-                  track === null
-                    ? "border-brand bg-brand-soft text-ink"
-                    : "border-line bg-surface text-ink-soft hover:border-line-strong"
-                }`}
+                className="choice min-w-0"
               >
                 <span className="block text-sm font-medium">A mix</span>
                 <span className="mt-0.5 block text-2xs leading-relaxed text-ink-faint">
@@ -338,7 +326,7 @@ export function MockHome() {
             </div>
             {groups.map(({ group, tracks: inGroup }) => (
               <div key={group} className="mt-3">
-                <p className="text-2xs font-medium uppercase tracking-wide text-ink-faint">{group}</p>
+                <p className="text-xs font-medium text-ink-soft">{group}</p>
                 <div className="mt-1.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {inGroup.map((t) => (
                     <TrackChoice
@@ -355,8 +343,8 @@ export function MockHome() {
           </fieldset>
         )}
 
-        <fieldset className="mt-7">
-          <legend className="text-sm font-medium text-ink">Your resume</legend>
+        <fieldset className="setup-row">
+          <legend className="setup-label">Your resume</legend>
           {myResumes.length === 0 ? (
             <p className="mt-2 text-2xs text-ink-faint">
               {resumes.isLoading
@@ -412,8 +400,8 @@ export function MockHome() {
           )}
         </fieldset>
 
-        <fieldset className="mt-7">
-          <legend className="text-sm font-medium text-ink">How long</legend>
+        <fieldset className="setup-row">
+          <legend className="setup-label">How long</legend>
           <div className="mt-2.5 flex flex-wrap gap-2">
             {LENGTHS.map((option) => (
               <button
@@ -424,11 +412,7 @@ export function MockHome() {
                   chosen.current = true;
                   setMinutes(option.minutes);
                 }}
-                className={`rounded-xl border px-3.5 py-2 text-left transition-colors ${
-                  minutes === option.minutes
-                    ? "border-brand bg-brand-soft text-ink"
-                    : "border-line bg-surface text-ink-soft hover:border-line-strong"
-                }`}
+                className="choice"
               >
                 <span className="block text-sm font-medium">{option.label}</span>
                 <span className="block text-2xs text-ink-faint">{option.hint}</span>
@@ -438,8 +422,8 @@ export function MockHome() {
         </fieldset>
 
         {(modes.data ?? []).length > 0 && (
-          <fieldset className="mt-7">
-            <legend className="text-sm font-medium text-ink">What kind</legend>
+          <fieldset className="setup-row">
+            <legend className="setup-label">What kind</legend>
             <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
               {(modes.data ?? []).map((option) => (
                 <button
@@ -452,11 +436,7 @@ export function MockHome() {
                   }}
                   // Top-aligned like the track cards: a button centres its
                   // content, so Practice sat half a line below Mock.
-                  className={`flex flex-col justify-start rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
-                    mode === option.id
-                      ? "border-brand bg-brand-soft text-ink"
-                      : "border-line bg-surface text-ink-soft hover:border-line-strong"
-                  }`}
+                  className="choice flex flex-col justify-start"
                 >
                   <span className="block text-sm font-medium">{option.label}</span>
                   <span className="block text-2xs leading-relaxed text-ink-faint">{option.summary}</span>
@@ -466,7 +446,7 @@ export function MockHome() {
           </fieldset>
         )}
 
-        <div className="mt-8 flex flex-wrap items-center gap-3">
+        <div className="setup-row setup-start flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() =>
@@ -490,7 +470,7 @@ export function MockHome() {
               )
             }
             disabled={create.isPending || Boolean(unfinished)}
-            className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand px-5 text-sm font-semibold text-white shadow-glow hover:bg-brand-hover disabled:opacity-50"
+            className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-semibold text-on-brand hover:bg-brand-hover disabled:opacity-50"
           >
             <Icon name="mic" size={16} />
             {create.isPending ? "Building your plan…" : "Start interview"}
@@ -531,21 +511,19 @@ export function MockHome() {
       <aside className="space-y-5">
         {(personas.data ?? []).length > 0 && (
           <section className="panel p-5">
-            <h2 className="text-sm font-semibold text-ink">Who you might meet</h2>
+            <h2 className="text-base font-semibold text-ink">Who you might meet</h2>
             <p className="mt-1 text-2xs text-ink-faint">A mock is a panel; the plan says who runs each part.</p>
-            <ul className="mt-4 space-y-3.5">
+            <ul className="mt-4 grid grid-cols-2 gap-3">
               {/* Six, then the rest on request: all 39 made this page five
                   screens tall for a list nobody chooses from (2026-10-13). */}
               {(personas.data ?? []).slice(0, allPersonas ? undefined : PERSONAS_SHOWN).map((persona) => (
-                <li key={persona.id} className="flex items-start gap-3">
-                  <Face persona={persona.id} name={persona.name} size={40} />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-ink">{persona.name}</span>
-                    <span className="block text-2xs text-ink-faint">{persona.title}</span>
-                    {persona.style && (
-                      <span className="mt-0.5 block text-2xs leading-relaxed text-ink-soft">{persona.style}</span>
-                    )}
-                  </span>
+                <li key={persona.id} className="placard">
+                  <Face persona={persona.id} name={persona.name} size={48} />
+                  <span className="placard-name">{persona.name}</span>
+                  <span className="block text-2xs leading-snug text-ink-soft">{persona.title}</span>
+                  {persona.style && (
+                    <span className="mt-1.5 block text-2xs leading-relaxed text-ink-faint">{persona.style}</span>
+                  )}
                 </li>
               ))}
             </ul>

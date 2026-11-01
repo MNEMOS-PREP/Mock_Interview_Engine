@@ -73,7 +73,7 @@ function CandidateControl() {
         setCandidateId(draft);
       }}
     >
-      <label htmlFor="candidate" className="text-2xs uppercase tracking-wide text-ink-faint">
+      <label htmlFor="candidate" className="text-2xs text-ink-faint">
         Student
       </label>
       <input

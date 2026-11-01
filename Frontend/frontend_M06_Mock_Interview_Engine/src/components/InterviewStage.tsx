@@ -895,7 +895,7 @@ function RoundRule({ title }: { title: string }) {
       aria-label={`New round: ${title}`}
     >
       <span className="h-px flex-1 bg-line" />
-      <span className="text-2xs uppercase tracking-wide text-ink-faint">
+      <span className="text-2xs text-ink-faint">
         {title}
       </span>
       <span className="h-px flex-1 bg-line" />

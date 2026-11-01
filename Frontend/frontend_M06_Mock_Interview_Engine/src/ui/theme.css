@@ -8,6 +8,7 @@
   them are never generated and the layout collapses in a way that looks like a
   CSS bug rather than a build one.
 */
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..700&family=Public+Sans:ital,wght@0,400..650;1,400&display=swap");
 @import "@ai/core/styles.css";
 
 /*
@@ -34,23 +35,91 @@
   product when they arrive.
 */
 
+/*
+  ── The room ────────────────────────────────────────────────────────────────
+  Placement interviews happen in plain institutional rooms: a long table, a
+  panel behind name cards, a candidate in a blazer. The palette is that room —
+  corridor-grey-green walls, paper on the table, pine-black ink, and one
+  blazer burgundy for the thing to press. Core invites a module to override
+  the neutrals and the brand; the verification palette (confirmed / reported /
+  contested) is left alone, because that is the platform's one shared meaning.
+*/
 @theme {
+  --font-sans: "Public Sans", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-display: "Bricolage Grotesque", "Public Sans", ui-sans-serif, system-ui, sans-serif;
+  --radius-card: 0.625rem;
+
   /* The conversation's measure. Wider than prose because answers contain code
      fragments, narrower than a dashboard because it is read, not scanned. */
   --container-conversation: 44rem;
 
   /* The question, set as the page's largest element. */
-  --text-question: 1.375rem;
-  --text-question--line-height: 1.9rem;
+  --text-question: 1.625rem;
+  --text-question--line-height: 2.15rem;
   --text-question--letter-spacing: -0.01em;
 }
 
 @layer components {
+  /* A selectable card. Selected is a stub on the leading edge and a brand
+     outline on paper — not a tint — so it still reads in monochrome. */
+  .choice {
+    @apply min-w-0 rounded-md border border-line bg-surface px-3.5 py-2.5 text-left text-ink-soft transition-[border-color,box-shadow,color];
+    box-shadow: inset 0 0 0 0 var(--color-brand);
+  }
+  .choice:hover {
+    @apply border-line-strong text-ink;
+  }
+  .choice[aria-pressed="true"] {
+    @apply border-brand text-ink;
+    box-shadow: inset 4px 0 0 0 var(--color-brand);
+  }
+  .choice:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  /* Setup reads as a form with its labels in a gutter. */
+  .setup-row {
+    @apply mt-7 border-t border-line pt-6;
+  }
+  .setup-label {
+    @apply mb-2.5 text-sm font-semibold text-ink;
+    font-family: var(--font-display);
+  }
+  @media (min-width: 48rem) {
+    .setup-row {
+      padding-left: 10.5rem;
+    }
+    .setup-label {
+      float: left;
+      width: 9rem;
+      margin: 0 0 0 -10.5rem;
+    }
+    .setup-row > :not(legend) {
+      clear: none;
+    }
+  }
+
+  /* A name card on the table: a panel member, folded top edge. */
+  .placard {
+    @apply rounded-md border border-line bg-surface-raised px-3 pb-3 pt-4;
+    border-top: 3px solid var(--color-brand);
+    box-shadow: var(--shadow-card);
+  }
+  .placard-name {
+    @apply mt-2.5 block text-sm font-semibold text-ink;
+    font-family: var(--font-display);
+  }
+
   /* A turn in the transcript. The interviewer speaks in the page's voice; the
      student's own words are inset and quieter, because they are already theirs
      — the emphasis belongs on what was asked. */
   .turn-interviewer {
     @apply text-question text-ink;
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-variation-settings: "opsz" 40;
+    text-wrap: pretty;
   }
 
   .turn-candidate {
@@ -95,4 +164,85 @@
   .status-dot {
     @apply inline-block h-2 w-2 shrink-0 rounded-full;
   }
+}
+
+/* Palette override. Same selectors core uses, so an explicit light choice and
+   the OS preference both behave exactly as core documents. */
+:root {
+  --color-ink: oklch(0.22 0.022 205);
+  --color-ink-soft: oklch(0.43 0.02 205);
+  --color-ink-faint: oklch(0.56 0.016 205);
+
+  --color-canvas: oklch(0.945 0.009 165);
+  --color-surface: oklch(0.992 0.003 100);
+  --color-surface-sunken: oklch(0.925 0.011 165);
+  --color-surface-raised: oklch(0.998 0.002 100);
+  --color-line: oklch(0.875 0.012 165);
+  --color-line-strong: oklch(0.76 0.016 175);
+
+  --color-brand: oklch(0.43 0.125 12);
+  --color-brand-hover: oklch(0.37 0.12 12);
+  --color-brand-soft: oklch(0.95 0.014 12);
+  --color-brand-line: oklch(0.84 0.04 12);
+  --color-on-brand: oklch(0.99 0.004 12);
+
+  --color-session-listening: oklch(0.5 0.08 200);
+  --shadow-card: 0 1px 0 oklch(0.22 0.022 205 / 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-ink: oklch(0.945 0.008 165);
+    --color-ink-soft: oklch(0.79 0.012 175);
+    --color-ink-faint: oklch(0.68 0.012 175);
+    --color-canvas: oklch(0.175 0.016 205);
+    --color-surface: oklch(0.215 0.016 205);
+    --color-surface-sunken: oklch(0.195 0.015 205);
+    --color-surface-raised: oklch(0.25 0.017 205);
+    --color-line: oklch(0.36 0.016 205);
+    --color-line-strong: oklch(0.52 0.016 205);
+    --color-brand: oklch(0.78 0.1 12);
+    --color-brand-hover: oklch(0.84 0.09 12);
+    --color-brand-soft: oklch(0.27 0.045 12);
+    --color-brand-line: oklch(0.4 0.07 12);
+    --color-on-brand: oklch(0.17 0.02 12);
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-ink: oklch(0.945 0.008 165);
+  --color-ink-soft: oklch(0.79 0.012 175);
+  --color-ink-faint: oklch(0.68 0.012 175);
+  --color-canvas: oklch(0.175 0.016 205);
+  --color-surface: oklch(0.215 0.016 205);
+  --color-surface-sunken: oklch(0.195 0.015 205);
+  --color-surface-raised: oklch(0.25 0.017 205);
+  --color-line: oklch(0.36 0.016 205);
+  --color-line-strong: oklch(0.52 0.016 205);
+  --color-brand: oklch(0.78 0.1 12);
+  --color-brand-hover: oklch(0.84 0.09 12);
+  --color-brand-soft: oklch(0.27 0.045 12);
+  --color-brand-line: oklch(0.4 0.07 12);
+  --color-on-brand: oklch(0.17 0.02 12);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "tnum" 0;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+/* The page's own title is the largest thing on a setup or notes screen. */
+main h1 {
+  font-size: 2.125rem;
+  line-height: 1.1;
+  font-weight: 650;
+  letter-spacing: -0.025em;
 }
