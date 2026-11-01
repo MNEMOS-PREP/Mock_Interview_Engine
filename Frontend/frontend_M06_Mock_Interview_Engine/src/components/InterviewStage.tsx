@@ -443,7 +443,7 @@ function StatusStrip({
         </svg>
       </Link>
       <span className="flex min-w-0 items-center gap-2.5">
-        <span className="truncate text-base font-semibold text-ink">
+        <span className="shrink-0 whitespace-nowrap text-base font-semibold text-ink">
           {session.kind === "drill"
             ? "Defend drill"
             : session.mode === "practice"
@@ -1232,7 +1232,7 @@ function YouTile({ level, listening }: { level: () => number; listening: boolean
 /** The question being answered, large (the mockup's "Current question"). */
 function CurrentQuestion({ text, asker, closing }: { text: string; asker: string | null; closing: boolean }) {
   return (
-    <section aria-label="Current question" className="rounded-2xl border border-line bg-surface p-5 shadow-raised">
+    <section aria-label="Current question" className="rounded-2xl border border-line border-l-4 border-l-brand bg-surface px-6 py-5 shadow-raised">
       <p className="flex items-center gap-2 text-xs font-semibold text-brand">
         <span aria-hidden className="grid h-6 w-6 place-items-center rounded-md bg-brand-soft">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1243,7 +1243,7 @@ function CurrentQuestion({ text, asker, closing }: { text: string; asker: string
         {closing ? "Your turn to ask" : "Current question"}
         {asker && <span className="font-normal text-ink-faint">· {asker}</span>}
       </p>
-      <p className="mt-3 text-lg font-semibold leading-snug text-ink sm:text-xl">{text}</p>
+      <p className="turn-interviewer mt-3">{text}</p>
     </section>
   );
 }

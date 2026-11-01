@@ -96,7 +96,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-dvh bg-canvas text-ink">
       <header className="sticky top-0 z-10 border-b border-line bg-surface/85 backdrop-blur">
-        <div className="mx-auto flex h-12 max-w-6xl items-center gap-4 px-4">
+        <div className="mx-auto flex min-h-12 max-w-6xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-1.5">
           <Link to="/mock" className="text-sm font-semibold tracking-tight">
             Mock interview
             <span className="ml-2 font-mono text-2xs font-normal text-ink-faint">M06</span>

@@ -765,10 +765,6 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
   return (
     <div className="mx-auto max-w-(--container-conversation)">
       <header className="relative overflow-hidden rounded-2xl border border-line bg-surface p-6 shadow-raised">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -top-20 -right-10 h-48 w-48 rounded-full bg-brand opacity-15 blur-3xl"
-        />
         <p className="relative inline-flex items-center gap-1.5 rounded-full border border-confirmed-line bg-confirmed-soft px-2.5 py-1 text-2xs font-medium text-confirmed">
           ✓ {data.kind === "drill" ? "Drill complete" : "Session complete"}
         </p>
