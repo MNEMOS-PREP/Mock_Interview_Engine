@@ -49,7 +49,9 @@
   --font-display: "Bricolage Grotesque", "Geist", ui-sans-serif, system-ui, sans-serif;
   /* The one hue: it marks data (how far through, how the time is spent) and
      never chrome. Buttons, selection and nav are ink. */
-  --color-data: oklch(0.43 0.125 12);
+  --color-data: oklch(0.6 0.15 185);
+  --color-accent: oklch(0.64 0.19 330);
+  --color-accent-2: oklch(0.66 0.15 235);
   --text-2xs: 0.8125rem;
   --text-2xs--line-height: 1.15rem;
   --radius-card: 0.5rem;
@@ -213,66 +215,85 @@
 /* Palette override. Same selectors core uses, so an explicit light choice and
    the OS preference both behave exactly as core documents. */
 :root {
-  --color-ink: oklch(0.22 0.022 205);
-  --color-ink-soft: oklch(0.43 0.02 205);
-  --color-ink-faint: oklch(0.5 0.016 205);
+  --color-ink: oklch(0.22 0.045 285);
+  --color-ink-soft: oklch(0.42 0.035 285);
+  --color-ink-faint: oklch(0.5 0.03 285);
 
-  --color-canvas: oklch(0.945 0.009 165);
-  --color-surface: oklch(0.995 0.002 165);
-  --color-surface-sunken: oklch(0.925 0.011 165);
-  --color-surface-raised: oklch(0.998 0.001 165);
-  --color-line: oklch(0.875 0.012 165);
-  --color-line-strong: oklch(0.76 0.016 175);
+  --color-canvas: oklch(0.962 0.014 285);
+  --color-surface: oklch(0.995 0.003 285);
+  --color-surface-sunken: oklch(0.94 0.02 285);
+  --color-surface-raised: oklch(0.998 0.002 285);
+  --color-line: oklch(0.89 0.02 285);
+  --color-line-strong: oklch(0.76 0.045 285);
 
-  --color-brand: oklch(0.2 0.012 205);
-  --color-brand-hover: oklch(0.3 0.012 205);
-  --color-brand-soft: oklch(0.94 0.006 165);
-  --color-brand-line: oklch(0.78 0.012 175);
+  --color-brand: oklch(0.5 0.21 280);
+  --color-brand-hover: oklch(0.44 0.22 280);
+  --color-brand-soft: oklch(0.945 0.035 285);
+  --color-brand-line: oklch(0.8 0.08 285);
   --color-on-brand: oklch(0.99 0.003 100);
 
-  --color-session-listening: oklch(0.5 0.08 200);
-  /* Floating layers only (header, question, composer) carry a soft lift. */
-  --shadow-card: 0 1px 2px oklch(0.2 0.02 205 / 0.05);
-  --shadow-raised: 0 1px 2px oklch(0.2 0.02 205 / 0.06), 0 12px 32px -16px oklch(0.2 0.02 205 / 0.22);
-  --shadow-glow: 0 0 0 4px oklch(0.43 0.125 12 / 0.12);
+  --color-session-listening: oklch(0.6 0.15 185);
+  --color-session-speaking: oklch(0.55 0.21 285);
+  --color-session-thinking: oklch(0.75 0.15 75);
+  --color-data: oklch(0.6 0.15 185);
+  --color-accent: oklch(0.64 0.19 330);
+  --color-accent-2: oklch(0.66 0.15 235);
+
+  --shadow-card: 0 1px 2px oklch(0.3 0.08 285 / 0.06);
+  --shadow-raised: 0 1px 2px oklch(0.3 0.08 285 / 0.07), 0 14px 34px -16px oklch(0.4 0.18 285 / 0.3);
+  --shadow-glow: 0 0 0 4px oklch(0.5 0.21 280 / 0.16);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-ink: oklch(0.945 0.008 165);
-    --color-ink-soft: oklch(0.79 0.012 175);
-    --color-ink-faint: oklch(0.68 0.012 175);
-    --color-canvas: oklch(0.175 0.016 205);
-    --color-surface: oklch(0.215 0.016 205);
-    --color-surface-sunken: oklch(0.195 0.015 205);
-    --color-surface-raised: oklch(0.25 0.017 205);
-    --color-line: oklch(0.36 0.016 205);
-    --color-line-strong: oklch(0.52 0.016 205);
-    --color-brand: oklch(0.94 0.006 165);
-    --color-brand-hover: oklch(1 0 0);
-    --color-brand-soft: oklch(0.27 0.012 205);
-    --color-brand-line: oklch(0.45 0.014 205);
-    --color-on-brand: oklch(0.18 0.012 205);
-    --color-data: oklch(0.78 0.1 12);
+    --color-ink: oklch(0.95 0.012 285);
+    --color-ink-soft: oklch(0.8 0.025 285);
+    --color-ink-faint: oklch(0.7 0.025 285);
+    --color-canvas: oklch(0.165 0.03 285);
+    --color-surface: oklch(0.215 0.035 285);
+    --color-surface-sunken: oklch(0.19 0.032 285);
+    --color-surface-raised: oklch(0.255 0.04 285);
+    --color-line: oklch(0.34 0.04 285);
+    --color-line-strong: oklch(0.5 0.05 285);
+    --color-brand: oklch(0.76 0.15 290);
+    --color-brand-hover: oklch(0.82 0.14 290);
+    --color-brand-soft: oklch(0.28 0.06 285);
+    --color-brand-line: oklch(0.48 0.09 285);
+    --color-on-brand: oklch(0.17 0.04 285);
+    --color-data: oklch(0.78 0.14 185);
+    --color-accent: oklch(0.76 0.17 330);
+    --color-accent-2: oklch(0.78 0.12 235);
+    --color-session-listening: oklch(0.78 0.14 185);
+    --color-session-speaking: oklch(0.76 0.15 290);
+    --color-session-thinking: oklch(0.82 0.14 80);
+    --shadow-raised: 0 1px 2px oklch(0 0 0 / 0.4), 0 16px 40px -18px oklch(0.1 0.1 285 / 0.9);
+    --shadow-glow: 0 0 0 4px oklch(0.76 0.15 290 / 0.22);
   }
 }
 
 :root[data-theme="dark"] {
-  --color-ink: oklch(0.945 0.008 165);
-  --color-ink-soft: oklch(0.79 0.012 175);
-  --color-ink-faint: oklch(0.68 0.012 175);
-  --color-canvas: oklch(0.175 0.016 205);
-  --color-surface: oklch(0.215 0.016 205);
-  --color-surface-sunken: oklch(0.195 0.015 205);
-  --color-surface-raised: oklch(0.25 0.017 205);
-  --color-line: oklch(0.36 0.016 205);
-  --color-line-strong: oklch(0.52 0.016 205);
-  --color-brand: oklch(0.94 0.006 165);
-  --color-brand-hover: oklch(1 0 0);
-  --color-brand-soft: oklch(0.27 0.012 205);
-  --color-brand-line: oklch(0.45 0.014 205);
-  --color-on-brand: oklch(0.18 0.012 205);
-  --color-data: oklch(0.78 0.1 12);
+  --color-ink: oklch(0.95 0.012 285);
+  --color-ink-soft: oklch(0.8 0.025 285);
+  --color-ink-faint: oklch(0.7 0.025 285);
+  --color-canvas: oklch(0.165 0.03 285);
+  --color-surface: oklch(0.215 0.035 285);
+  --color-surface-sunken: oklch(0.19 0.032 285);
+  --color-surface-raised: oklch(0.255 0.04 285);
+  --color-line: oklch(0.34 0.04 285);
+  --color-line-strong: oklch(0.5 0.05 285);
+  --color-brand: oklch(0.76 0.15 290);
+  --color-brand-hover: oklch(0.82 0.14 290);
+  --color-brand-soft: oklch(0.28 0.06 285);
+  --color-brand-line: oklch(0.48 0.09 285);
+  --color-on-brand: oklch(0.17 0.04 285);
+  --color-data: oklch(0.78 0.14 185);
+  --color-accent: oklch(0.76 0.17 330);
+  --color-accent-2: oklch(0.78 0.12 235);
+  --color-session-listening: oklch(0.78 0.14 185);
+  --color-session-speaking: oklch(0.76 0.15 290);
+  --color-session-thinking: oklch(0.82 0.14 80);
+  --shadow-raised: 0 1px 2px oklch(0 0 0 / 0.4), 0 16px 40px -18px oklch(0.1 0.1 285 / 0.9);
+  --shadow-glow: 0 0 0 4px oklch(0.76 0.15 290 / 0.22);
 }
 
 body {
@@ -308,8 +329,12 @@ fieldset.setup-row:first-of-type::before {
 /* ───────── Premium layer: depth, glass, motion ───────── */
 
 body {
-  background-image: radial-gradient(60rem 28rem at 50% -8rem, color-mix(in oklch, var(--color-data) 7%, transparent), transparent);
+  background-image:
+    radial-gradient(52rem 26rem at 8% -6rem, color-mix(in oklch, var(--color-brand) 16%, transparent), transparent),
+    radial-gradient(44rem 24rem at 96% -4rem, color-mix(in oklch, var(--color-accent-2) 15%, transparent), transparent),
+    radial-gradient(36rem 20rem at 60% 110%, color-mix(in oklch, var(--color-accent) 9%, transparent), transparent);
   background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
 /* The bar and the room's header are frosted, so what scrolls under them stays calm. */
@@ -359,7 +384,8 @@ figure { transition: box-shadow 0.3s, border-color 0.3s, transform 0.3s; }
 /* The question card reads as the focus of the room. */
 section[aria-label="Current question"] {
   box-shadow: var(--shadow-raised);
-  border-left: 3px solid var(--color-data);
+  border-left: 3px solid transparent;
+  border-image: linear-gradient(180deg, var(--color-brand), var(--color-accent-2)) 1;
 }
 
 /* The answer composer rises into focus. */
@@ -369,4 +395,71 @@ section[aria-label="Current question"] {
   .turn-interviewer, .turn-candidate { animation: none; }
   .choice:hover, .placard:hover { transform: none; }
   button:not(:disabled):active { transform: none; }
+}
+
+/* ───────── Colour that moves ───────── */
+
+/* Primary actions: a living gradient, not a flat slab. */
+button.bg-brand, a.bg-brand, [class*="bg-brand "]:is(button, a), button[class*="bg-brand"]:not([class*="bg-brand-"]) {
+  background-image: linear-gradient(120deg, var(--color-brand), color-mix(in oklch, var(--color-brand) 55%, var(--color-accent-2)), var(--color-brand));
+  background-size: 200% 100%;
+  background-position: 0 0;
+  transition: background-position 0.6s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.16s, box-shadow 0.2s;
+  box-shadow: 0 6px 18px -8px color-mix(in oklch, var(--color-brand) 70%, transparent);
+}
+button.bg-brand:hover:not(:disabled), a.bg-brand:hover, button[class*="bg-brand"]:not([class*="bg-brand-"]):hover:not(:disabled) {
+  background-position: 100% 0;
+  transform: translateY(-1px);
+}
+
+/* The page title carries the palette. */
+main h1 {
+  background-image: linear-gradient(100deg, var(--color-ink) 30%, var(--color-brand) 70%, var(--color-accent-2));
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+
+/* A thin colour thread under the app bar. */
+header.sticky { position: sticky; }
+header.sticky::after {
+  content: ""; position: absolute; inset: auto 0 -1px 0; height: 2px;
+  background: linear-gradient(90deg, var(--color-brand), var(--color-accent-2), var(--color-accent), var(--color-brand));
+  background-size: 200% 100%; animation: thread 9s linear infinite; opacity: 0.85;
+}
+@keyframes thread { to { background-position: 200% 0; } }
+
+/* Progress carries colour and a shimmer. */
+.bg-data { background-image: linear-gradient(90deg, var(--color-data), var(--color-accent-2)); }
+[role="progressbar"] .bg-data { background-size: 200% 100%; animation: thread 4s linear infinite; }
+
+/* Selected and active things glow in the brand colour. */
+.choice[aria-pressed="true"] {
+  background: linear-gradient(135deg, var(--color-brand-soft), color-mix(in oklch, var(--color-brand-soft) 70%, var(--color-accent-2) 30%));
+}
+.placard:hover { border-color: var(--color-brand-line); box-shadow: var(--shadow-glow); }
+.person:hover, .slip { border-color: var(--color-brand-line); }
+
+/* The speaker's ring breathes. */
+figure.ring-brand\/40 { animation: breathe 2.2s ease-in-out infinite; }
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-brand) 20%, transparent), var(--shadow-raised); }
+  50% { box-shadow: 0 0 0 8px color-mix(in oklch, var(--color-brand) 6%, transparent), var(--shadow-raised); }
+}
+
+/* Live dots pulse in their own colour. */
+.status-dot-live { animation: live 1.8s ease-out infinite; }
+@keyframes live {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklch, currentColor 55%, transparent); }
+  100% { box-shadow: 0 0 0 9px transparent; }
+}
+
+/* Chips and tags take a tint. */
+.bg-brand-soft { background-image: linear-gradient(135deg, var(--color-brand-soft), color-mix(in oklch, var(--color-brand-soft) 75%, var(--color-accent) 25%)); }
+
+/* Links and focus pick up the accent. */
+a:not([class]) { text-decoration-color: var(--color-accent-2); text-underline-offset: 3px; }
+::selection { background: color-mix(in oklch, var(--color-brand) 30%, transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+  header.sticky::after, [role="progressbar"] .bg-data, figure.ring-brand\/40, .status-dot-live { animation: none; }
 }
