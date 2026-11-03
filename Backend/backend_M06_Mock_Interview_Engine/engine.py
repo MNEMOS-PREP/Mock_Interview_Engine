@@ -33,6 +33,7 @@ from sqlmodel import Session, select
 
 from . import (
     PROMPT_VERSION,
+    audit_hook,
     decompose,
     degrade,
     delivery,
@@ -2344,7 +2345,9 @@ class Engine:
 
     def _selector(self, row: InterviewSession):
         def select_next(state: SessionState, now: datetime, pending=None) -> Selected:
-            return self._select(row, state, now, pending)
+            selected = self._select(row, state, now, pending)
+            audit_hook.record_selection(row, state, selected)
+            return selected
 
         return select_next
 
