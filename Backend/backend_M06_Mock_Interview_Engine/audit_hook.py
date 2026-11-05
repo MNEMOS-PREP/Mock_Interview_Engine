@@ -48,7 +48,10 @@ def record_selection(row, state, selected) -> None:
             with _lock:
                 _traces[sid] = tid
         item, chosen = selected.item, selected.selection or {}
-        with _cx.bind(trace_id=tid, span_id=_cx.new_id()), _audit.decision_scope("M06.select_next_question") as d:
+        with (
+            _cx.bind(trace_id=tid, span_id=_cx.new_id()),
+            _audit.decision_scope("M06.select_next_question") as d,
+        ):
             d.inputs(summary={
                 "mode": str(getattr(state, "mode", "")),
                 "asked_so_far": len(getattr(state, "transcript", []) or []),
@@ -62,7 +65,8 @@ def record_selection(row, state, selected) -> None:
                 method="rule",
                 rules_fired=[x for x in (chosen.get("reason"), getattr(item, "source", None)) if x],
             )
-            d.rationale(free_text=f"{getattr(item, 'rubric_round_type', None) or 'question'}: {item.stem[:140]}")
+            kind = getattr(item, "rubric_round_type", None) or "question"
+            d.rationale(free_text=f"{kind}: {item.stem[:140]}")
             d.output("question", str(getattr(item, "question_id", None) or ""))
     except Exception:  # noqa: BLE001
         log.debug("audit hook skipped", exc_info=True)
