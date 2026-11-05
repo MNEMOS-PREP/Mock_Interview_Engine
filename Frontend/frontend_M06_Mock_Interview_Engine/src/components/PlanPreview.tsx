@@ -28,6 +28,7 @@ import { Button, ErrorNote, api, prepareLine } from "@ai/core";
 
 import {
   useDropSegment,
+  useEnd,
   usePersonas,
   usePlan,
   useSession,
@@ -289,6 +290,7 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
   const plan = usePlan(sessionId);
   const drop = useDropSegment(sessionId);
   const start = useStart(sessionId);
+  const end = useEnd(sessionId);
   const personas = usePersonas();
   const byId = new Map((personas.data ?? []).map((card) => [card.id, card]));
   const navigate = useNavigate();
@@ -325,12 +327,13 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
     // and this one used to drop the stage's `justStarted`: a first start was
     // greeted "Welcome back" and its opening question went unspoken. So when
     // the start was ours, this one says so too.
-    if (session.data && !planned)
+    // A plan discarded here is over too, and goes home, not into the room.
+    if (session.data && !planned && !end.isPending && !end.isSuccess)
       navigate(`/mock/${sessionId}`, {
         replace: true,
         state: start.isPending || start.isSuccess ? { justStarted: true } : undefined,
       });
-  }, [session.data, planned, navigate, sessionId, start.isPending, start.isSuccess]);
+  }, [session.data, planned, navigate, sessionId, start.isPending, start.isSuccess, end.isPending, end.isSuccess]);
 
   if (session.isPending || (!built && plan.isPending)) {
     return <Building />;
@@ -468,18 +471,33 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
                     onSuccess: () => navigate(`/mock/${sessionId}`, { state: { justStarted: true } }),
                   })
                 }
-                disabled={start.isPending || drop.isPending}
+                disabled={start.isPending || drop.isPending || end.isPending || live.length === 0}
                 className="start-plan flex h-[50px] w-full items-center justify-center gap-3 rounded-lg px-5 text-sm font-semibold disabled:opacity-50"
               >
                 {start.isPending ? "Starting…" : "Start the interview"}
               </button>
+              {live.length === 0 && (
+                <p className="text-center text-[12px] leading-normal text-[#adc4b8]">
+                  Nothing is left in this plan. Discard it and start a new interview.
+                </p>
+              )}
               <button
                 type="button"
                 onClick={() => navigate("/mock")}
-                disabled={start.isPending}
+                disabled={start.isPending || end.isPending}
                 className="h-10 w-full rounded-lg text-[13px] text-[#adc4b8] hover:text-white disabled:opacity-50"
               >
                 Not now
+              </button>
+              {/* Ends a plan that was never started (the server records it as
+                  aborted), so a leftover one cannot hold the mock page. */}
+              <button
+                type="button"
+                onClick={() => end.mutate("discarded_by_student", { onSuccess: () => navigate("/mock") })}
+                disabled={start.isPending || end.isPending}
+                className="h-8 w-full rounded-lg text-[12px] text-[#adc4b8] underline-offset-2 hover:text-white hover:underline disabled:opacity-50"
+              >
+                {end.isPending ? "Discarding…" : "Discard this plan"}
               </button>
               <p className="text-center text-[10px] leading-normal text-[#adc4b8]">
                 {(session.data?.flags.pauses_allowed ?? 1) === 1

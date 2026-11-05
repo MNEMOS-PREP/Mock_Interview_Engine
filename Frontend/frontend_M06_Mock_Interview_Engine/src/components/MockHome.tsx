@@ -267,7 +267,17 @@ export function MockHome() {
     }
   }, [history.data]);
 
-  const unfinished = (history.data ?? []).find((session) => LIVE.has(session.status));
+  // Started and not over: going back into it is the next step. A plan never
+  // started is not an interview in progress, and starting a new one replaces
+  // it on the server, so it no longer takes over the Start button: a leftover
+  // plan with nothing in it kept a student going round in a circle, sent back
+  // to it by "Continue your interview" every time (2026-11-06).
+  const unfinished = (history.data ?? []).find(
+    (session) => session.status === "live" || session.status === "paused",
+  );
+  const unstarted = unfinished
+    ? undefined
+    : (history.data ?? []).find((session) => session.status === "planned");
 
   const currentKey = focus ? `focus:${focus}` : jd ? `jd:${jd}` : drive ? `drive:${drive}` : "general";
   const choose = (next: Record<string, string>) => setParams(next, { replace: true });
@@ -322,7 +332,7 @@ export function MockHome() {
   };
   // An interview already planned or running: go back into it.
   const continueIt = () => {
-    if (unfinished) navigate(unfinished.status === "planned" ? `/mock/${unfinished.id}/plan` : `/mock/${unfinished.id}`);
+    if (unfinished) navigate(`/mock/${unfinished.id}`);
   };
 
   const startPlan = () =>
@@ -656,6 +666,16 @@ export function MockHome() {
             <p className="text-ink">You have an interview in progress.</p>
             <Link to={`/mock/${unfinished.id}`} className="font-medium text-brand">
               Go back to it
+            </Link>
+          </div>
+        )}
+        {unstarted && (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface p-3.5 text-sm">
+            <p className="text-ink-soft">
+              You have a {unstarted.kind === "drill" ? "drill" : "plan"} you didn&rsquo;t start. Starting a new interview replaces it.
+            </p>
+            <Link to={`/mock/${unstarted.id}/plan`} className="font-medium text-brand">
+              Open it
             </Link>
           </div>
         )}
