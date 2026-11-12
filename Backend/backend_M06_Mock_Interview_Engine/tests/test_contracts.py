@@ -210,7 +210,8 @@ def test_m06s_nouns_are_its_own_in_the_platform_shell():
 def test_manifest_declares_every_upstream_optional_with_a_sentence():
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     upstreams = {d["module"]: d for d in manifest["depends_on"]}
-    assert set(upstreams) == {"M01", "M02", "M04", "M05", "M13"}
+    # M22 (2026-11-12): goal interviews are planned from its blueprint.
+    assert set(upstreams) == {"M01", "M02", "M04", "M05", "M13", "M22"}
     for module, dep in upstreams.items():
         assert dep["required"] is False, f"{module} would make someone else's outage ours"
         assert dep["on_missing"].strip(), f"{module} has nothing to tell a student"

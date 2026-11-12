@@ -114,7 +114,9 @@ class PlannedSegment(BaseModel):
     rubric_round_types: list[str] = Field(default_factory=list)
     modality: Modality = Modality.verbal
     #: `revisit` (2026-10-22): questions from the student's library, asked again.
-    source: Literal["m05_bank", "m01_claims", "template", "revisit"] = "m05_bank"
+    #: `m22_goal` (2026-11-12): a part of a goal interview, planned from
+    #: M22's blueprint; its questions still come from M05's bank.
+    source: Literal["m05_bank", "m01_claims", "template", "revisit", "m22_goal"] = "m05_bank"
     rationale: str = ""
     #: The closing segment. Never dropped, by a re-plan or by the clock.
     is_reserved: bool = False

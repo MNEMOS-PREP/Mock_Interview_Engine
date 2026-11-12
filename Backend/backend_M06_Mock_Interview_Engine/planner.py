@@ -143,6 +143,10 @@ class PlanInputs:
     #: 2026-10-22: questions from the student's library to practise again,
     #: as stored (`memory.SavedQuestion.item`), in the order they chose.
     revisit: tuple[dict[str, Any], ...] = ()
+    #: 2026-11-12: M22's blueprint for a goal interview — its parts, each a
+    #: track with a question budget and the concepts to ask about. When set,
+    #: the interview is the blueprint's parts between the warm-up and closing.
+    blueprint: dict[str, Any] | None = None
 
 
 def reserved_minutes(requested_minutes: int) -> tuple[float, float]:
@@ -267,6 +271,9 @@ def assemble(inputs: PlanInputs) -> InterviewPlan:
         middle = [_revisit_segment(inputs, mode, closing_minutes)]
         claims: list[dict[str, Any]] = []
         warmup_minutes = 0.0
+    elif inputs.blueprint:
+        middle = _from_blueprint(inputs, mode)
+        claims = []
     elif inputs.resume_only:
         claims = defendable(inputs.claims, bands=ALL_BANDS)
         middle = [_resume_segment(claims, mode, inputs, warmup_minutes, closing_minutes)]
@@ -397,6 +404,41 @@ def _resume_segment(
             "know it worked. Not scored — the notes say which claims held up."
         ),
     )
+
+
+#: A goal interview's part the bank cannot serve right now.
+GOAL_UNSERVED = (
+    "The question bank has nothing it can ask you in this part yet, so it is left out. "
+    "Your goal page shows which topics are still thin."
+)
+
+
+def _from_blueprint(inputs: PlanInputs, mode: ModeConfig) -> list[PlannedSegment]:
+    """M22's parts, as the blueprint priced them: the same number of questions
+    in each area every time this configuration is sat, so attempts compare."""
+    available = set(inputs.available_round_types)
+    segments: list[PlannedSegment] = []
+    for part in (inputs.blueprint or {}).get("segments") or []:
+        track = str(part.get("track") or "")
+        kind: SegmentKind = "behavioural" if part.get("kind") == "behavioural" else "technical"
+        budget = max(0, int(part.get("question_budget") or 0))
+        segments.append(
+            PlannedSegment(
+                index=0,
+                kind=kind,
+                title=str(part.get("title") or round_type_title(track, inputs.tracks)),
+                persona_id=mode.persona_for(kind),
+                minutes=round(budget * MINUTES_PER_VERBAL_QUESTION, 1),
+                question_budget=budget,
+                concept_ids=[str(c) for c in part.get("concept_ids") or []][:MAX_STUDIED_PER_PART],
+                concepts_only=bool(part.get("concepts_only", True)),
+                rubric_round_types=[track],
+                source="m22_goal",
+                rationale=str(part.get("rationale") or ""),
+                dropped_reason=None if track in available else GOAL_UNSERVED,
+            )
+        )
+    return segments
 
 
 def _revisit_segment(

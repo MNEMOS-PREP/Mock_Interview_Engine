@@ -435,6 +435,7 @@ def create_session(
     include_resume: bool = False,
     resume_id: uuid.UUID | None = None,
     revisit: list[dict] | None = None,
+    goal_config_id: str | None = None,
 ) -> tuple[InterviewSession, SessionState]:
     """A new session in `planned`. Refused while one is live or paused (EC-6.13).
 
@@ -498,6 +499,7 @@ def create_session(
             "focus_concepts": list(focus_concepts or []),
             "focus_label": focus_label,
             "track": track,
+            "goal_config_id": goal_config_id,
             "include_resume": include_resume,
             "resume_id": str(resume_id) if resume_id else None,
             "revisit": list(revisit or []),

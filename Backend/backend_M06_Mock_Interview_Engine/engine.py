@@ -753,6 +753,12 @@ class Engine:
         """
         coverage, requirements = self._coverage(row, state)
         studied = self._studied(row, state)
+        blueprint = self._goal_blueprint(row, state)
+        goal_concepts = [
+            str(c)
+            for part in (blueprint or {}).get("segments") or []
+            for c in part.get("concept_ids") or []
+        ]
         # §6.1 steps 3–4: M04's posterior for what this posting asks about,
         # handed to M05 BEFORE the availability probe selects against it.
         # Until 2026-09-30 nothing fetched it, so every session's CAT started
@@ -762,7 +768,8 @@ class Engine:
             row,
             [c for r in requirements for c in (r.get("concept_ids") or [])]
             + list(state.focus_concepts)
-            + list(studied),
+            + list(studied)
+            + goal_concepts,
         )
         rubrics = self._rubrics()
         scoreable = tuple(str(r["round_type"]) for r in rubrics) or (DEFAULT_ROUND_TYPE,)
@@ -773,6 +780,9 @@ class Engine:
         candidates = (state.track,) if state.track else scoreable
         # A resume interview's questions are M01's and a revisit's are the
         # student's own choices: neither asks M05 what it can serve.
+        if blueprint:
+            # A goal interview asks only in its blueprint's tracks.
+            candidates = tuple(dict.fromkeys(str(p.get("track")) for p in blueprint["segments"]))
         round_types = (
             ()
             if resume_only or state.revisit
@@ -801,6 +811,7 @@ class Engine:
                 ),
                 resume_only=resume_only,
                 revisit=tuple(r.get("item") or {} for r in state.revisit),
+                blueprint=blueprint,
             )
         )
         store.record(
@@ -818,6 +829,26 @@ class Engine:
                 turn_id=None,
             )
             self.db.commit()
+
+    def _goal_blueprint(self, row: InterviewSession, state: SessionState) -> dict | None:
+        """M22's blueprint for a goal interview (2026-11-12), or None.
+
+        Read once, at planning: the plan then holds the parts, so a goal
+        changed mid-interview does not change the interview being sat. With
+        M22 down the session is planned as an ordinary mixed interview, and
+        the plan screen says why."""
+        if not state.goal_config_id:
+            return None
+        up = self.upstreams
+        if not up.available("M22"):
+            self._degraded(row, "M22")
+            return None
+        try:
+            body = up.m22.blueprint(state.goal_config_id, row.candidate_id, state.requested_minutes)
+        except UpstreamUnavailable as exc:
+            self._degraded(row, "M22", exc)
+            return None
+        return body if isinstance(body, dict) and body.get("segments") else None
 
     def _claims(self, row: InterviewSession, state: SessionState) -> tuple[dict, ...]:
         """M01's risky and vague claims, for the project segment (§6.1).

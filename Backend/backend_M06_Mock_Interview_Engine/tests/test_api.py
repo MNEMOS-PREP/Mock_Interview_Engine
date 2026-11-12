@@ -30,7 +30,8 @@ def test_deps_names_every_upstream_and_requires_none(client, monkeypatch):
     monkeypatch.setattr(registry, "_probe", lambda dep: (False, "unreachable (test)"))
     registry.clear_cache()
     rows = client.get("/v1/deps").json()
-    assert {r["module_id"] for r in rows} == {"M01", "M02", "M04", "M05", "M13"}
+    # M22 since 2026-11-12: goal interviews read their blueprint from it.
+    assert {r["module_id"] for r in rows} == {"M01", "M02", "M04", "M05", "M13", "M22"}
     assert not any(r["required"] for r in rows)
     assert all(r["on_missing"] for r in rows)
     registry.clear_cache()
