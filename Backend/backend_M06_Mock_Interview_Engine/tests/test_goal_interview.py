@@ -92,3 +92,19 @@ def test_without_m22_it_is_an_ordinary_interview_and_says_why(db):
     plan = engine.plan(row.id).plan
     assert not any(s.source == "m22_goal" for s in plan.segments)
     assert [s for s in plan.segments if s.kind not in ("warmup", "closing")], "still an interview"
+
+
+def test_the_session_list_says_which_goal_configuration_it_was(db):
+    """M22 adopts a goal interview it was not told about from this list
+    (2026-11-13), so a goal session names its configuration and an ordinary
+    one names none."""
+    from backend_M06_Mock_Interview_Engine.router import _summaries
+
+    candidate = uuid.uuid4()
+    goal, _ = store.create_session(db, candidate_id=candidate, kind="mock", mode="mock",
+                                   minutes=30, goal_config_id=CONFIG)
+    store.record(db, goal, "session.aborted", step="abort", payload={"reason": "test"})
+    plain, _ = store.create_session(db, candidate_id=candidate, kind="mock", mode="mock",
+                                    minutes=30)
+    listed = {str(s.id): s.goal_config_id for s in _summaries(store.sessions_for(db, candidate))}
+    assert listed == {str(goal.id): CONFIG, str(plain.id): None}

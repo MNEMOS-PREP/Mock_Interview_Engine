@@ -376,6 +376,9 @@ class SessionSummary(BaseModel):
     started_at: datetime | None
     ended_at: datetime | None
     end_reason: str | None
+    #: 2026-11-13: the M22 interview configuration a goal interview was sat
+    #: under, so M22 can count a session it was not told about.
+    goal_config_id: str | None = None
 
 
 def session_out(state: SessionState, now: datetime | None = None) -> SessionOut:
@@ -1592,6 +1595,7 @@ def _summaries(rows) -> list[SessionSummary]:
             started_at=r.started_at,
             ended_at=r.ended_at,
             end_reason=r.end_reason,
+            goal_config_id=r.source_ref if r.source_module == "M22" else None,
         )
         for r in rows
     ]

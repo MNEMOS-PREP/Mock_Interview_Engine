@@ -469,6 +469,12 @@ def create_session(
     for old in stale:
         record(db, old, "session.aborted", step="abort", payload={"reason": "superseded"})
 
+    if goal_config_id and source_module is None:
+        # 2026-11-13: a goal interview names where it came from in the row's
+        # own columns, so the student's session list (`SessionSummary`) can
+        # say which M22 configuration it was sat under without folding every
+        # session's events — M22 adopts attempts it was never told about.
+        source_module, source_ref = "M22", str(goal_config_id)
     row = InterviewSession(
         candidate_id=candidate_id,
         kind=kind,
