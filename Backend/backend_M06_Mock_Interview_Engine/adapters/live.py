@@ -353,3 +353,13 @@ class LiveGoals:
         )
         return response.body if response.status == 200 else None
 
+    def context(self, candidate_id: UUID) -> dict[str, Any] | None:
+        """The student's Goal Context (2026-11-13): their goals, each with the
+        tracks its interview is made of and the open competencies in each."""
+        response = self.http.get(
+            f"/v1/goals/context/{candidate_id}",
+            headers=identity_headers(candidate_id),
+            accept=(404, 403),
+        )
+        return response.body if response.status == 200 else None
+

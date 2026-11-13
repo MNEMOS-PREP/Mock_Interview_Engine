@@ -754,11 +754,12 @@ class Engine:
         coverage, requirements = self._coverage(row, state)
         studied = self._studied(row, state)
         blueprint = self._goal_blueprint(row, state)
+        goal_title, goal_mix = (None, ()) if blueprint else self._goal_mix(row, state)
         goal_concepts = [
             str(c)
             for part in (blueprint or {}).get("segments") or []
             for c in part.get("concept_ids") or []
-        ]
+        ] + [c for _, _, ids in goal_mix for c in ids]
         # §6.1 steps 3–4: M04's posterior for what this posting asks about,
         # handed to M05 BEFORE the availability probe selects against it.
         # Until 2026-09-30 nothing fetched it, so every session's CAT started
@@ -812,6 +813,8 @@ class Engine:
                 resume_only=resume_only,
                 revisit=tuple(r.get("item") or {} for r in state.revisit),
                 blueprint=blueprint,
+                goal_mix=goal_mix,
+                goal_title=goal_title,
             )
         )
         store.record(
@@ -829,6 +832,47 @@ class Engine:
                 turn_id=None,
             )
             self.db.commit()
+
+    def _goal_mix(
+        self, row: InterviewSession, state: SessionState
+    ) -> tuple[str | None, tuple[tuple[str, float, tuple[str, ...]], ...]]:
+        """The student's primary career goal, in tracks, for a MIXED interview
+        (2026-11-13): `(title, ((track, share, concept_ids), ...))`, or
+        `(None, ())`. A picked track, a focus, a posting, a revisit or a goal
+        interview already decides what is asked, so M22 is not asked for them.
+
+        Optional like every upstream, and not a degradation when absent: a
+        student with no goal, or M22 down, gets the mixed interview as it was."""
+        if (
+            state.track
+            or state.focus_concepts
+            or state.jd_id is not None
+            or state.revisit
+            or state.goal_config_id
+        ):
+            return None, ()
+        up = self.upstreams
+        if not up.available("M22"):
+            return None, ()
+        try:
+            context = up.m22.context(row.candidate_id) or {}
+        except (UpstreamUnavailable, AttributeError) as exc:
+            log.info("M06: M22 goal context unavailable for %s: %s", row.id, exc)
+            return None, ()
+        goals = [g for g in context.get("goals") or [] if isinstance(g, dict)]
+        primary = next(
+            (g for g in goals if g.get("goal_id") == context.get("primary_goal_id")),
+            goals[0] if goals else None,
+        )
+        if primary is None:
+            return None, ()
+        concepts = primary.get("track_concepts") or {}
+        mix = tuple(
+            (str(track), float(share), tuple(str(c) for c in concepts.get(track) or []))
+            for track, share in (primary.get("track_shares") or {}).items()
+            if share
+        )
+        return (str(primary.get("title") or "") or None), mix
 
     def _goal_blueprint(self, row: InterviewSession, state: SessionState) -> dict | None:
         """M22's blueprint for a goal interview (2026-11-12), or None.
