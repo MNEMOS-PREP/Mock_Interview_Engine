@@ -33,11 +33,14 @@ class UpstreamUnavailable(Exception):
 
 
 class Goals(Protocol):
-    """M22, Follow Your Goal: the blueprint of a goal interview."""
+    """M22, Follow Your Goal: the blueprint of a goal interview, and the
+    student's Goal Context (what a mixed interview is steered by)."""
 
     def blueprint(
         self, config_id: str, candidate_id: UUID, minutes: int
     ) -> dict[str, Any] | None: ...
+
+    def context(self, candidate_id: UUID) -> dict[str, Any] | None: ...
 
 
 class CoveragePlanner(Protocol):

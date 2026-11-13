@@ -542,11 +542,20 @@ __all__ = [
 class FixtureGoals:
     """M22 in-process: blueprints by configuration id, set by a test."""
 
-    def __init__(self, blueprints: dict[str, dict[str, Any]] | None = None):
+    def __init__(
+        self,
+        blueprints: dict[str, dict[str, Any]] | None = None,
+        contexts: dict[str, dict[str, Any]] | None = None,
+    ):
         self.blueprints = dict(blueprints or {})
+        #: Goal Contexts by candidate id (`GET /v1/goals/context/{id}`).
+        self.contexts = dict(contexts or {})
         self.asked: list[tuple[str, int]] = []
 
     def blueprint(self, config_id: str, candidate_id: UUID, minutes: int) -> dict[str, Any] | None:
         self.asked.append((config_id, minutes))
         return self.blueprints.get(config_id)
+
+    def context(self, candidate_id: UUID) -> dict[str, Any] | None:
+        return self.contexts.get(str(candidate_id))
 

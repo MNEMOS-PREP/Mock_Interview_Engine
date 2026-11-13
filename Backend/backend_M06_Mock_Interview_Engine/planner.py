@@ -31,6 +31,7 @@ what M13 scores the answers against.
 
 from __future__ import annotations
 
+import math
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -147,6 +148,11 @@ class PlanInputs:
     #: track with a question budget and the concepts to ask about. When set,
     #: the interview is the blueprint's parts between the warm-up and closing.
     blueprint: dict[str, Any] | None = None
+    #: 2026-11-13: the student's primary career goal (M22's Goal Context), for
+    #: a mixed interview: `(track, share, concept_ids)` largest share first,
+    #: and the goal's title. Empty when there is no goal or M22 cannot say.
+    goal_mix: tuple[tuple[str, float, tuple[str, ...]], ...] = ()
+    goal_title: str | None = None
 
 
 def reserved_minutes(requested_minutes: int) -> tuple[float, float]:
@@ -660,6 +666,10 @@ def _without_a_job_description(
     # is nine one-question samplers. WHICH parts is seeded by the session,
     # so two mixed interviews in a row are not the same two rounds.
     room = max(1, int(usable // (MIN_QUESTIONS_PER_PART * MINUTES_PER_VERBAL_QUESTION)))
+    if inputs.goal_mix and inputs.track is None:
+        on_goal = _goal_parts(inputs, mode, usable, room)
+        if on_goal:
+            return on_goal
     # From what the student has studied (2026-10-13): only the tracks their
     # courses have taught, each steered to those concepts. A third-semester
     # student is not asked machine learning they have not reached; a track
@@ -671,9 +681,14 @@ def _without_a_job_description(
     # concepts with the courses (first-year maths' linear algebra, in the ML
     # track) would be asked mostly on what was NOT studied. Those come in
     # only when no track can fill a part from the courses.
+    # With nothing to go on (no goal, no courses), the tracks M05 marks
+    # `mixed` — the core rounds. Before 2026-11-13 that was every track, and
+    # once the career-goal tracks arrived a would-be SDE was asked embedded
+    # firmware and product cases. The others are a pick, or a goal, away.
     pool = (
         [rt for rt in available if len(taught.get(rt, ())) >= MIN_QUESTIONS_PER_PART]
         or [rt for rt in available if taught.get(rt)]
+        or [rt for rt in available if (inputs.tracks.get(rt) or {}).get("mixed")]
         or list(available)
     )
     chosen = (
@@ -711,6 +726,55 @@ def _without_a_job_description(
 #: The most studied concepts one part is steered to — the ontology's sizing
 #: rule, as for a course's focus (M04 §3.2.1: 4-8 per session).
 MAX_STUDIED_PER_PART = 8
+
+
+def _goal_parts(
+    inputs: PlanInputs, mode: ModeConfig, usable: float, room: int
+) -> list[PlannedSegment]:
+    """A mixed interview for a student with a career goal (2026-11-13): parts
+    from the goal's own tracks, so a would-be backend developer is asked
+    backend, databases and system design — not whatever the bank holds.
+
+    Varied, not fixed: WHICH tracks is drawn by weight (each track's share of
+    the goal's interview), seeded by the session, without replacement — the
+    big areas come up most, the small ones some of the time, and two mixed
+    interviews in a row differ. A goal interview (M22's fixed configuration)
+    is the one that asks every area at its share every time. Each part leans
+    on the goal's open competencies in that track, gaps first."""
+    shares = {track: share for track, share, _ in inputs.goal_mix}
+    pool = [t for t in shares if t in inputs.available_round_types and shares[t] > 0]
+    if not pool:
+        return []
+
+    def draw(track: str) -> float:
+        # Efraimidis-Spirakis: the smallest -ln(u)/w are a weighted sample
+        # without replacement. u is the session's own, so a plan is stable.
+        u = (int(uuid.uuid5(inputs.session_id, f"goal:{track}").hex, 16) + 1) / (2**128 + 2)
+        return -math.log(u) / shares[track]
+
+    chosen = sorted(sorted(pool, key=draw)[:room], key=lambda t: -shares[t])
+    concepts = {track: list(ids) for track, _, ids in inputs.goal_mix}
+    each = usable / len(chosen)
+    goal = inputs.goal_title or "your goal"
+    return [
+        PlannedSegment(
+            index=0,
+            kind=_track_kind(inputs, track),
+            title=round_type_title(track, inputs.tracks),
+            persona_id=mode.persona_for("technical"),
+            minutes=round(each, 1),
+            question_budget=max(1, int(each // MINUTES_PER_VERBAL_QUESTION)),
+            # A preference, never a filter: a thin overlap still fills the part.
+            concept_ids=concepts.get(track, [])[:MAX_STUDIED_PER_PART],
+            rubric_round_types=[track],
+            rationale=(
+                f"For {goal}: {round(shares[track])}% of its interview is this. A mixed "
+                "interview draws a different few of your goal's areas each time; your "
+                "goal page has the fixed interview that asks every area."
+            ),
+        )
+        for track in chosen
+    ]
 
 
 def _taught_by_track(inputs: PlanInputs, available: tuple[str, ...]) -> dict[str, list[str]]:
