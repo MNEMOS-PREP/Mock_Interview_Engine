@@ -72,6 +72,16 @@
       "base_url": "http://127.0.0.1:8101",
       "health_path": "/health",
       "required": false
+    },
+    {
+      "module": "M22",
+      "name": "Follow Your Goal",
+      "repo": "https://github.com/MNEMOS-PREP/Follow_Your_Goal",
+      "reason": "goal interviews: the blueprint of a goal's interview configuration (areas, shares, concepts)",
+      "on_missing": "Goal interviews are planned as ordinary mixed interviews until Follow Your Goal is back.",
+      "base_url": "http://127.0.0.1:8122",
+      "health_path": "/health",
+      "required": false
     }
   ],
 

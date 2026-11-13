@@ -16,6 +16,7 @@ from ..dependencies import deps
 from .base import (
     CoveragePlanner,
     Evaluator,
+    Goals,
     Memory,
     Questions,
     Resumes,
@@ -24,11 +25,19 @@ from .base import (
 from .fixtures import (
     FixtureCoveragePlanner,
     FixtureEvaluator,
+    FixtureGoals,
     FixtureMemory,
     FixtureResumes,
     LocalQuestions,
 )
-from .live import LiveCoveragePlanner, LiveEvaluator, LiveMemory, LiveQuestions, LiveResumes
+from .live import (
+    LiveCoveragePlanner,
+    LiveEvaluator,
+    LiveGoals,
+    LiveMemory,
+    LiveQuestions,
+    LiveResumes,
+)
 
 
 @dataclass
@@ -40,6 +49,9 @@ class Upstreams:
     m13: Evaluator
     #: M06's own playlist, for when M05 cannot be reached (§10).
     local_questions: LocalQuestions = field(default_factory=LocalQuestions)
+    #: M22, Follow Your Goal (2026-11-12): goal-interview blueprints. Optional
+    #: like every upstream; a fixture by default so older callers still build.
+    m22: Goals = field(default_factory=FixtureGoals)
     #: module id -> is it usable right now. Cached by the registry in production.
     is_available: Callable[[str], bool] = lambda _module: True
     #: module id -> the student-facing sentence for when it is not.
@@ -76,6 +88,7 @@ def live_upstreams() -> Upstreams:
         m04=LiveMemory(url("M04")),
         m05=LiveQuestions(url("M05")),
         m13=LiveEvaluator(url("M13")),
+        m22=LiveGoals(url("M22")),
         is_available=registry.is_available,
         on_missing=on_missing_sentence,
     )
@@ -115,6 +128,7 @@ def set_upstreams(upstreams: Upstreams | None) -> None:
 __all__ = [
     "CoveragePlanner",
     "Evaluator",
+    "Goals",
     "Memory",
     "Questions",
     "Resumes",

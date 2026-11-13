@@ -80,6 +80,10 @@ class SessionState(BaseModel):
     #: 2026-10-22: questions from the student's library to practise again —
     #: each `{entry_id, question_key, item}`, in the order they chose.
     revisit: list[dict] = Field(default_factory=list)
+    #: 2026-11-12: the M22 interview configuration (one version) this session
+    #: was started under. Its blueprint decides the parts and their questions'
+    #: concepts; None is every other kind of interview.
+    goal_config_id: str | None = None
     #: M04's pinned summary text (AC-4.13). The interviewer's cached prefix.
     profile_prefix: str = ""
 
@@ -287,6 +291,7 @@ def _created(_s: SessionState | None, p: dict, at: datetime) -> SessionState:
         include_resume=bool(p.get("include_resume", "track" not in p)),
         resume_id=UUID(str(p["resume_id"])) if p.get("resume_id") else None,
         revisit=list(p.get("revisit") or []),
+        goal_config_id=p.get("goal_config_id"),
         flags=SessionFlags(pauses_allowed=pause_allowance(int(p.get("requested_minutes", 45)))),
         created_at=at,
     )

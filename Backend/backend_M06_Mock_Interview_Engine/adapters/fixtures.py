@@ -537,3 +537,16 @@ __all__ = [
     "LocalQuestions",
     "fallback_playlist",
 ]
+
+
+class FixtureGoals:
+    """M22 in-process: blueprints by configuration id, set by a test."""
+
+    def __init__(self, blueprints: dict[str, dict[str, Any]] | None = None):
+        self.blueprints = dict(blueprints or {})
+        self.asked: list[tuple[str, int]] = []
+
+    def blueprint(self, config_id: str, candidate_id: UUID, minutes: int) -> dict[str, Any] | None:
+        self.asked.append((config_id, minutes))
+        return self.blueprints.get(config_id)
+

@@ -336,3 +336,20 @@ __all__ = [
     "LiveQuestions",
     "LiveResumes",
 ]
+
+
+class LiveGoals:
+    """M22. The blueprint is read as the student (it names their goal)."""
+
+    def __init__(self, base_url: str):
+        self.http = JSONClient("M22", base_url)
+
+    def blueprint(self, config_id: str, candidate_id: UUID, minutes: int) -> dict[str, Any] | None:
+        response = self.http.get(
+            f"/v1/goals/configs/{config_id}/blueprint",
+            query={"minutes": str(minutes)},
+            headers=identity_headers(candidate_id),
+            accept=(404, 403),
+        )
+        return response.body if response.status == 200 else None
+

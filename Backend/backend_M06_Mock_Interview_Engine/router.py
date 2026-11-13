@@ -145,6 +145,9 @@ class SessionCreate(BaseModel):
     #: is those questions and the closing.
     revisit: list[uuid.UUID] = Field(default_factory=list, max_length=8)
     resume_id: uuid.UUID | None = None
+    #: 2026-11-12: an M22 interview configuration (one version). The session
+    #: is planned from its blueprint: the goal's areas, at its fixed shares.
+    goal_config_id: uuid.UUID | None = None
     mode: Mode = "mock"
     minutes: int = Field(default=45, ge=MIN_MINUTES, le=MAX_MINUTES)
 
@@ -373,6 +376,9 @@ class SessionSummary(BaseModel):
     started_at: datetime | None
     ended_at: datetime | None
     end_reason: str | None
+    #: 2026-11-13: the M22 interview configuration a goal interview was sat
+    #: under, so M22 can count a session it was not told about.
+    goal_config_id: str | None = None
 
 
 def session_out(state: SessionState, now: datetime | None = None) -> SessionOut:
@@ -850,6 +856,7 @@ def create_session(
             ),
             resume_id=body.resume_id,
             revisit=revisit,
+            goal_config_id=str(body.goal_config_id) if body.goal_config_id else None,
         )
     except store.LiveSessionExists as exc:
         raise _live_conflict(exc) from exc
@@ -1588,6 +1595,7 @@ def _summaries(rows) -> list[SessionSummary]:
             started_at=r.started_at,
             ended_at=r.ended_at,
             end_reason=r.end_reason,
+            goal_config_id=r.source_ref if r.source_module == "M22" else None,
         )
         for r in rows
     ]

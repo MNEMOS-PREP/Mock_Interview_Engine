@@ -32,6 +32,14 @@ class UpstreamUnavailable(Exception):
         super().__init__(f"{module}: {detail}")
 
 
+class Goals(Protocol):
+    """M22, Follow Your Goal: the blueprint of a goal interview."""
+
+    def blueprint(
+        self, config_id: str, candidate_id: UUID, minutes: int
+    ) -> dict[str, Any] | None: ...
+
+
 class CoveragePlanner(Protocol):
     """M02 — JD Parser & Coverage Planner."""
 
