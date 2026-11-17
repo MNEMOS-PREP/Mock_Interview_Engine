@@ -23,6 +23,12 @@ Task list for taking **M6 — Mock Interview Engine** to 100% of [M06_Mock_Inter
 
 Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked on another module
 
+### 2026-11-17 — the student's picture on their tile
+
+- ✅ With the camera off, the student's tile shows their picture from Settings
+  instead of the "You" circle. The host provides it (`SelfPhotoContext`, like
+  `MockTargetsContext`); standalone keeps the circle. Tests: **773 passed**.
+
 ---
 
 ### 2026-10-26 — two notes defects from the bug sweep (`7fd06ab`)

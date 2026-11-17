@@ -50,6 +50,7 @@ export { bandOf, missingStatements, topicName } from "./bands";
 export { FOCUS_ORDER, STATUS_META, STATUS_ORDER, needsWork, weakest } from "./notes";
 export { StatusBadge, StatusIcon } from "./components/Status";
 export { MockTargetsContext, type MockTarget } from "./targets";
+export { SelfPhotoContext } from "./selfPhoto";
 export { Face } from "./ui/Face";
 export {
   DEFAULT_CANDIDATE_ID,
