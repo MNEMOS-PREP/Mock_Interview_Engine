@@ -64,7 +64,7 @@
  * typing. With the student's say-so, spoken answers are kept for the notes.
  */
 
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -114,6 +114,7 @@ import {
 } from "../api";
 import { useDictation } from "../speech";
 import { identityHeaders } from "../identity";
+import { SelfPhotoContext } from "../selfPhoto";
 import {
   notBeforeFor,
   nowMs,
@@ -1116,6 +1117,8 @@ async function openCamera(deviceId: string | null): Promise<MediaStream> {
  *  alone — nothing is recorded, uploaded or sent, and it stops when they turn
  *  it off or leave. The mic meter shows they are heard. */
 function YouTile({ level, listening }: { level: () => number; listening: boolean }) {
+  // The student's picture from Settings, when the host has one (2026-11-17).
+  const photo = useContext(SelfPhotoContext);
   const [on, setOn] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
@@ -1176,9 +1179,19 @@ function YouTile({ level, listening }: { level: () => number; listening: boolean
           <video ref={video} autoPlay muted playsInline className="h-full w-full -scale-x-100 object-cover" />
         ) : (
           <div className="grid h-full w-full place-items-center">
-            <span className="grid aspect-square h-[46%] place-items-center rounded-full bg-brand-soft text-lg font-semibold text-brand">
-              You
-            </span>
+            {photo ? (
+              // Positioned, not a grid item: a percentage height on an image in
+              // an auto-height grid cell falls back to the picture's own size.
+              <img
+                src={photo}
+                alt="Your picture"
+                className="absolute top-1/2 left-1/2 aspect-square h-[56%] -translate-x-1/2 -translate-y-1/2 rounded-full object-cover ring-2 ring-surface"
+              />
+            ) : (
+              <span className="grid aspect-square h-[46%] place-items-center rounded-full bg-brand-soft text-lg font-semibold text-brand">
+                You
+              </span>
+            )}
           </div>
         )}
         <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-lg bg-black/55 px-2 py-1 text-2xs font-medium text-white">
