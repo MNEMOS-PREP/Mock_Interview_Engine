@@ -433,6 +433,26 @@ export interface LibraryEntry {
   updated_at: string;
 }
 
+/** One subject of the question bank, as Today counts it. */
+export interface QuestionBankSubject {
+  title: string;
+  questions: number;
+  /** The subject's colour in the PDF, so the card and the file match. */
+  accent: string;
+}
+
+/** The student's question bank (`GET /v1/interviews/question-bank`, 2026-11-18):
+ *  counts only — the file itself is `/v1/interviews/question-bank.pdf`. */
+export interface QuestionBank {
+  file_name: string;
+  questions: number;
+  follow_ups: number;
+  /** Questions whose answer or follow-ups are still being written. */
+  pending: number;
+  updated_at: string;
+  subjects: QuestionBankSubject[];
+}
+
 export interface StarResult {
   question_turn_id: string;
   starred: boolean;

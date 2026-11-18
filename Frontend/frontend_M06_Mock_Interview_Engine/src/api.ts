@@ -22,6 +22,7 @@ import type {
   LibraryEntry,
   ModeOption,
   PersonaCard,
+  QuestionBank,
   Reliability,
   ResumesResponse,
   ResumeState,
@@ -228,6 +229,45 @@ export function useCreateSession() {
 }
 
 // ── the question library (2026-10-22) ───────────────────────────────────
+
+/* ── The question bank (2026-11-18): every question met, as a PDF ─────────── */
+
+/** How often the card asks again while answers are still being written, and
+ *  for how long: a bank's follow-ups are written one question at a time. */
+const BANK_POLL_MS = 20_000;
+const BANK_POLL_MAX = 15;
+
+function bankQuery(name?: string): string {
+  return name ? `${new URLSearchParams({ name })}` : "";
+}
+
+/** Counts of the signed-in student's bank. `name` goes on the PDF's cover. */
+export function useQuestionBank(name?: string, enabled = true) {
+  const candidateId = getCandidateId();
+  return useQuery({
+    queryKey: ["m06", "question-bank", candidateId],
+    queryFn: () => api.get<QuestionBank>(`/v1/interviews/question-bank?${bankQuery(name)}`),
+    enabled,
+    refetchInterval: (query) =>
+      query.state.data?.pending && query.state.dataUpdateCount < BANK_POLL_MAX
+        ? BANK_POLL_MS
+        : false,
+  });
+}
+
+/** Save `q_bank_discovered.pdf` — fetched with the student's identity, which
+ *  a plain link would not carry — under its own name. */
+export async function downloadQuestionBank(name?: string): Promise<void> {
+  const blob = await api.getBlob(`/v1/interviews/question-bank.pdf?${bankQuery(name)}`);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "q_bank_discovered.pdf";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
 
 export const libraryKey = ["m06", "library"] as const;
 

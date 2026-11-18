@@ -13,6 +13,9 @@ export { AppShell } from "./ui/AppShell";
 export { InterviewStage } from "./components/InterviewStage";
 export { MockHome } from "./components/MockHome";
 export { PlanPreview } from "./components/PlanPreview";
+// 2026-11-18: the question bank — Today's card and the download it offers.
+export { QuestionBankCard } from "./components/QuestionBankCard";
+export { downloadQuestionBank, useQuestionBank } from "./api";
 export { SessionNotes } from "./components/SessionNotes";
 export { SystemPage } from "./components/SystemPage";
 export {
@@ -73,6 +76,8 @@ export type {
   Mode,
   ModeOption,
   PersonaCard,
+  QuestionBank,
+  QuestionBankSubject,
   QuestionReport,
   Session,
   SessionFlags,

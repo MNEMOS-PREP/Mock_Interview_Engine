@@ -38,9 +38,12 @@ SERVICE_ONLY: dict[tuple[str, str], str] = {
     ("GET", "/v1/interviews/phrases"): "M11's warm_phrases.ts: stock phrases made ahead",
 }
 
-#: `@ai/core`'s client spells DELETE `del`.
-_CALL = re.compile(r"api\.(get|post|put|del|delete|patch)<[^>]*>\(\s*[`\"](/v1/[^`\"]*)")
-_VERB = {"del": "DELETE"}
+#: `@ai/core`'s client spells DELETE `del`, and fetches a file with `getBlob`
+#: (no type argument: a Blob is a Blob) — the question bank's PDF, 2026-11-18.
+_CALL = re.compile(
+    r"api\.(get|post|put|del|delete|patch|getBlob|postBlob)(?:<[^>]*>)?\(\s*[`\"](/v1/[^`\"]*)"
+)
+_VERB = {"del": "DELETE", "getBlob": "GET", "postBlob": "POST"}
 _FETCH = re.compile(r"fetch\(\s*[`\"](/v1/[^`\"]*)")
 _METHOD = re.compile(r"method:\s*[`\"'](\w+)[`\"']")
 

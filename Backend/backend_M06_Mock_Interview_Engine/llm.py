@@ -60,6 +60,11 @@ JOB_GUARD = "input_guard"
 #: takes the platform's writing tier; if that fails, the generation tier.
 JOB_NOTES = "notes_writeup"
 JOB_NOTES_FALLBACK = "notes_writeup_fallback"
+#: 2026-11-18: the question bank's answers to the follow-ups an interviewer
+#: asked (`qbank/answers.py`) — written once per question and follow-up set,
+#: off every request path, on the notes' tiers for the notes' reasons.
+JOB_QBANK = "qbank_answers"
+JOB_QBANK_FALLBACK = "qbank_answers_fallback"
 
 #: Model calls run here, so a call can be given up on (`_fetch_within`).
 _CALLS = ThreadPoolExecutor(max_workers=8, thread_name_prefix="m06-llm")
@@ -146,6 +151,24 @@ JOBS: dict[str, JobSpec] = {
         reasoning_effort="low",
         max_tokens=3000,
         timeout_s=float(os.getenv("M06_NOTES_TIMEOUT", "90")),
+        temperature=0.2,
+        background=True,
+    ),
+    JOB_QBANK: JobSpec(
+        tier="writing",
+        env="M06_MODEL_QBANK",
+        reasoning_effort="low",
+        max_tokens=3000,
+        timeout_s=float(os.getenv("M06_QBANK_TIMEOUT", "90")),
+        temperature=0.2,
+        background=True,
+    ),
+    JOB_QBANK_FALLBACK: JobSpec(
+        tier="generation",
+        env="M06_MODEL_QBANK_FALLBACK",
+        reasoning_effort="low",
+        max_tokens=3000,
+        timeout_s=float(os.getenv("M06_QBANK_TIMEOUT", "90")),
         temperature=0.2,
         background=True,
     ),

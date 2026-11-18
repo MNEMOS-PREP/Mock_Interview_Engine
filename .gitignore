@@ -43,3 +43,6 @@ recordings/
 .idea/
 .DS_Store
 Thumbs.db
+
+# The question bank's files, one folder per student: a cache of the tables.
+qbank_files/

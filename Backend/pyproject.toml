@@ -16,6 +16,9 @@ dependencies = [
     # and nowhere else, so swapping it is one file. Used without a
     # checkpointer: the event log is the only persistence (spec §6.8).
     "langgraph>=1.2,<2",
+    # The question bank's PDF (`qbank/render.py`, 2026-11-18). Pure Python
+    # wheels on every platform: no browser, GTK or LaTeX on the server.
+    "reportlab>=4.2",
     # Shared platform foundation. PINNED BY TAG on purpose: tracking main is
     # how you get a surprise breakage on a Tuesday. v0.9.x is where
     # `ai_core.identity` landed, and M06 is written against it from day one
@@ -39,7 +42,14 @@ namespaces = false
 [tool.setuptools.package-data]
 # Personas and the fixture playlist are data, not code, and both are
 # load-bearing: the fixtures are what let this module run with no upstream.
-"backend_M06_Mock_Interview_Engine" = ["personas/*.yaml", "fixtures/*.json", "fixtures/contracts/*.json"]
+"backend_M06_Mock_Interview_Engine" = [
+    "personas/*.yaml",
+    "fixtures/*.json",
+    "fixtures/contracts/*.json",
+    # The question bank's typefaces and their licences (OFL; DejaVu's own).
+    "qbank/fonts/*.ttf",
+    "qbank/fonts/*.txt",
+]
 
 [tool.ruff]
 line-length = 100
@@ -60,6 +70,7 @@ select = ["E", "F", "I", "B", "UP"]
 "**/agents/*.py" = ["E501"]
 "**/decompose.py" = ["E501"]
 "**/notes_writer.py" = ["E501"]
+"**/qbank/answers.py" = ["E501"]
 # Operator scripts print wide tables; nothing reads them as code.
 "tools/*.py" = ["E501"]
 
@@ -69,4 +80,5 @@ testpaths = ["backend_M06_Mock_Interview_Engine"]
 markers = [
     "gate: release-blocking acceptance gate (spec §13)",
     "rotation: the session's own draws (`panel.draw`, `graph.word_draw`), not pinned",
+    "qbank: the question bank's refresh behind every answer runs, not stubbed",
 ]
