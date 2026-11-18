@@ -17,7 +17,7 @@ What is held here, each failing on the code before it:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from ai_core.timeutil import utcnow
@@ -39,7 +39,8 @@ from backend_M06_Mock_Interview_Engine.qbank import answers, book, collect, rend
 from .conftest import student
 from .stubs import BankQuestions, NoClaims, StubLLM, verdict
 
-T0 = datetime(2026, 11, 15, 9, 0)
+#: UTC, as M06 writes every time (sqlmodel 0.0.50 refuses a naive one).
+T0 = datetime(2026, 11, 15, 9, 0, tzinfo=UTC)
 
 HASH_ITEM = {
     "stem": "Two keys hash to the same bucket. How can a hash map handle that?",
