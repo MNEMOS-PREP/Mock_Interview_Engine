@@ -30,7 +30,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, StringConstraints, field_validator
 from sqlmodel import Session, select
 
-from . import degrade, memory, notes_writer, outbox, planner, presence, store
+from . import degrade, memory, notes_writer, outbox, planner, presence, qbank, store
 from . import items as items_module
 from . import report as report_module
 from .access import enforce_access, require_candidate
@@ -765,6 +765,72 @@ def remove_from_library(
     return Response(status_code=204)
 
 
+# ── 2026-11-18: the question bank a student has discovered (`qbank/`) ─────────
+# Declared before `/interviews/{session_id}`, which would take "question-bank"
+# for an interview id.
+
+
+class QuestionBankSubject(BaseModel):
+    title: str
+    questions: int
+    accent: str
+
+
+class QuestionBankOut(BaseModel):
+    """The signed-in student's bank, as Today shows it: counts, not the file."""
+
+    file_name: str
+    questions: int
+    follow_ups: int
+    #: Questions with an answer or follow-ups still being written.
+    pending: int
+    updated_at: datetime
+    subjects: list[QuestionBankSubject] = Field(default_factory=list)
+
+
+@router.get("/interviews/question-bank", response_model=QuestionBankOut, tags=["library"])
+def question_bank(
+    background: BackgroundTasks,
+    principal: Principal | None = Depends(enforce_access),
+    db: Session = Depends(get_session),
+    sessions: Callable[[], Session] = Depends(session_factory),
+    upstreams: Upstreams = Depends(get_upstreams),
+    name: str | None = Query(default=None, max_length=80),
+) -> QuestionBankOut:
+    """Every question the student has answered in an interview, counted —
+    and the file brought up to date behind the answer (`qbank.refresh`)."""
+    candidate_id = _signed_in(principal)
+    built = qbank.current(db, candidate_id, name=name)
+    background.add_task(qbank.refresh, candidate_id, factory=sessions, upstreams=upstreams)
+    return QuestionBankOut.model_validate(built.summary())
+
+
+@router.get("/interviews/question-bank.pdf", tags=["library"], response_class=Response)
+def question_bank_pdf(
+    background: BackgroundTasks,
+    principal: Principal | None = Depends(enforce_access),
+    db: Session = Depends(get_session),
+    sessions: Callable[[], Session] = Depends(session_factory),
+    upstreams: Upstreams = Depends(get_upstreams),
+    name: str | None = Query(default=None, max_length=80),
+) -> Response:
+    """`q_bank_discovered.pdf`: the bank as it stands this moment — drawn
+    again if anything changed since the last one — for the student alone."""
+    candidate_id = _signed_in(principal)
+    built = qbank.current(db, candidate_id, name=name)
+    if built.book.pending:
+        background.add_task(qbank.refresh, candidate_id, factory=sessions, upstreams=upstreams)
+    return Response(
+        content=built.pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{qbank.FILE_NAME}"',
+            "Cache-Control": "no-store",
+            "X-Question-Bank-Updated": built.updated.isoformat(),
+        },
+    )
+
+
 @router.get("/interviews/phrases", tags=["meta"])
 def phrases() -> dict:
     """Every interviewer's stock phrases — what they say between questions —
@@ -1168,6 +1234,7 @@ def answer(
     body: AnswerIn,
     background: BackgroundTasks,
     engine: Engine = Depends(get_engine),
+    sessions: Callable[[], Session] = Depends(session_factory),
 ) -> SessionOut:
     """A typed answer. Returns the session with the interviewer's next line.
 
@@ -1189,6 +1256,11 @@ def answer(
     except (AnswerRejected, store.ConcurrentWrite) as exc:
         raise _conflict(exc) from exc
     background.add_task(_deliver, session_id)
+    # 2026-11-18: a question this answer closed joins the student's bank —
+    # the file is redrawn and its follow-ups written behind the interview.
+    background.add_task(
+        qbank.refresh, state.candidate_id, factory=sessions, upstreams=engine.upstreams
+    )
     return session_out(state)
 
 
@@ -1348,11 +1420,17 @@ def end_session(
     background: BackgroundTasks,
     body: EndRequest | None = None,
     engine: Engine = Depends(get_engine),
+    sessions: Callable[[], Session] = Depends(session_factory),
 ) -> SessionOut:
     """EC-6.10: ending early still produces a report — framed as a warm-up."""
     try:
-        ended = session_out(engine.end(session_id, (body or EndRequest()).reason))
+        state = engine.end(session_id, (body or EndRequest()).reason)
+        ended = session_out(state)
         background.add_task(_deliver, session_id)
+        # The last question closes with the session.
+        background.add_task(
+            qbank.refresh, state.candidate_id, factory=sessions, upstreams=engine.upstreams
+        )
         return ended
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="No such session.") from exc

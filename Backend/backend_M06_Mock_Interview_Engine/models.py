@@ -292,6 +292,9 @@ __all__ = [
     "InterviewSession",
     "LLMCall",
     "LedgerOutbox",
+    "QBankAnswer",
+    "QBankLookup",
+    "QBankSeed",
     "QuestionAttempt",
     "QuestionSplit",
     "SavedQuestion",
@@ -328,3 +331,71 @@ class QuestionWriteup(SQLModel, table=True):
     latency_ms: int = 0
     attempts: int = 0
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+# ── 2026-11-18: the question bank a student has discovered (`qbank/`) ─────────
+
+
+class QBankLookup(SQLModel, table=True):
+    """What another module said about a question or a concept, kept so the
+    question bank is built from M06's own tables on every request.
+
+    `key` is `q:<question id>` (M05's item: its track, reference answer and
+    key points — the event log of an older session holds the stem alone, from
+    before M05 handed modules the answer key) or `c:<concept id>` (M04's name
+    for it). `found` False is M05 or M04 saying "no such thing"; a module that
+    did not answer is not stored, and is asked again next time."""
+
+    __tablename__ = "m06_qbank_lookup"
+
+    key: str = Field(primary_key=True)
+    found: bool = True
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    fetched_at: datetime = Field(default_factory=utcnow)
+
+
+class QBankAnswer(SQLModel, table=True):
+    """What the question bank writes where nobody wrote it (`qbank/answers`):
+    the answers to the follow-ups an interviewer asked — merged where two ask
+    the same thing, each made to read on its own — and the answer to a
+    question whose item has none.
+
+    Keyed by `brief_hash`, the hash of the prompt version and of everything
+    the writer was told (the question, its answer key, the follow-ups), so a
+    question asked with the same follow-ups is written once for everyone, and
+    a new follow-up writes it again."""
+
+    __tablename__ = "m06_qbank_answer"
+
+    brief_hash: str = Field(primary_key=True)
+    question_key: str = Field(index=True)
+    #: `{"answer": str, "follow_ups": [{"question", "answer", "asked": [int]}]}`
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    #: `ready` · `failed` (with `reason`).
+    status: str = "ready"
+    model: str = ""
+    prompt_version: str = ""
+    reason: str | None = None
+    problems: list = Field(default_factory=list, sa_column=Column(JSON))
+    attempts: int = 0
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class QBankSeed(SQLModel, table=True):
+    """A question added to a student's bank without an interview of theirs
+    asking it — an operator's import (`tools/qbank_seed.py`). The payload is
+    the question as `qbank.collect` reads it from an event log, so a seeded
+    question and an asked one are built the same way; `asked` is false on the
+    page, which never claims an interview it did not have."""
+
+    __tablename__ = "m06_qbank_seed"
+    __table_args__ = (
+        UniqueConstraint("candidate_id", "question_key", name="uq_m06_qbank_seed"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    candidate_id: uuid.UUID = Field(index=True)
+    question_key: str
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    note: str = ""
+    added_at: datetime = Field(default_factory=utcnow)

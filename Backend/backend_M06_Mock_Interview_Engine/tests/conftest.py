@@ -47,6 +47,19 @@ def _fixed_seating(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _quiet_question_bank(request, monkeypatch, tmp_path):
+    """The question bank (2026-11-18) keeps its files under the test's own
+    temporary folder, never the developer's. And the redraw behind every
+    answer is off — hundreds of answers in the suite would each draw a PDF —
+    except in a test marked `qbank`, which is about exactly that."""
+    monkeypatch.setenv("M06_QBANK_DIR", str(tmp_path / "qbank"))
+    if "qbank" not in request.keywords:
+        from backend_M06_Mock_Interview_Engine import qbank
+
+        monkeypatch.setattr(qbank, "refresh", lambda *args, **kwargs: None)
+
+
+@pytest.fixture(autouse=True)
 def no_network_model():
     """`get_llm()` would read the real keys.txt beside the repos and go live.
     Every test starts with the model off; a test that wants one installs a stub."""
