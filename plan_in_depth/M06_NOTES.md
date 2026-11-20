@@ -1,4 +1,4 @@
-# M06 — Post-session notes students can trust: implementation report
+# M06 — Post-session notes students can trust: implementation report & this connects to the councillor module
 
 > **Date:** 2026-10-24.
 > **Brief:** fix the post-session notes, redesign their UI, choose the notes model through NVIDIA NIM, audit the journey, test it. 8 sections.
