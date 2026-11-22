@@ -1259,6 +1259,11 @@ def build(deps: Deps):
                 if kind == "explain" and explanation
                 else lines.defer_to_report
                 if kind == "report"
+                # 2026-11-22: a question only the company can answer is
+                # coached first (what makes it good, how to sharpen it), then
+                # handed to the real panel, never answered (good_and_bads #10).
+                else f"{explanation} {lines.closing_ack}"
+                if kind == "role" and explanation
                 else lines.closing_ack
             )
         if (

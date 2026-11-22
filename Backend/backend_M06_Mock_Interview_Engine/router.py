@@ -1140,6 +1140,10 @@ class HeardIn(BaseModel):
     part_index: int | None = Field(default=None, ge=0, le=20)
     #: How far through that part, 0–1.
     heard: float = Field(ge=0.0, le=1.0)
+    #: Whether the part's words had been on screen long enough to read
+    #: (2026-11-22). A student who read the question has it, whatever the
+    #: voice had reached; it is not put to them again.
+    read: bool = False
 
 
 @router.post("/interviews/{session_id}/heard", status_code=204)
@@ -1150,7 +1154,7 @@ def line_heard(
     heard. The line stays whole; the transcript dims the rest, and the
     interviewer reads it as far as it was heard."""
     try:
-        engine.heard(session_id, body.turn_id, body.part_index, body.heard)
+        engine.heard(session_id, body.turn_id, body.part_index, body.heard, read=body.read)
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="No such session.") from exc
     except (InvalidTransition, store.ConcurrentWrite) as exc:
@@ -1444,11 +1448,33 @@ def transcript(session_id: uuid.UUID, db: Session = Depends(get_session)) -> lis
     return store.load_state(db, session_id).transcript
 
 
+#: The goal line per finished session (2026-11-22): the notes page polls
+#: while write-ups are pending, and M22's Goal Context is not free to compute.
+_GOAL_LINES: dict[uuid.UUID, str | None] = {}
+
+
+def _goal_line(
+    upstreams: Upstreams,
+    candidate_id: uuid.UUID,
+    session_id: uuid.UUID,
+    built: report_module.SessionReport,
+) -> str | None:
+    if session_id not in _GOAL_LINES:
+        try:
+            context = upstreams.m22.context(candidate_id) if upstreams.m22 is not None else None
+        except Exception:  # noqa: BLE001 - M22 away is no line, never an error
+            context = None
+        asked = [(q.concept_id or "", q.topic or "") for q in built.questions if q.concept_id]
+        _GOAL_LINES[session_id] = report_module.goal_line(context, asked, utcnow().date())
+    return _GOAL_LINES[session_id]
+
+
 @router.get("/interviews/{session_id}/report", response_model=report_module.SessionReport)
 def session_report(
     session_id: uuid.UUID,
     background: BackgroundTasks,
     db: Session = Depends(get_session),
+    upstreams: Upstreams = Depends(get_upstreams),
     sessions: Callable[[], Session] = Depends(session_factory),
 ) -> report_module.SessionReport:
     """FR-6.18 — for every session, finished or not (AC-6.1)."""
@@ -1462,7 +1488,18 @@ def session_report(
         # and the library's marks — one student's, by their own id.
         history = {k: memory.attempts_for(db, state.candidate_id, k) for k in keys}
         marks = memory.marks(db, state.candidate_id, keys)
-        built = report_module.build(state, events, utcnow(), history=history, marks=marks)
+        # 2026-11-22: and beside their last go at the same IDEA, in an
+        # earlier interview, when this question is new to them.
+        earlier = {}
+        for q in built.questions:
+            if q.concept_id and q.concept_id not in earlier:
+                found = memory.earlier_on_concept(db, state.candidate_id, q.concept_id, session_id)
+                if found is not None:
+                    earlier[q.concept_id] = memory.concept_line(found, (q.topic or "").lower())
+        built = report_module.build(
+            state, events, utcnow(), history=history, marks=marks, earlier=earlier
+        )
+        built.goal_line = _goal_line(upstreams, state.candidate_id, session_id, built)
     if state.is_final:
         # 2026-10-24: each answer explained, written once after the session
         # (`notes_writer`). What is ready is attached; what is not is written

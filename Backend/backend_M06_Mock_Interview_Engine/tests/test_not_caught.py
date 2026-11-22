@@ -135,3 +135,26 @@ def test_an_answer_in_hindi_is_kept_as_said_and_noted_never_penalised(db):
     )
     assert any("partly in Hindi" in note for note in report.notes)
     assert all("penal" not in note or "never" in note for note in report.notes)
+
+
+# ── the notes and the mentor never quote a mishearing (2026-11-22) ───────
+
+
+def test_the_notes_carry_which_words_were_not_heard_and_never_quote_them(db):
+    """15 Nov: the mentor read a student's notes and quoted the recogniser's
+    "Uho of one" back to them as what they said. The notes now carry the
+    unsure ranges on each spoken answer, and a quote is held to the words
+    that were heard."""
+    from backend_M06_Mock_Interview_Engine import notes_writer, report
+
+    engine, row = live(db)
+    answer(engine, row, "it hashes the key", asr={**SURE, "unsure": [[3, 9]]})
+    engine.end(row.id, "ended_by_student")
+    built = report.build(engine.state(row.id), store.events_for(db, row.id), engine.clock())
+    first = built.questions[0]
+    spoken = next(e for e in first.exchanges if e.role == "candidate")
+    assert spoken.unsure == [(3, 9)]
+    assert report.heard_words(spoken) == "it … the key"
+    heard = notes_writer.said(first)
+    assert notes_writer.quoted("the key", heard)
+    assert not notes_writer.quoted("it hashes the key", heard), "a misheard word was quotable"

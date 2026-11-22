@@ -35,7 +35,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 from sqlmodel import Session, select
 
-from .report import QuestionReport, Writeup, WriteupPoint
+from .report import QuestionReport, Writeup, WriteupPoint, heard_words
 
 log = logging.getLogger("uvicorn.error")
 
@@ -128,8 +128,10 @@ def _norm(text: str) -> str:
 
 
 def said(question: QuestionReport) -> str:
-    """Everything the student said on this question, in order."""
-    return "\n".join(e.text for e in question.exchanges if e.role == "candidate")
+    """Everything the student said on this question, in order — as it may
+    be quoted: words the recogniser was unsure of are an ellipsis, so a
+    quote containing one is not the student's words (FR-11.15)."""
+    return "\n".join(heard_words(e) for e in question.exchanges if e.role == "candidate")
 
 
 def quoted(evidence: str, spoken: str) -> bool:

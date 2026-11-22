@@ -432,7 +432,7 @@ export function useRepeat(id: string) {
  *  the interviewer reads the line as far as it was heard. */
 export function useHeard(id: string) {
   return useMutation({
-    mutationFn: (body: { turn_id: string; part_index: number | null; heard: number }) =>
+    mutationFn: (body: { turn_id: string; part_index: number | null; heard: number; read?: boolean }) =>
       api.post<void>(`/v1/interviews/${id}/heard`, body),
   });
 }

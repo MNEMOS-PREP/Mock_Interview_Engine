@@ -38,6 +38,7 @@ from . import (
     degrade,
     delivery,
     difficulty,
+    m17_emit,
     memory,
     outbox,
     pacing,
@@ -1261,6 +1262,16 @@ class Engine:
             self._replay = None
             raise AnswerRejected(str(exc)) from exc
         self._note_delivery(row, answer_index, text, asr)
+        # M17, the communication coach (2026-11-22): every closed answer, so
+        # "how you said it" has something behind it. Best effort, never raises.
+        m17_emit.send_turn(
+            turn_id=str(_turn_id(row.id, answer_index)),
+            candidate_id=str(row.candidate_id),
+            text=text,
+            spoken=asr is not None,
+            duration_ms=round(asr["duration_s"] * 1000) if asr and asr.get("duration_s") else None,
+            question=asked.text,
+        )
         try:
             return self.continue_session(session_id)
         finally:
@@ -2280,7 +2291,13 @@ class Engine:
         return asked
 
     def heard(
-        self, session_id: uuid.UUID, turn_id: uuid.UUID, part_index: int | None, heard: float
+        self,
+        session_id: uuid.UUID,
+        turn_id: uuid.UUID,
+        part_index: int | None,
+        heard: float,
+        *,
+        read: bool = False,
     ) -> SessionState:
         """M11's FR-11.9: the student started speaking over an interviewer line
         — here, in this part, this far through. Recorded once per line: the
@@ -2296,7 +2313,12 @@ class Engine:
             "turn.heard",
             step=f"heard:{turn.turn_index}",
             turn_index=turn.turn_index,
-            payload={"turn_id": str(turn_id), "part_index": part_index, "heard": heard},
+            payload={
+                "turn_id": str(turn_id),
+                "part_index": part_index,
+                "heard": heard,
+                "read": read,
+            },
         )
         return self.state(session_id)
 

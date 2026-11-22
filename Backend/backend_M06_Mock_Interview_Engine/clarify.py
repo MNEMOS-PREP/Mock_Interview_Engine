@@ -150,6 +150,10 @@ def question_unheard(line: Any) -> bool:
     being heard when they came in and how far through it (0–1)."""
     if line is None or getattr(line, "heard", None) is None:
         return False
+    # They read it (2026-11-22): the words were on screen long enough,
+    # whatever the voice had reached. Not a question they missed.
+    if getattr(line, "read", False):
+        return False
     text = line.text
     parts = [p.text for p in line.parts] if getattr(line, "parts", None) else [text]
     index = min(int(line.heard_part or 0), len(parts) - 1)

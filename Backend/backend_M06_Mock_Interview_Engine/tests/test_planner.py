@@ -220,7 +220,9 @@ def test_a_coding_round_is_dropped_and_owed_to_m02_as_skipped():
     )
     dropped = [s for s in plan.segments if s.dropped_reason is not None]
     assert len(dropped) == 1
-    assert "coding round isn't built yet" in dropped[0].dropped_reason
+    assert "isn't run inside a mock interview yet" in dropped[0].dropped_reason
+    # It exists, at /code: the student is told where, never that it isn't built.
+    assert "Live coding" in dropped[0].dropped_reason
 
     # It keeps its place in the plan, with its reason — the preview shows the
     # before as well as the after.

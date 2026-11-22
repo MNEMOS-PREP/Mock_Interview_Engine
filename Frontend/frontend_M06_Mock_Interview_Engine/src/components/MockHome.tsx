@@ -24,7 +24,7 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
-import { ErrorNote, Icon, SkeletonRows, relativeDays } from "@ai/core";
+import { ErrorNote, Icon, SkeletonRows, api, relativeDays } from "@ai/core";
 
 import {
   useCreateSession,
@@ -153,7 +153,7 @@ function TrackChoice({
     >
       <span className="flex items-start justify-between gap-2">
         <span className="min-w-0 text-sm font-medium leading-snug">{track.title}</span>
-        {!track.scored && (
+        {!track.scored ? (
           // "not scored", not "practice": the chip sat on the same page as
           // the Practice mode and read as one of its settings.
           <span
@@ -162,7 +162,17 @@ function TrackChoice({
           >
             not scored
           </span>
-        )}
+        ) : track.drafts > 0 ? (
+          // Partly reviewed (2026-11-22): DSA had 12 of 105 approved and no
+          // chip at all, so most of its answers went unscored without a word
+          // (good_and_bads #4). The count says how many can count.
+          <span
+            className="shrink-0 whitespace-nowrap rounded-full bg-surface-sunken px-1.5 py-px text-2xs text-ink-faint"
+            title={`A person has reviewed ${track.approved} of its ${track.approved + track.drafts} questions; only answers to those count on your skill graph.`}
+          >
+            {track.approved} of {track.approved + track.drafts} scored
+          </span>
+        ) : null}
       </span>
       {track.blurb && (
         <span className="mt-0.5 line-clamp-2 block text-2xs leading-relaxed text-ink-faint">
@@ -333,6 +343,29 @@ export function MockHome() {
   // An interview already planned or running: go back into it.
   const continueIt = () => {
     if (unfinished) navigate(`/mock/${unfinished.id}`);
+  };
+
+  // "Start a new one instead" with one unfinished (good_and_bads #21,
+  // 2026-11-22): M06 refuses a second interview while one is live (409), and
+  // the click looked dead. Now it asks once, ends the unfinished one (its
+  // notes are kept, as for any interview ended early), then plans the new one.
+  const [confirmNew, setConfirmNew] = useState(false);
+  const [ending, setEnding] = useState(false);
+  const [endError, setEndError] = useState<string | null>(null);
+  const startOver = async () => {
+    if (!unfinished) return startPlan();
+    if (!confirmNew) return setConfirmNew(true);
+    setEnding(true);
+    setEndError(null);
+    try {
+      await api.post(`/v1/interviews/${unfinished.id}/end`, { reason: "ended_by_student" });
+      startPlan();
+    } catch (e) {
+      setEndError(e instanceof Error ? e.message : "The unfinished interview could not be ended.");
+    } finally {
+      setEnding(false);
+      setConfirmNew(false);
+    }
   };
 
   const startPlan = () =>
@@ -757,12 +790,17 @@ export function MockHome() {
                 </button>
                 <button
                   type="button"
-                  onClick={startPlan}
-                  disabled={create.isPending}
+                  onClick={() => void startOver()}
+                  disabled={create.isPending || ending}
                   className="h-9 w-full rounded-lg bg-transparent text-[12px] text-[#adc4b8] underline-offset-2 hover:text-white hover:underline disabled:opacity-50"
                 >
-                  {create.isPending ? "Building your plan…" : "Start a new one instead"}
+                  {create.isPending || ending
+                    ? "Building your plan…"
+                    : confirmNew
+                      ? "End it and start a new one? Its notes are kept."
+                      : "Start a new one instead"}
                 </button>
+                {endError && <p className="text-[12px] text-[#f3b7a8]">{endError}</p>}
               </>
             ) : (
               <button

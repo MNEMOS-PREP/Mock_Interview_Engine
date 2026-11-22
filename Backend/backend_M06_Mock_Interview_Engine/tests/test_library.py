@@ -201,3 +201,43 @@ def test_a_stranger_cannot_revisit_someone_elses_question(client, candidate_id, 
         headers=student(candidate_id),
     )
     assert res.status_code == 404
+
+
+# ── "last time" on the same idea, not only the same question (2026-11-22) ──
+
+
+def test_a_new_question_on_an_idea_they_met_before_says_how_it_went_then(db):
+    """Questions vary by design, so the same one rarely comes back and the
+    notes almost never said what had moved. The same concept, asked another
+    way in an earlier interview, is what a student means by "last time"."""
+    candidate = uuid.uuid4()
+    interview_a(db, candidate)
+    (first,) = [
+        a
+        for a in db.exec(
+            select(QuestionAttempt).where(QuestionAttempt.candidate_id == candidate)
+        ).all()
+        if a.outcome
+    ]
+    later = uuid.uuid4()
+    found = memory.earlier_on_concept(db, candidate, first.concept_id, later)
+    assert found is not None and found.session_id == first.session_id
+    line = memory.concept_line(found, "loops")
+    assert line.startswith("Last time on loops (") and "another question" in line
+    assert "a misunderstanding that stood" in line
+    # Never the same interview, and never another student's.
+    assert memory.earlier_on_concept(db, candidate, first.concept_id, first.session_id) is None
+    assert memory.earlier_on_concept(db, uuid.uuid4(), first.concept_id, later) is None
+
+
+def test_the_notes_use_it_when_the_question_itself_is_new(db):
+    candidate = uuid.uuid4()
+    engine, row = interview_a(db, candidate)
+    state, events = engine.state(row.id), store.events_for(db, row.id)
+    concepts = {q.concept_id for q in report.build(state, events, engine.clock()).questions}
+    line = "Last time on loops (1 Nov, another question): answered well."
+    built = report.build(
+        state, events, engine.clock(), earlier={c: line for c in concepts if c}
+    )
+    first = built.questions[0]
+    assert first.last_time and first.last_time.startswith("Last time on loops")

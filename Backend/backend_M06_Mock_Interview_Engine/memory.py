@@ -217,6 +217,34 @@ def attempts_for(db: Session, candidate_id: uuid.UUID, key: str) -> list[Questio
     )
 
 
+def earlier_on_concept(
+    db: Session, candidate_id: uuid.UUID, concept_id: str, session_id: uuid.UUID
+) -> QuestionAttempt | None:
+    """The student's latest attempt on this concept in an EARLIER interview —
+    another question, the same idea (2026-11-22)."""
+    if not concept_id:
+        return None
+    return db.exec(
+        select(QuestionAttempt)
+        .where(QuestionAttempt.candidate_id == candidate_id)
+        .where(QuestionAttempt.concept_id == concept_id)
+        .where(QuestionAttempt.session_id != session_id)
+        .order_by(QuestionAttempt.at.desc())  # type: ignore[union-attr]
+    ).first()
+
+
+def concept_line(attempt: QuestionAttempt, topic: str) -> str:
+    """"Last time on hashing (12 Nov, another question): partly answered."
+
+    The notes said "last time" only when the very same question came back,
+    which is rare — questions vary by design — so a second interview's notes
+    almost never said what had moved (good_and_bads, 2026-11-22). The same
+    idea, asked another way, is what a student means by "last time"."""
+    when = attempt.at.strftime("%d %b").lstrip("0") if attempt.at else "before"
+    words = OUTCOME_WORDS.get(attempt.outcome or "", "answered").lower()
+    return f"Last time on {topic or 'this topic'} ({when}, another question): {words}."
+
+
 def compare(attempts: list[QuestionAttempt]) -> str | None:
     """The latest attempt against the one before it, in plain words — or
     None when there is nothing to compare. Outcomes and the answers' own
