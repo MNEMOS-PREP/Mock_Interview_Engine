@@ -234,7 +234,7 @@ function SegmentRow({
           {others.length > 0 && `${listed(others.map((card) => card.name))} sitting in · `}
           {minutes(segment.minutes)}
           {segment.question_budget > 0 &&
-            ` · ${segment.question_budget} question${segment.question_budget === 1 ? "" : "s"}`}
+            ` · up to ${segment.question_budget} question${segment.question_budget === 1 ? "" : "s"}`}
         </p>
         {segment.rationale && !dropped && (
           <p className="mt-1 max-w-prose text-2xs leading-relaxed text-ink-soft">
@@ -418,7 +418,9 @@ export function PlanPreview({ sessionId }: { sessionId: string }) {
               <p className="text-[25px] font-medium leading-[1.2] tracking-[-0.8px]">{minutes(totalMinutes)}</p>
               <div className="flex flex-wrap gap-2">
                 {[
-                  `${totalQuestions} question${totalQuestions === 1 ? "" : "s"}`,
+                  // "Up to": follow-ups and the voice take time, so a 15-minute plan of
+                  // six reached question three at minute 19 (good_and_bads #7, 2026-11-22).
+                  `Up to ${totalQuestions} question${totalQuestions === 1 ? "" : "s"}`,
                   `${live.length} part${live.length === 1 ? "" : "s"}`,
                   (session.data?.flags.pauses_allowed ?? 1) === 1 ? "One pause" : `${session.data?.flags.pauses_allowed} pauses`,
                 ].map((t) => (

@@ -632,6 +632,13 @@ class TurnView(BaseModel):
     #: through it, 0–1. None when it was heard to the end. `heard.py`.
     heard_part: int | None = None
     heard: float | None = None
+    #: The question's words had been on screen long enough to read when
+    #: the student came in (2026-11-22). Each part appears as the voice
+    #: starts it, so a slow voice is still on its first words while the
+    #: whole question is readable; a student who read it and answered was
+    #: asked it again (good_and_bads #19). EC-11.1 is about not having the
+    #: question, and they had it.
+    read: bool = False
     #: Candidate turns spoken through M11's recogniser: how sure it was
     #: (0–1), and the character ranges of `text` it was unsure of — words that
     #: must not be quoted back as what the student said (FR-11.15).

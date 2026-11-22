@@ -769,6 +769,13 @@ export function SessionNotes({ sessionId }: { sessionId: string }) {
         </p>
         <h1 className="relative mt-3 text-3xl font-semibold tracking-tight text-ink">Your notes</h1>
         <p className="relative mt-2 text-sm leading-relaxed text-ink-soft">{data.framing}</p>
+        {data.goal_line && (
+          // The notes and the goal, in one line (good_and_bads, 2026-11-22):
+          // a student with a drive in six weeks read notes that never said so.
+          <p className="relative mt-3 inline-flex max-w-full items-start gap-2 rounded-lg bg-brand-soft px-3 py-2 text-sm text-ink">
+            {data.goal_line}
+          </p>
+        )}
         <div className="relative mt-5 grid grid-cols-3 gap-4 border-t border-line pt-5">
           <Stat value={data.questions.length} label={data.questions.length === 1 ? "question" : "questions"} />
           <Stat value={`${minutes}/${data.minutes_planned}`} label="minutes" />

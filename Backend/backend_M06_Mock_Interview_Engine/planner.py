@@ -40,16 +40,21 @@ from . import panel
 from .contracts import InterviewPlan, Mode, PlannedSegment, SegmentKind
 from .modes import ModeConfig, mode_config
 
-#: What M06 can actually run today. `coding` needs M07 and `design` needs
-#: M08's canvas; neither exists, so a round priced for one is dropped rather
-#: than quietly served as conversation — a student told "talk me through your
-#: solution" has not had a coding round.
+#: What M06 can actually run today. `coding` needs M07 inside the room and
+#: `design` needs M08's canvas; neither runs here yet, so a round priced for one
+#: is dropped rather than quietly served as conversation — a student told "talk
+#: me through your solution" has not had a coding round.
 SERVABLE_MODALITIES = frozenset({"verbal"})
 
 #: Why a modality is not servable, in the student's words. Keyed by M02's
-#: vocabulary so an unknown one still gets a sentence.
+#: vocabulary so an unknown one still gets a sentence. Coding exists since
+#: 2026-11-04, at /code (M07): "isn't built yet" told the student something
+#: false and hid where to practise it (good_and_bads #17, 2026-11-22).
 MODALITY_BLOCKED = {
-    "coding": "The coding round isn't built yet, so this part is left out.",
+    "coding": (
+        "The coding part isn't run inside a mock interview yet, so it is left out here. "
+        "Practise it in Live coding, where your code is run and judged."
+    ),
     "design": "The system-design round isn't built yet, so this part is left out.",
 }
 

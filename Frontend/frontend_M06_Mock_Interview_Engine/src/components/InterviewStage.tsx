@@ -325,6 +325,7 @@ function TimeRemaining({
           <path d="M12 7v5l3 2" strokeLinecap="round" />
         </svg>
         {clock(left)}
+        <span className="font-sans">left</span>
       </span>
       <span aria-live="polite" className="sr-only">
         {announcement}
@@ -345,12 +346,16 @@ function StatusStrip({
   panel,
   speakingId,
   holding = false,
+  joining = false,
   tiled = false,
 }: {
   session: Session;
   waiting: boolean;
   /** A line has landed and waits on its voice past the silence meant for it. */
   holding?: boolean;
+  /** Nothing has been said in this room yet: the first wait is the call
+   *  connecting, not someone thinking (good_and_bads #8, 2026-11-22). */
+  joining?: boolean;
   connected: boolean;
   onPause: () => void;
   onResume: () => void;
@@ -401,7 +406,9 @@ function StatusStrip({
         ? "Reading your answer"
         : state === "speaking"
           ? `${firstName(shown)} is speaking`
-          : state === "holding"
+          : state === "holding" && joining
+            ? `Joining the call with ${panel.map((p) => p.name.split(" ")[0]).join(" and ") || firstName(asking)}…`
+            : state === "holding"
             ? `${firstName(asking)} is thinking`
             : state === "yours"
               ? "Your turn"
@@ -713,6 +720,10 @@ function plannedQuestions(session: Session): number | null {
     .reduce((sum, s) => sum + s.question_budget, 0);
   return n > 0 ? n : null;
 }
+
+/** Reading pace for "they had time to read the question": 4 words a second,
+ *  a quick reader's, so a student who only glanced is still asked again. */
+const READ_MS_PER_WORD = 250;
 
 const STEP_LABEL: Record<string, string> = { warmup: "Warm-up", closing: "Your questions" };
 
@@ -1352,13 +1363,11 @@ function QuestionInfo({
   topic,
   number,
   planned,
-  usedSeconds,
   hints,
 }: {
   topic: string | null;
   number: number;
   planned: number | null;
-  usedSeconds: number;
   hints: number;
 }) {
   const row = "flex items-center justify-between gap-3 py-2.5 text-sm";
@@ -1380,10 +1389,10 @@ function QuestionInfo({
           <dt className="text-ink-soft">Hints taken</dt>
           <dd className="font-medium text-ink">{hints}</dd>
         </div>
-        <div className={row}>
-          <dt className="text-ink-soft">Time spent</dt>
-          <dd className="font-mono tabular-nums text-ink">{clock(usedSeconds)}</dd>
-        </div>
+        {/* One clock (good_and_bads #9, 2026-11-22): "Time spent" here sat
+            beside "Time remaining" in the header, and the two disagreed — this
+            one was the server's figure and did not tick. The header's
+            countdown is the room's only clock now. */}
       </dl>
     </section>
   );
@@ -1548,6 +1557,24 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
   // Spec §8: while the voice can be heard, a fresh line appears as it is said.
   const followVoice = voice.supported && voice.enabled && !voice.blocked;
   const reveal = useReveal(voice, followVoice);
+  // When the voice reached each part, which is when its words appeared
+  // (spokenRoom.ts): how long a student had to read a question before
+  // they came in over it (good_and_bads #19, 2026-11-22).
+  const reachedAt = useRef(new Map<string, number>());
+  // Has anyone spoken in this room yet? Until then the wait is the call
+  // connecting (the opening's voice being made, the heads loading): about
+  // 25 s on this laptop on 29 Oct, which read as a hang.
+  const [spokenYet, setSpokenYet] = useState(false);
+  useEffect(() => {
+    if (voice.speakingKey !== null) setSpokenYet(true);
+  }, [voice.speakingKey]);
+  const joining =
+    !spokenYet && !(data?.transcript ?? []).some((turn) => turn.role === "candidate");
+  useEffect(() => {
+    if (voice.speakingPart && !reachedAt.current.has(voice.speakingPart)) {
+      reachedAt.current.set(voice.speakingPart, performance.now());
+    }
+  }, [voice.speakingPart]);
   const waiting =
     answer.isPending ||
     start.isPending ||
@@ -1640,7 +1667,17 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
     const onCut = (cut: { key: string; partId: string | null; heard: number }) => {
       const [turnId, part] = (cut.partId ?? `${cut.key}:0`).split(":");
       const index = Number(part ?? 0) || 0;
-      heardLine.mutate({ turn_id: turnId!, part_index: index, heard: cut.heard });
+      // Read, if not heard: each part's words are on screen from the
+      // moment the voice starts it, so with a slow voice the whole
+      // question is readable while it is still being said. A student
+      // who read it and answered is not asked it again.
+      const spokenLine = data.transcript.find((turn) => turn.turn_id === turnId);
+      const words = spokenLine
+        ? (partsOf(spokenLine, data.interviewer?.id ?? null)[index]?.text ?? spokenLine.text).split(/\s+/).length
+        : Infinity;
+      const since = reachedAt.current.get(cut.partId ?? `${cut.key}:0`);
+      const read = since !== undefined && performance.now() - since >= words * READ_MS_PER_WORD;
+      heardLine.mutate({ turn_id: turnId!, part_index: index, heard: cut.heard, read });
       // EC-11.1: in over the very start of a line, the interviewer yields —
       // "Sorry — go ahead.", aside, not on the record — and M06 puts the
       // question again once they have finished. Not in Final Boss.
@@ -2451,6 +2488,7 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
             panel={panel}
             speakingId={speakingId}
             holding={reveal.overdue}
+            joining={joining}
             tiled={tiled}
           />
           <Stepper session={data} />
@@ -3012,7 +3050,6 @@ export function InterviewStage({ sessionId }: { sessionId: string }) {
                 topic={roundTitle(data)}
                 number={Math.max(data.questions_asked, 1)}
                 planned={plannedQuestions(data)}
-                usedSeconds={data.time_used_s}
                 hints={openTurn?.hint_level_used ?? 0}
               />
             </aside>

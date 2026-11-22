@@ -181,3 +181,46 @@ def test_how_did_i_do_goes_to_the_report(db):
     state = say(engine, row, "How did I do?")
     assert "report" in last_line(state).lower()
     assert "real panel" not in last_line(state)
+
+
+# ── the closing coaches a question only the company can answer (#10) ─────
+
+
+def test_a_company_question_is_coached_then_handed_to_the_real_panel(db):
+    coaching = (
+        "ROLE: Good question, specific and about the work itself. "
+        "Even stronger: tie it to something in their posting."
+    )
+    engine, row = reach_the_closing(
+        db, llm=StubLLM([verdict(band="below", justification="failed")], closing=coaching)
+    )
+    state = say(engine, row, "What does the first month look like for a new engineer?")
+    line = last_line(state)
+    assert line.startswith("Good question, specific and about the work itself.")
+    assert "tie it to something in their posting" in line
+    # Coached, and still never answered: the real panel has the answer.
+    assert "real panel" in line and line.endswith("Anything else?")
+    assert "ROLE" not in line
+
+
+def test_coaching_with_a_number_in_it_is_dropped(db):
+    # A number about a company is a fact nobody gave us.
+    engine, row = reach_the_closing(
+        db,
+        llm=StubLLM(
+            [verdict(band="below", justification="failed")],
+            closing="ROLE: Good question; their team has 40 engineers.",
+        ),
+    )
+    state = say(engine, row, "How big is the team?")
+    line = last_line(state)
+    assert "40" not in line and "Good question" not in line
+    assert "real panel" in line
+
+
+def test_a_bare_role_is_the_plain_hand_off(db):
+    engine, row = reach_the_closing(
+        db, llm=StubLLM([verdict(band="below", justification="failed")], closing="ROLE")
+    )
+    state = say(engine, row, "What is the salary?")
+    assert "real panel" in last_line(state)

@@ -782,6 +782,7 @@ def _turn_heard(s: SessionState, p: dict, _at: datetime) -> None:
         return
     turn.heard_part = int(p.get("part_index") or 0)
     turn.heard = max(0.0, min(1.0, float(p.get("heard", 1.0))))
+    turn.read = bool(p.get("read", False))
 
 
 def _step_failed(s: SessionState, _p: dict, _at: datetime) -> None:

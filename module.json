@@ -97,6 +97,7 @@
     { "module": "M04", "takes": "recent sessions for the profile summary" },
     { "module": "M01", "takes": "the session id and URL for a defend drill" },
     { "module": "M16", "takes": "break depths per concept, per session" },
+    { "module": "M17", "takes": "each closed answer, its words and timing, for communication coaching (best effort, 2026-11-22)" },
     { "module": "M19", "takes": "the session event log: transcript, plan, re-plans, pacing" }
   ]
 }

@@ -58,7 +58,9 @@ def test_a_wrong_answer_corrected_after_a_push_is_written_up_as_exactly_that(db)
 def test_a_right_answer_and_a_wrong_one_are_not_written_up_alike(db):
     good, good_row = run(db, RIGHT, answers=["Linear: one pass, constant work."])
     good.end(good_row.id, "ended_by_student")
-    bad, bad_row = run(db, WRONG, WRONG, answers=["O(n squared).", "Still O(n squared)."])
+    # The quote is in the answer: since 2026-11-22 a quote no answer contains is not shown.
+    answers = ["It is O(n squared).", "Still, it is O(n squared)."]
+    bad, bad_row = run(db, WRONG, WRONG, answers=answers)
     bad.end(bad_row.id, "ended_by_student")
     right, wrong = notes(good, good_row).questions[0], notes(bad, bad_row).questions[0]
     assert right.went_wrong == [] and wrong.went_wrong
@@ -210,3 +212,72 @@ def test_a_lines_own_full_stop_is_not_followed_by_a_colon():
         topic="Wrote integration tests for the payments service in pytest.",
     )
     assert report._label(line) == "Wrote integration tests for the payments service in pytest"
+
+
+# ── "you said" is this question's own answer (good_and_bads #2, 2026-11-22) ──
+
+
+def test_a_quote_from_another_answer_is_not_shown_as_theirs(db):
+    # 15 Nov: the hashing card's "You said" quoted an answer to a different
+    # question. The strategist sees the whole transcript; what it quotes is
+    # shown only when THIS question's answers contain it.
+    elsewhere = verdict(
+        category="incorrect",
+        severity="material",
+        error_quote="I would cache the results in Redis",
+        error_note="Caching does not change the loop's complexity.",
+    )
+    engine, row = run(db, elsewhere, answers=["It is O(n squared)."])
+    engine.end(row.id, "ended_by_student")
+    first = notes(engine, row).questions[0]
+    assert first.went_wrong == [], "a quote no answer here contains was shown as theirs"
+
+
+def test_their_own_words_still_count_whatever_the_case_and_punctuation(db):
+    engine, row = run(db, WRONG, answers=["Well... It is O(n squared)!"])
+    engine.end(row.id, "ended_by_student")
+    first = notes(engine, row).questions[0]
+    assert [f.said for f in first.went_wrong] == ["it is O(n squared)"]
+
+
+# ── the notes tied to the goal (2026-11-22) ──────────────────────────────
+
+
+def test_the_goal_line_counts_the_open_topics_this_interview_asked():
+    from datetime import date
+
+    context = {
+        "goals": [
+            {
+                "title": "Backend Developer",
+                "priority": 1,
+                "deadline": "2026-12-31",
+                "competencies": [
+                    {"concept_id": "concept:hashing", "name": "Hashing", "status": "gap"},
+                    {
+                        "concept_id": "concept:sql_queries",
+                        "name": "SQL Queries",
+                        "status": "in_progress",
+                    },
+                    {"concept_id": "concept:sorting", "name": "Sorting", "status": "demonstrated"},
+                ],
+            }
+        ]
+    }
+    asked = [("concept:hashing", "Hashing"), ("concept:sorting", "Sorting")]
+    line = report.goal_line(context, asked, date(2026, 11, 22))
+    assert line == (
+        "Toward Backend Developer: this interview asked about 1 of the 2 topics your goal "
+        "still needs (Hashing). 39 days to go."
+    )
+
+
+def test_no_goal_no_line_and_an_off_goal_interview_says_so():
+    from datetime import date
+
+    assert report.goal_line(None, [("concept:hashing", "")], date(2026, 11, 22)) is None
+    assert report.goal_line({"goals": []}, [], date(2026, 11, 22)) is None
+    context = {"goals": [{"title": "Data Analyst", "competencies": [
+        {"concept_id": "concept:sql_queries", "name": "SQL", "status": "gap"}]}]}
+    line = report.goal_line(context, [("concept:hashing", "Hashing")], date(2026, 11, 22))
+    assert line and line.startswith("Toward Data Analyst: none of this interview's questions")

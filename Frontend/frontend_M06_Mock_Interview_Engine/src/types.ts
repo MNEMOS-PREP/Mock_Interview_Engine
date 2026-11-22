@@ -519,6 +519,9 @@ export interface SessionReport {
   summary?: ReportSummary;
   /** 2026-10-24: where the written explanations are — `pending` means ask again. */
   writeups?: "none" | "pending" | "ready" | "partial";
+  /** 2026-11-22: this interview against the student's goal (M22), worked
+   *  out by code: open topics it asked about, and the days left. */
+  goal_line?: string | null;
 }
 
 /** §6.8: what a returning page needs (`GET /resume-state`). A read only —

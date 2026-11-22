@@ -13,8 +13,9 @@ each question went, where it stopped, and why a turn was not scored.
 from __future__ import annotations
 
 import re
+import uuid
 from collections import Counter
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -79,6 +80,24 @@ class Exchange(BaseModel):
     turn_id: str | None = None
     #: §15.4: part of a Practice retry — shown, and never the scored attempt.
     retry: bool = False
+    #: Spoken answers: the character ranges of `text` the recogniser was
+    #: unsure of (FR-11.15). Words that must not be quoted back as what the
+    #: student said — by these notes, or by the mentor reading them (M16 put
+    #: a mishearing, "Uho of one", in a student's mouth on 15 Nov).
+    unsure: list[tuple[int, int]] = Field(default_factory=list)
+
+
+def heard_words(exchange: Exchange) -> str:
+    """An answer as it may be quoted: every unsure range is an ellipsis."""
+    text, out, at = exchange.text, [], 0
+    for start, end in sorted(exchange.unsure):
+        if start < at or end <= start:
+            continue
+        out.append(text[at:start])
+        out.append("…")
+        at = end
+    out.append(text[at:])
+    return "".join(out)
 
 
 class Feedback(BaseModel):
@@ -275,6 +294,11 @@ class SessionReport(BaseModel):
     #: ask again), `ready`, or `partial` (some could not be written, and those
     #: questions show what the interview recorded).
     writeups: str = "none"
+    #: 2026-11-22: one line tying this interview to the student's goal
+    #: (M22), computed here, never written by a model: how many of the
+    #: topics the goal still needs it asked about, and the days left.
+    #: None without a goal, or with M22 away.
+    goal_line: str | None = None
     #: Spec §6.7 tells M06 to say this, "so students don't think Practice mode
     #: inflates their score" — which means it has to be exactly right, not
     #: reassuring. Two facts, and the second one was missing: the STANDARD is
@@ -287,6 +311,52 @@ class SessionReport(BaseModel):
         "bar-raiser judge the same answer against the same rubric. Practice checks each "
         "answer once rather than three times, so it is less precise — not more generous."
     )
+
+
+def goal_line(context: dict | None, asked: list[tuple[str, str]], today: date) -> str | None:
+    """"Toward Backend Developer: this interview asked about 2 of the 9 topics
+    your goal still needs (Hashing, SQL Queries). 41 days to go."
+
+    `asked`: (concept id, topic) for each question. The primary goal (M22's
+    priority 1, else the first); "still needs" is every competency not yet
+    demonstrated. Nothing is said without a goal or without an open topic."""
+    goals = [g for g in (context or {}).get("goals") or [] if isinstance(g, dict)]
+    if not goals:
+        return None
+    goal = min(goals, key=lambda g: int(g.get("priority") or 9))
+    open_ids = {
+        str(c.get("concept_id"))
+        for c in goal.get("competencies") or []
+        if isinstance(c, dict) and c.get("status") != "demonstrated"
+    }
+    if not open_ids:
+        return None
+    competencies = [c for c in goal.get("competencies") or [] if isinstance(c, dict)]
+    names = {str(c.get("concept_id")): str(c.get("name") or "") for c in competencies}
+    hit = list(dict.fromkeys(cid for cid, _ in asked if cid in open_ids))
+    title = str(goal.get("title") or goal.get("role") or "your goal")
+    if hit:
+        listed = ", ".join(
+            names.get(cid) or cid.split(":")[-1].replace("_", " ") for cid in hit[:3]
+        )
+        line = (
+            f"Toward {title}: this interview asked about {len(hit)} of the {len(open_ids)} "
+            f"topics your goal still needs ({listed})."
+        )
+    else:
+        line = (
+            f"Toward {title}: none of this interview's questions were on the {len(open_ids)} "
+            "topics your goal still needs. A goal interview asks those."
+        )
+    deadline = goal.get("deadline")
+    if deadline:
+        try:
+            left = (date.fromisoformat(str(deadline)[:10]) - today).days
+        except ValueError:
+            left = None
+        if left is not None and left >= 0:
+            line += f" {left} day{'' if left == 1 else 's'} to go."
+    return line
 
 
 def _framing(state: SessionState, now: datetime) -> str:
@@ -635,6 +705,7 @@ def build(
     now: datetime,
     *,
     history: dict[str, list] | None = None,
+    earlier: dict[str, str] | None = None,
     marks: dict[str, tuple[bool, bool]] | None = None,
 ) -> SessionReport:
     """`history`: the student's attempts at each question, by library key
@@ -732,12 +803,14 @@ def build(
             retry_turn = state.turn_retry(p.get("turn_id"))
             if current.turn_id is None and not retry_turn and p.get("turn_id"):
                 current.turn_id = str(p["turn_id"])
+            heard_turn = _turn_of(state, p.get("turn_id"))
             current.exchanges.append(
                 Exchange(
                     role="candidate",
                     text=p.get("text", ""),
                     retry=retry_turn,
                     turn_id=str(p["turn_id"]) if p.get("turn_id") else None,
+                    unsure=list(getattr(heard_turn, "unsure", None) or []),
                 )
             )
             if current.scored and not retry_turn:
@@ -764,18 +837,23 @@ def build(
             for point in (p.get("correct_points") or []) if judged else []:
                 if _gist(point) not in {_gist(said) for said in current.went_well}:
                     current.went_well.append(point)
-            if p.get("error_quote") and p.get("category") in ("incorrect", "partial", "vague"):
+            # Every quote shown as "you said" is checked against THIS
+            # question's own answers (2026-11-22). The strategist sees the
+            # whole transcript, and a 15 Nov note on hashing quoted an answer
+            # to a different question (good_and_bads #2). The notes writer's
+            # quotes were already held to this; the strategist's were not.
+            answers = _answers_so_far(current)
+            error_quote = _own(p.get("error_quote"), answers)
+            if error_quote and p.get("category") in ("incorrect", "partial", "vague"):
                 current.went_wrong.append(
-                    Finding(said=str(p["error_quote"]), why=str(p.get("error_note") or ""))
+                    Finding(said=error_quote, why=str(p.get("error_note") or ""))
                 )
-            unsupported = p.get("unsupported_quote") if judged else None
+            unsupported = _own(p.get("unsupported_quote"), answers) if judged else None
             if unsupported and unsupported not in current.unsupported:
-                current.unsupported.append(str(unsupported))
-            if judged and p.get("contradiction_quote"):
+                current.unsupported.append(unsupported)
+            if judged and p.get("contradiction_quote") and error_quote:
                 current.contradictions.append(
-                    Finding(
-                        said=str(p.get("error_quote") or ""), why=str(p["contradiction_quote"])
-                    )
+                    Finding(said=error_quote, why=str(p["contradiction_quote"]))
                 )
             if p.get("corrected"):
                 # Help once needed stays needed — and a session recorded
@@ -891,6 +969,9 @@ def build(
             question.claim_check = _claim_check(question)
         if history and question.question_key in history:
             question.last_time = compare(history[question.question_key])
+        if question.last_time is None and earlier and question.concept_id in earlier:
+            # Not this question before, but this idea (2026-11-22).
+            question.last_time = earlier[question.concept_id]
         if marks and question.question_key in marks:
             question.starred, question.flagged = marks[question.question_key]
     notes = list(dict.fromkeys(state.flags.degraded.values()))
@@ -990,3 +1071,37 @@ def _delivery_of(p: dict):
 
 
 __all__ = ["Exchange", "Finding", "QuestionReport", "SessionReport", "Summary", "build"]
+
+
+# ── the student's own words, on this question (2026-11-22) ───────────────
+
+
+def _norm_words(text: str) -> str:
+    """notes_writer's normaliser: case, curly quotes and punctuation aside."""
+    for curly, plain in (("\u2019", "'"), ("\u2018", "'"), ("\u201c", '"'), ("\u201d", '"')):
+        text = text.replace(curly, plain)
+    text = text.lower()
+    return " ".join(re.sub(r"[^\w'\s]", " ", text).split())
+
+
+def _answers_so_far(question: QuestionReport) -> str:
+    # What may be quoted: a word the recogniser was unsure of is not theirs to quote.
+    return " \n ".join(heard_words(e) for e in question.exchanges if e.role == "candidate")
+
+
+def _own(quote: object, answers: str) -> str | None:
+    """`quote` if it is, word for word, something the student said on this
+    question; None otherwise — a quote from another question's answer, or one
+    no answer contains, is not shown as theirs."""
+    if not quote:
+        return None
+    needle = _norm_words(str(quote))
+    return str(quote) if needle and f" {needle} " in f" {_norm_words(answers)} " else None
+
+
+def _turn_of(state: SessionState, turn_id: object):  # noqa: ANN202 - a TurnView or None
+    """The recorded turn an event names, if it is a turn id at all."""
+    try:
+        return state.turn(uuid.UUID(str(turn_id))) if turn_id else None
+    except ValueError:
+        return None

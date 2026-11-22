@@ -219,3 +219,43 @@ def test_the_persona_cards_carry_the_aside_for_a_line_spoken_over():
 
     for card in persona_cards():
         assert card["go_ahead"] == persona(card["id"]).said().go_ahead
+
+
+# ── read, not heard (good_and_bads #19, 2026-11-22) ──────────────────────
+
+
+def test_a_question_read_on_screen_was_not_missed():
+    # The voice was on its first words, but the whole question had been on
+    # screen long enough to read: they have it.
+    line = NS(
+        text="Walk me through your project.",
+        parts=[],
+        question_text="Walk me through your project.",
+        heard_part=0,
+        heard=0.1,
+        read=True,
+    )
+    assert not question_unheard(line)
+    line.read = False
+    assert question_unheard(line)
+
+
+def test_a_read_question_answered_over_a_slow_voice_is_judged_not_put_again(db):
+    # 15 Nov: "Let me ask that again." four times, after answers that were
+    # adequate or correct. The voice was behind; the student was not.
+    engine, row = live(db)
+    state = engine.state(row.id)
+    line = asked(state)[-1]
+    engine.heard(row.id, line.turn_id, 0, 0.05, read=True)
+    state = engine.answer(row.id, line.turn_id, HELD)
+    assert asked(state)[-1].probe_move != "reoffer"
+    close(engine, row)
+    assert len(scored_rows(db, row.id)) == 1
+
+
+def test_the_heard_route_takes_read():
+    from backend_M06_Mock_Interview_Engine.router import HeardIn
+
+    turn = "00000000-0000-0000-0000-000000000001"
+    assert HeardIn.model_validate({"turn_id": turn, "heard": 0.2, "read": True}).read is True
+    assert HeardIn.model_validate({"turn_id": turn, "heard": 0.2}).read is False

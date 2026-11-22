@@ -88,7 +88,11 @@ def test_an_unsupported_claim_is_pressed_and_the_notes_say_it_stayed_unsupported
     engine.llm.verdicts = [claim, claim, claim]
     for _ in range(3):
         engine.answer(
-            row.id, engine.state(row.id).open_turn_id, "It was really accurate, trust me."
+            # The strategist quotes the student's own words (2026-11-22: a quote
+            # no answer contains is not shown as theirs).
+            row.id,
+            engine.state(row.id).open_turn_id,
+            "It ended up reaching 94% accuracy, trust me.",
         )
     state = engine.end(row.id, "ended_by_student")
     moves = [t.probe_move for t in state.transcript if t.role == "interviewer"]

@@ -150,7 +150,7 @@ class StubLLM:
             return
         said = (
             self.closing
-            if "output exactly ROLE" in system
+            if "the part where they ask you questions" in system
             else self.rephrased
             if "asked for it another way" in system
             else self.probe

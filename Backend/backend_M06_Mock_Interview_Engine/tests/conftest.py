@@ -30,6 +30,13 @@ def _service_secret(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_coach(monkeypatch):
+    """M17 hears every answer by default (2026-11-22); the suite opens no
+    sockets to a coach that is not running. tests/test_m17_emit.py turns it on."""
+    monkeypatch.setenv("M06_M17_BASE_URL", "off")
+
+
+@pytest.fixture(autouse=True)
 def _fixed_seating(request, monkeypatch):
     """The panel rotates by session id (2026-10-07), and tests mint session
     ids at random — so every run would seat a different panel. The suite pins

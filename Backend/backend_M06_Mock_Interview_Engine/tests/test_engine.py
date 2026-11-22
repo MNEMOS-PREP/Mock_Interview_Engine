@@ -595,7 +595,7 @@ def test_a_dropped_segment_is_owed_to_m02_as_skipped(db):
     state = engine.start(row.id)
 
     dropped = [s for s in state.plan.segments if s.dropped_reason is not None]
-    assert len(dropped) == 1 and "coding round" in dropped[0].dropped_reason
+    assert len(dropped) == 1 and "coding part" in dropped[0].dropped_reason
     owed = db.exec(select(LedgerOutbox).where(LedgerOutbox.session_id == row.id)).all()
     assert [(r.requirement_id, r.ledger_state) for r in owed] == [("r1", "skipped")]
 
